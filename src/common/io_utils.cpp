@@ -294,6 +294,15 @@ void gzip_istreambuf::close() {
 
 bool gzip_istreambuf::is_open() const { return file_ != nullptr; }
 
+uint64_t gzip_istreambuf::compressed_offset() const {
+  if (!is_open()) {
+    return 0;
+  }
+
+  const z_off_t current_offset = gzoffset(file_);
+  return current_offset >= 0 ? static_cast<uint64_t>(current_offset) : 0;
+}
+
 gzip_istreambuf::int_type gzip_istreambuf::underflow() {
   if (!is_open()) {
     return traits_type::eof();
@@ -319,6 +328,10 @@ bool gzip_istream::open(const std::string &path) { return buffer_.open(path); }
 void gzip_istream::close() { buffer_.close(); }
 
 bool gzip_istream::is_open() const { return buffer_.is_open(); }
+
+uint64_t gzip_istream::compressed_offset() const {
+  return buffer_.compressed_offset();
+}
 
 gzip_ostream::gzip_ostream() : file_(nullptr) {}
 

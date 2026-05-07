@@ -2,6 +2,7 @@
 // during compression and decompression stages.
 
 #include "progress.h"
+#include <algorithm>
 #include <cmath>
 #include <iomanip>
 #include <iostream>
@@ -78,8 +79,9 @@ void ProgressBar::update(float stage_progress) {
     return;
 
   std::scoped_lock<std::mutex> lock(mutex_);
+  const float clamped_stage_progress = std::clamp(stage_progress, 0.0F, 1.0F);
   float global_pct =
-      stage_start_ + (stage_progress * (stage_end_ - stage_start_));
+      stage_start_ + (clamped_stage_progress * (stage_end_ - stage_start_));
 
   // Throttle rendering to 1% increments or significant changes
   if (std::abs(global_pct - last_rendered_pct_) >= 0.01F ||

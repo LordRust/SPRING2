@@ -1165,8 +1165,15 @@ preprocess(const std::string &infile_1, const std::string &infile_2,
     if (progress && total_input_bytes > 0) {
       uint64_t bytes_read = 0;
       for (int i = 0; i < 2; i++) {
-        if (input_streams[i]) {
-          bytes_read += static_cast<uint64_t>(input_streams[i]->tellg());
+        if (input_gzip_enabled[i]) {
+          if (gzip_streams[i]) {
+            bytes_read += gzip_streams[i]->compressed_offset();
+          }
+        } else if (input_streams[i]) {
+          const std::streampos current_pos = input_streams[i]->tellg();
+          if (current_pos >= 0) {
+            bytes_read += static_cast<uint64_t>(current_pos);
+          }
         }
       }
       progress->update(static_cast<float>(bytes_read) / total_input_bytes);

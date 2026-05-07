@@ -2,6 +2,12 @@
 
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Fixed preprocessing progress reporting for gzipped input files by tracking gzip stream progress from the compressed byte offset instead of using invalid `tellg()` positions on the zlib-backed input stream; progress updates are now also clamped to valid bounds before rendering.
+
 ## V1.0.0-rc.1
 
 ### Added

@@ -828,6 +828,7 @@ set(unit_test_sources
     tests/unit/dna_parse_unit_tests.cpp
     tests/unit/assay_detector_unit_tests.cpp
     tests/unit/assay_detector_real_data_unit_tests.cpp
+    tests/unit/gzip_preprocess_progress_unit_tests.cpp
 )
 add_executable(spring2-tests ${unit_test_sources} ${core_source_files})
 if(SPRING_ENABLE_PRECOMPILED_HEADERS)

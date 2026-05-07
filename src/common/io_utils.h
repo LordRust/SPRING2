@@ -27,6 +27,7 @@ public:
   bool open(const std::string &path);
   void close();
   bool is_open() const;
+  uint64_t compressed_offset() const;
 
 protected:
   int_type underflow() override;
@@ -47,6 +48,7 @@ public:
   bool open(const std::string &path);
   void close();
   bool is_open() const;
+  uint64_t compressed_offset() const;
 
 private:
   gzip_istreambuf buffer_;
