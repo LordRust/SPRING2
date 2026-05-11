@@ -10,7 +10,6 @@
 #include "params.h"
 #include "workflow_api.h"
 
-
 #include <chrono>
 #include <cstdint>
 #include <string>
@@ -43,6 +42,16 @@ struct prepared_compression_inputs {
 };
 
 enum class input_record_format : uint8_t { fastq, fasta };
+enum class compression_storage_path : uint8_t { memory_path, disk_path };
+
+struct compression_storage_plan {
+  uint64_t estimated_input_bytes = 0;
+  uint64_t estimated_peak_intermediate_bytes = 0;
+  uint64_t safety_margin_bytes = 0;
+  uint64_t required_peak_memory_bytes = 0;
+  uint64_t available_memory_bytes = 0;
+  compression_storage_path selected_path = compression_storage_path::disk_path;
+};
 
 std::string default_archive_name_from_input(const std::string &input_path);
 bool paths_refer_to_same_file(const std::string &left,
@@ -54,6 +63,12 @@ void validate_compression_target(const std::vector<std::string> &input_paths,
                                  const std::string &archive_path);
 std::string assay_from_archive_metadata_bytes(const std::string &archive_bytes,
                                               const std::string &archive_label);
+std::string assay_from_archive_metadata_path(const std::string &archive_path,
+                                             const std::string &archive_label);
+uint64_t resolve_compression_memory_budget_bytes(double memory_cap_gb);
+compression_storage_plan
+build_compression_storage_plan(const string_list &input_paths,
+                               double memory_cap_gb);
 int gzip_output_compression_level(
     const compression_params::GzipMetadata::Stream &stream, int default_level);
 std::string append_group_role_suffix(const std::string &path,
@@ -96,12 +111,16 @@ void configure_quality_options(compression_params &compression_params,
                                const string_list &quality_options);
 void print_compressed_stream_sizes(
     const std::unordered_map<std::string, std::string> &archive_members);
+void print_compressed_stream_sizes_from_disk(
+    const std::unordered_map<std::string, std::string> &archive_member_paths);
 void merge_archive_members(
     std::unordered_map<std::string, std::string> &archive_members,
     std::unordered_map<std::string, std::string> new_members);
 std::string serialize_compression_params(const compression_params &cp);
 std::vector<tar_archive_source> build_archive_sources(
     const std::unordered_map<std::string, std::string> &archive_members);
+std::vector<tar_archive_source> build_archive_sources_from_disk(
+    const std::unordered_map<std::string, std::string> &archive_member_paths);
 decompression_io_config
 resolve_decompression_io(const string_list &input_paths,
                          const string_list &output_paths, bool paired_end);

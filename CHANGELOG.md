@@ -2,11 +2,26 @@
 
 # Changelog
 
-## Unreleased
+## V1.0.0-rc.2
+
+### Added
+
+- Added memory-aware compression-path planning helpers that detect available system memory, estimate total input size including `.gz` inputs by inferred uncompressed size, and honor the user-provided `-m` memory cap when choosing between in-memory and disk-backed compression.
+- Added a regression test covering compression storage planning so the memory-path versus disk-path decision now stays pinned to the required peak-memory threshold instead of only raw input bytes.
+
+### Changed
+
+- Changed compression to support a real disk-backed fallback path for memory-constrained runs: standard archives now stage work under `<archive>.work-tmp`, grouped bundle members under `<archive>.grouped-tmp`, and final tar assembly can stream staged files directly from disk instead of rebuilding all archive members in memory.
+- Changed short-read disk-path compression to spill reorder, encoder, and post-encode side-stream artifacts to disk between stages, shortening intermediate lifetimes and reducing peak RAM pressure during standard and grouped compression.
+- Changed disk-path stream rebuilding so the final alignment-stream stage now consumes spilled encoder metadata incrementally through block scratch files instead of reconstructing large per-read vectors in memory.
+- Changed disk-path quality and ID reordering to consume spilled side streams and read-order files directly from disk rather than requiring the full post-encode side-stream payloads to remain resident in memory.
 
 ### Fixed
 
 - Fixed preprocessing progress reporting for gzipped input files by tracking gzip stream progress from the compressed byte offset instead of using invalid `tellg()` positions on the zlib-backed input stream; progress updates are now also clamped to valid bounds before rendering.
+- Fixed compression-path planning so SPRING2 now selects the in-memory path only when available RAM covers estimated input bytes plus an explicit peak-intermediate-memory estimate and additional safety margin, reducing false memory-path selections on large inputs.
+- Fixed disk-path archive assembly and grouped-bundle packaging so nested archives and staged members can be written from disk without first reloading them into a monolithic in-memory tar payload.
+- Fixed disk-path compression correctness after paired-end order rewriting by persisting updated `read_order_entries` into the spilled encoder artifact before downstream quality/ID and final stream reordering consume that metadata.
 
 ## V1.0.0-rc.1
 

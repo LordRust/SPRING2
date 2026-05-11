@@ -6,16 +6,57 @@
 #include "io_utils.h"
 #include "parse_utils.h"
 
+#include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_set>
 
 namespace spring {
+
+namespace {
+
+constexpr uint64_t kPeakIntermediateMultiplier = 4;
+constexpr uint64_t kSafetyMarginDivisor = 2;
+constexpr uint64_t kMinimumSafetyMarginBytes = 512ULL * 1024ULL * 1024ULL;
+
+uint64_t saturating_add(const uint64_t left, const uint64_t right) {
+  if (left > std::numeric_limits<uint64_t>::max() - right) {
+    return std::numeric_limits<uint64_t>::max();
+  }
+  return left + right;
+}
+
+uint64_t saturating_multiply(const uint64_t value, const uint64_t multiplier) {
+  if (value == 0 || multiplier == 0) {
+    return 0;
+  }
+  if (value > std::numeric_limits<uint64_t>::max() / multiplier) {
+    return std::numeric_limits<uint64_t>::max();
+  }
+  return value * multiplier;
+}
+
+uint64_t
+estimate_peak_intermediate_memory_bytes(const uint64_t estimated_input_bytes) {
+  return saturating_multiply(estimated_input_bytes,
+                             kPeakIntermediateMultiplier);
+}
+
+uint64_t estimate_memory_path_safety_margin_bytes(
+    const uint64_t estimated_input_bytes,
+    const uint64_t estimated_peak_intermediate_bytes) {
+  const uint64_t peak_based_margin =
+      estimated_peak_intermediate_bytes / kSafetyMarginDivisor;
+  return std::max(kMinimumSafetyMarginBytes, peak_based_margin);
+}
+
+} // namespace
 
 std::string default_archive_name_from_input(const std::string &input_path) {
   std::filesystem::path p = std::filesystem::path(input_path).filename();
@@ -111,6 +152,61 @@ assay_from_archive_metadata_bytes(const std::string &archive_bytes,
                              archive_label);
   }
   return cp.read_info.assay.empty() ? std::string("auto") : cp.read_info.assay;
+}
+
+std::string assay_from_archive_metadata_path(const std::string &archive_path,
+                                             const std::string &archive_label) {
+  auto contents = read_files_from_tar_memory(archive_path, {"cp.bin"});
+  if (!contents.contains("cp.bin")) {
+    throw std::runtime_error("Could not find cp.bin in archive: " +
+                             archive_label);
+  }
+
+  compression_params cp{};
+  std::istringstream input(contents["cp.bin"], std::ios::binary);
+  read_compression_params(input, cp);
+  if (!input.good()) {
+    throw std::runtime_error("Could not parse cp.bin in archive: " +
+                             archive_label);
+  }
+  return cp.read_info.assay.empty() ? std::string("auto") : cp.read_info.assay;
+}
+
+uint64_t resolve_compression_memory_budget_bytes(const double memory_cap_gb) {
+  if (memory_cap_gb > 0.0) {
+    const double bytes = memory_cap_gb * 1024.0 * 1024.0 * 1024.0;
+    return bytes > 0.0 ? static_cast<uint64_t>(bytes) : 0;
+  }
+
+  return detect_available_memory_bytes();
+}
+
+compression_storage_plan
+build_compression_storage_plan(const string_list &input_paths,
+                               const double memory_cap_gb) {
+  compression_storage_plan plan;
+  plan.estimated_input_bytes = estimate_total_input_size_bytes(input_paths);
+  plan.estimated_peak_intermediate_bytes =
+      estimate_peak_intermediate_memory_bytes(plan.estimated_input_bytes);
+  plan.safety_margin_bytes = estimate_memory_path_safety_margin_bytes(
+      plan.estimated_input_bytes, plan.estimated_peak_intermediate_bytes);
+  plan.required_peak_memory_bytes =
+      saturating_add(saturating_add(plan.estimated_input_bytes,
+                                    plan.estimated_peak_intermediate_bytes),
+                     plan.safety_margin_bytes);
+  plan.available_memory_bytes =
+      resolve_compression_memory_budget_bytes(memory_cap_gb);
+
+  if (plan.available_memory_bytes == 0) {
+    plan.selected_path = compression_storage_path::disk_path;
+    return plan;
+  }
+
+  plan.selected_path =
+      plan.required_peak_memory_bytes <= plan.available_memory_bytes
+          ? compression_storage_path::memory_path
+          : compression_storage_path::disk_path;
+  return plan;
 }
 
 int gzip_output_compression_level(
@@ -479,6 +575,42 @@ void print_compressed_stream_sizes(
   }
 }
 
+void print_compressed_stream_sizes_from_disk(
+    const std::unordered_map<std::string, std::string> &archive_member_paths) {
+  uint64_t size_read = 0;
+  uint64_t size_quality = 0;
+  uint64_t size_id = 0;
+  for (const auto &[name, disk_path] : archive_member_paths) {
+    if (name == "cp.bin") {
+      continue;
+    }
+
+    std::error_code file_ec;
+    const uint64_t member_size = std::filesystem::file_size(disk_path, file_ec);
+    if (file_ec) {
+      throw std::runtime_error("Failed to stat staged archive member '" +
+                               disk_path + "': " + file_ec.message());
+    }
+
+    if (name.starts_with("quality") || name.starts_with("qv")) {
+      size_quality += member_size;
+    } else if (name.starts_with("id")) {
+      size_id += member_size;
+    } else {
+      size_read += member_size;
+    }
+  }
+
+  SPRING_LOG_INFO("Compressed read bytes: " + std::to_string(size_read));
+  if (size_quality != 0) {
+    SPRING_LOG_INFO("Compressed quality bytes: " +
+                    std::to_string(size_quality));
+  }
+  if (size_id != 0) {
+    SPRING_LOG_INFO("Compressed ID bytes: " + std::to_string(size_id));
+  }
+}
+
 void merge_archive_members(
     std::unordered_map<std::string, std::string> &archive_members,
     std::unordered_map<std::string, std::string> new_members) {
@@ -502,6 +634,19 @@ std::vector<tar_archive_source> build_archive_sources(
                        .disk_path = std::string(),
                        .contents = contents,
                        .from_memory = true});
+  }
+  return sources;
+}
+
+std::vector<tar_archive_source> build_archive_sources_from_disk(
+    const std::unordered_map<std::string, std::string> &archive_member_paths) {
+  std::vector<tar_archive_source> sources;
+  sources.reserve(archive_member_paths.size());
+  for (const auto &[archive_path, disk_path] : archive_member_paths) {
+    sources.push_back({.archive_path = archive_path,
+                       .disk_path = disk_path,
+                       .contents = std::string(),
+                       .from_memory = false});
   }
   return sources;
 }

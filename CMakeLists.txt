@@ -828,6 +828,7 @@ set(unit_test_sources
     tests/unit/dna_parse_unit_tests.cpp
     tests/unit/assay_detector_unit_tests.cpp
     tests/unit/assay_detector_real_data_unit_tests.cpp
+    tests/unit/compression_storage_plan_unit_tests.cpp
     tests/unit/gzip_preprocess_progress_unit_tests.cpp
 )
 add_executable(spring2-tests ${unit_test_sources} ${core_source_files})
@@ -852,6 +853,7 @@ set(integration_test_sources
     tests/integration/integration_test_support.cpp
     tests/integration/archive_integration_tests.cpp
     tests/integration/reader_integration_tests.cpp
+    tests/integration/storage_path_integration_tests.cpp
     tests/integration/workflow_metadata_integration_tests.cpp
     tests/integration/assay_integration_tests.cpp
     tests/integration/grouped_archive_integration_tests.cpp
@@ -871,7 +873,10 @@ endif()
 if(SPRING_OPENMP_INCLUDE_DIRS)
     target_include_directories(integration-tests SYSTEM PRIVATE ${SPRING_OPENMP_INCLUDE_DIRS})
 endif()
-target_compile_definitions(integration-tests PRIVATE SPRING2_EXECUTABLE=\"$<TARGET_FILE:spring2>\")
+target_compile_definitions(integration-tests PRIVATE
+    SPRING2_EXECUTABLE=\"$<TARGET_FILE:spring2>\"
+    INTEGRATION_TEST_ASSET_DIR=\"${CMAKE_SOURCE_DIR}/data/samples\"
+)
 add_test(NAME integration_tests COMMAND integration-tests)
 
 set(smoke_test_sources

@@ -4,6 +4,7 @@
 #ifndef SPRING_FS_UTILS_H_
 #define SPRING_FS_UTILS_H_
 
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -17,6 +18,15 @@ struct tar_archive_source {
   bool from_memory = false;
 };
 
+uint64_t detect_available_memory_bytes() noexcept;
+uint64_t estimate_input_file_size_bytes(const std::string &input_path);
+uint64_t
+estimate_total_input_size_bytes(const std::vector<std::string> &input_paths);
+std::string resolve_archive_entry_disk_path(const std::string &root_dir,
+                                            const std::string &entry_name);
+void write_archive_member_file(const std::string &root_dir,
+                               const std::string &entry_name,
+                               const std::string &contents);
 bool safe_remove_file(const std::string &path) noexcept;
 void create_tar_archive_from_sources(
     const std::string &archive_path,

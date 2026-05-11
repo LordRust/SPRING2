@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <mutex>
 #include <omp.h>
@@ -54,11 +56,44 @@ struct output_block_buffers {
   std::vector<char> mate_orientation_bytes;
 };
 
+struct staged_stream_record_header {
+  uint32_t relative_slot;
+  uint16_t read_length;
+  uint16_t noise_count;
+  uint8_t flags;
+  char orientation;
+  uint64_t position;
+};
+
+struct staged_read_state {
+  bool present = false;
+  bool aligned = false;
+  uint16_t read_length = 0;
+  char orientation = '\0';
+  uint64_t position = 0;
+  std::string noise_codes;
+  std::vector<uint16_t> noise_positions;
+  std::string unaligned_bytes;
+};
+
+struct staged_pair_slot_state {
+  staged_read_state read_1;
+  staged_read_state read_2;
+};
+
 struct block_range {
   uint64_t begin;
   uint64_t end;
   bool valid;
 };
+
+template <typename T>
+void append_binary(std::vector<char> &buffer, const T &value);
+
+std::unordered_map<std::string, std::string>
+compress_output_block(const output_block_buffers &block_buffers,
+                      const reordered_stream_paths &paths,
+                      const uint64_t block_num, const bool paired_end);
 
 std::string block_file_path(const std::string &base_path,
                             const uint64_t block_num) {
@@ -68,6 +103,108 @@ std::string block_file_path(const std::string &base_path,
 std::string compressed_block_file_path(const std::string &base_path,
                                        const uint64_t block_num) {
   return block_file_path(base_path, block_num) + ".bsc";
+}
+
+std::string stream_scratch_block_path(const std::string &scratch_root_dir,
+                                      const uint64_t block_num) {
+  return (std::filesystem::path(scratch_root_dir) /
+          ("block." + std::to_string(block_num) + ".bin"))
+      .string();
+}
+
+void reset_directory(const std::string &path) {
+  std::error_code remove_ec;
+  std::filesystem::remove_all(path, remove_ec);
+  if (remove_ec) {
+    throw std::runtime_error("Failed to clear stream scratch directory '" +
+                             path + "': " + remove_ec.message());
+  }
+
+  std::error_code create_ec;
+  std::filesystem::create_directories(path, create_ec);
+  if (create_ec) {
+    throw std::runtime_error("Failed to create stream scratch directory '" +
+                             path + "': " + create_ec.message());
+  }
+}
+
+void append_record_to_file(const std::string &path,
+                           const staged_stream_record_header &header,
+                           const char *payload, const size_t payload_size,
+                           const uint16_t *noise_positions,
+                           const size_t noise_position_count) {
+  std::ofstream output(path, std::ios::binary | std::ios::app);
+  if (!output.is_open()) {
+    throw std::runtime_error("Failed to open stream scratch file '" + path +
+                             "'.");
+  }
+
+  output.write(reinterpret_cast<const char *>(&header), sizeof(header));
+  if (payload_size != 0) {
+    output.write(payload, static_cast<std::streamsize>(payload_size));
+  }
+  if (noise_position_count != 0) {
+    output.write(
+        reinterpret_cast<const char *>(noise_positions),
+        static_cast<std::streamsize>(noise_position_count * sizeof(uint16_t)));
+  }
+  if (!output) {
+    throw std::runtime_error("Failed to append stream scratch file '" + path +
+                             "'.");
+  }
+}
+
+uint16_t read_uint16(std::ifstream &input, const char *label) {
+  uint16_t value = 0;
+  input.read(reinterpret_cast<char *>(&value), sizeof(value));
+  if (!input) {
+    throw std::runtime_error(std::string("Failed to read ") + label + ".");
+  }
+  return value;
+}
+
+uint32_t read_uint32(std::ifstream &input, const char *label) {
+  uint32_t value = 0;
+  input.read(reinterpret_cast<char *>(&value), sizeof(value));
+  if (!input) {
+    throw std::runtime_error(std::string("Failed to read ") + label + ".");
+  }
+  return value;
+}
+
+uint64_t read_uint64(std::ifstream &input, const char *label) {
+  uint64_t value = 0;
+  input.read(reinterpret_cast<char *>(&value), sizeof(value));
+  if (!input) {
+    throw std::runtime_error(std::string("Failed to read ") + label + ".");
+  }
+  return value;
+}
+
+char read_char(std::ifstream &input, const char *label) {
+  char value = '\0';
+  input.read(&value, sizeof(value));
+  if (!input) {
+    throw std::runtime_error(std::string("Failed to read ") + label + ".");
+  }
+  return value;
+}
+
+void write_noise_for_state(std::vector<char> &noise_output,
+                           std::vector<char> &noise_position_output,
+                           const staged_read_state &state) {
+  noise_output.insert(noise_output.end(), state.noise_codes.begin(),
+                      state.noise_codes.end());
+  for (const uint16_t position : state.noise_positions) {
+    append_binary(noise_position_output, position);
+  }
+  noise_output.push_back('\n');
+}
+
+void write_unaligned_state(std::vector<char> &unaligned_output,
+                           const staged_read_state &state) {
+  unaligned_output.insert(unaligned_output.end(), state.unaligned_bytes.begin(),
+                          state.unaligned_bytes.end());
 }
 
 void ensure_libbsc_ready() {
@@ -273,6 +410,361 @@ void add_compressed_block(std::unordered_map<std::string, std::string> &members,
                           const std::string &path,
                           const std::vector<char> &input_bytes) {
   members[path] = compress_block_buffer(input_bytes, path);
+}
+
+void partition_alignment_stream_records(
+    const compression_params &cp, const std::string &artifact_root_dir,
+    const std::string &read_order_entries_path,
+    const std::string &scratch_root_dir) {
+  reset_directory(scratch_root_dir);
+
+  const uint32_t num_reads = cp.read_info.num_reads;
+  const uint32_t half_read_count = num_reads / 2;
+  const bool paired_end = cp.encoding.paired_end;
+  const bool preserve_order = cp.encoding.preserve_order;
+  const uint32_t num_reads_per_block = cp.encoding.num_reads_per_block;
+  const uint64_t read_limit = paired_end ? half_read_count : num_reads;
+  const uint64_t output_blocks =
+      read_limit == 0
+          ? 0
+          : (read_limit + static_cast<uint64_t>(num_reads_per_block) - 1) /
+                static_cast<uint64_t>(num_reads_per_block);
+
+  const std::filesystem::path artifact_root(artifact_root_dir);
+  const std::filesystem::path orientation_path =
+      artifact_root / "orientation_entries.bin";
+  const std::filesystem::path position_path =
+      artifact_root / "position_entries.bin";
+  const std::filesystem::path read_length_path =
+      artifact_root / "read_length_entries.bin";
+  const std::filesystem::path noise_serialized_path =
+      artifact_root / "noise_serialized.bin";
+  const std::filesystem::path noise_positions_path =
+      artifact_root / "noise_positions.bin";
+  const std::filesystem::path unaligned_serialized_path =
+      artifact_root / "unaligned_serialized.bin";
+
+  const uint64_t aligned_read_count =
+      std::filesystem::file_size(orientation_path) / sizeof(char);
+
+  std::ifstream orientation_input(orientation_path, std::ios::binary);
+  std::ifstream position_input(position_path, std::ios::binary);
+  std::ifstream read_length_input(read_length_path, std::ios::binary);
+  std::ifstream noise_serialized_input(noise_serialized_path, std::ios::binary);
+  std::ifstream noise_positions_input(noise_positions_path, std::ios::binary);
+  std::ifstream unaligned_input(unaligned_serialized_path, std::ios::binary);
+  std::ifstream read_order_input(read_order_entries_path, std::ios::binary);
+  if (!orientation_input.is_open() || !position_input.is_open() ||
+      !read_length_input.is_open() || !noise_serialized_input.is_open() ||
+      !noise_positions_input.is_open() || !unaligned_input.is_open() ||
+      ((paired_end || preserve_order) && !read_order_input.is_open())) {
+    throw std::runtime_error("Failed to open one or more spilled encoder "
+                             "streams for block rebuild.");
+  }
+
+  auto append_record = [&](const uint32_t read_order, const bool aligned,
+                           const uint16_t read_length, const char orientation,
+                           const uint64_t position, const std::string &payload,
+                           const std::vector<uint16_t> &noise_positions,
+                           const bool mate_read) {
+    const uint32_t slot = paired_end && read_order >= half_read_count
+                              ? read_order - half_read_count
+                              : read_order;
+    if (slot >= read_limit) {
+      throw std::runtime_error(
+          "Corruption in read order stream: slot index exceeds output limit.");
+    }
+    const uint64_t block_num = slot / num_reads_per_block;
+    if (block_num >= output_blocks) {
+      throw std::runtime_error("Corruption in read order stream: block index "
+                               "exceeds output blocks.");
+    }
+    staged_stream_record_header header{};
+    header.relative_slot = slot % num_reads_per_block;
+    header.read_length = read_length;
+    header.noise_count = static_cast<uint16_t>(noise_positions.size());
+    header.flags =
+        static_cast<uint8_t>((aligned ? 0x1 : 0x0) | (mate_read ? 0x2 : 0x0));
+    header.orientation = orientation;
+    header.position = position;
+    append_record_to_file(
+        stream_scratch_block_path(scratch_root_dir, block_num), header,
+        payload.data(), payload.size(), noise_positions.data(),
+        noise_positions.size());
+  };
+
+  for (uint64_t entry_index = 0; entry_index < aligned_read_count;
+       ++entry_index) {
+    const uint32_t read_order =
+        (paired_end || preserve_order)
+            ? read_uint32(read_order_input, "aligned read order entry")
+            : static_cast<uint32_t>(entry_index);
+    const uint16_t read_length =
+        read_uint16(read_length_input, "aligned read length entry");
+    const char orientation =
+        read_char(orientation_input, "aligned orientation");
+    const uint64_t position = read_uint64(position_input, "aligned position");
+
+    std::string noise_codes;
+    std::getline(noise_serialized_input, noise_codes);
+    if (!noise_codes.empty() && noise_codes.back() == '\r') {
+      noise_codes.pop_back();
+    }
+    std::vector<uint16_t> noise_positions(noise_codes.size());
+    if (!noise_positions.empty()) {
+      noise_positions_input.read(
+          reinterpret_cast<char *>(noise_positions.data()),
+          static_cast<std::streamsize>(noise_positions.size() *
+                                       sizeof(uint16_t)));
+      if (!noise_positions_input) {
+        throw std::runtime_error(
+            "Corruption in spilled noise position stream.");
+      }
+    }
+
+    append_record(read_order, true, read_length, orientation, position,
+                  noise_codes, noise_positions,
+                  paired_end && read_order >= half_read_count);
+  }
+
+  const uint64_t unaligned_read_count = num_reads - aligned_read_count;
+  for (uint64_t unaligned_index = 0; unaligned_index < unaligned_read_count;
+       ++unaligned_index) {
+    const uint64_t entry_index = aligned_read_count + unaligned_index;
+    const uint32_t read_order =
+        (paired_end || preserve_order)
+            ? read_uint32(read_order_input, "unaligned read order entry")
+            : static_cast<uint32_t>(entry_index);
+    const uint16_t read_length =
+        read_uint16(read_length_input, "unaligned read length entry");
+    const uint32_t payload_length =
+        read_uint32(unaligned_input, "unaligned payload length");
+    if (payload_length != read_length) {
+      throw std::runtime_error(
+          "Corruption in unaligned stream: payload length mismatch.");
+    }
+    std::string payload(payload_length, '\0');
+    if (payload_length != 0) {
+      unaligned_input.read(payload.data(),
+                           static_cast<std::streamsize>(payload_length));
+      if (!unaligned_input) {
+        throw std::runtime_error(
+            "Corruption in spilled unaligned stream payload.");
+      }
+    }
+
+    append_record(read_order, false, read_length, '\0', 0, payload, {},
+                  paired_end && read_order >= half_read_count);
+  }
+}
+
+std::unordered_map<std::string, std::string>
+rebuild_stream_blocks_from_scratch(const compression_params &cp,
+                                   const std::string &scratch_root_dir) {
+  const reordered_stream_paths paths = build_reordered_stream_paths();
+  const uint32_t num_reads = cp.read_info.num_reads;
+  const uint32_t half_read_count = num_reads / 2;
+  const bool paired_end = cp.encoding.paired_end;
+  const bool preserve_order = cp.encoding.preserve_order;
+  const uint32_t num_reads_per_block = cp.encoding.num_reads_per_block;
+  const uint64_t read_limit = paired_end ? half_read_count : num_reads;
+  const uint64_t output_blocks =
+      read_limit == 0
+          ? 0
+          : (read_limit + static_cast<uint64_t>(num_reads_per_block) - 1) /
+                static_cast<uint64_t>(num_reads_per_block);
+
+  std::vector<std::unordered_map<std::string, std::string>> block_members(
+      static_cast<size_t>(output_blocks));
+
+#pragma omp parallel for schedule(dynamic)
+  for (int64_t block_index = 0;
+       block_index < static_cast<int64_t>(output_blocks); ++block_index) {
+    const block_range current_block = block_read_range(
+        static_cast<uint64_t>(block_index), num_reads_per_block, read_limit);
+    const uint32_t reads_in_block =
+        static_cast<uint32_t>(current_block.end - current_block.begin);
+    const std::string scratch_path =
+        stream_scratch_block_path(scratch_root_dir, block_index);
+
+    output_block_buffers block_buffers;
+    uint64_t previous_position = 0;
+    if (!paired_end) {
+      std::vector<staged_read_state> states(reads_in_block);
+      std::ifstream input(scratch_path, std::ios::binary);
+      if (input.is_open()) {
+        while (input.peek() != EOF) {
+          staged_stream_record_header header{};
+          input.read(reinterpret_cast<char *>(&header), sizeof(header));
+          if (!input) {
+            throw std::runtime_error("Corruption in stream scratch block '" +
+                                     scratch_path + "'.");
+          }
+          if (header.relative_slot >= reads_in_block) {
+            throw std::runtime_error("Corruption in stream scratch block: "
+                                     "relative slot out of range.");
+          }
+          staged_read_state &state = states[header.relative_slot];
+          state.present = true;
+          state.aligned = (header.flags & 0x1) != 0;
+          state.read_length = header.read_length;
+          state.orientation = header.orientation;
+          state.position = header.position;
+          if (state.aligned) {
+            state.noise_codes.assign(header.noise_count, '\0');
+            if (header.noise_count != 0) {
+              input.read(state.noise_codes.data(),
+                         static_cast<std::streamsize>(header.noise_count));
+              state.noise_positions.resize(header.noise_count);
+              input.read(reinterpret_cast<char *>(state.noise_positions.data()),
+                         static_cast<std::streamsize>(header.noise_count *
+                                                      sizeof(uint16_t)));
+            }
+          } else {
+            state.unaligned_bytes.assign(header.read_length, '\0');
+            if (header.read_length != 0) {
+              input.read(state.unaligned_bytes.data(),
+                         static_cast<std::streamsize>(header.read_length));
+            }
+          }
+          if (!input) {
+            throw std::runtime_error("Corruption in stream scratch block '" +
+                                     scratch_path + "'.");
+          }
+        }
+      }
+
+      for (uint32_t slot = 0; slot < reads_in_block; ++slot) {
+        const staged_read_state &state = states[slot];
+        if (!state.present) {
+          throw std::runtime_error(
+              "Missing single-end read state in stream scratch block.");
+        }
+        append_binary(block_buffers.read_length_bytes, state.read_length);
+        if (state.aligned) {
+          block_buffers.flag_bytes.push_back('0');
+          block_buffers.orientation_bytes.push_back(state.orientation);
+          write_aligned_position(block_buffers.position_bytes, preserve_order,
+                                 slot == 0, state.position, previous_position);
+          write_noise_for_state(block_buffers.noise_bytes,
+                                block_buffers.noise_position_bytes, state);
+        } else {
+          block_buffers.flag_bytes.push_back('2');
+          write_unaligned_state(block_buffers.unaligned_bytes, state);
+        }
+      }
+    } else {
+      std::vector<staged_pair_slot_state> states(reads_in_block);
+      std::ifstream input(scratch_path, std::ios::binary);
+      if (input.is_open()) {
+        while (input.peek() != EOF) {
+          staged_stream_record_header header{};
+          input.read(reinterpret_cast<char *>(&header), sizeof(header));
+          if (!input) {
+            throw std::runtime_error("Corruption in stream scratch block '" +
+                                     scratch_path + "'.");
+          }
+          if (header.relative_slot >= reads_in_block) {
+            throw std::runtime_error("Corruption in stream scratch block: "
+                                     "relative slot out of range.");
+          }
+          staged_read_state &state = (header.flags & 0x2) != 0
+                                         ? states[header.relative_slot].read_2
+                                         : states[header.relative_slot].read_1;
+          state.present = true;
+          state.aligned = (header.flags & 0x1) != 0;
+          state.read_length = header.read_length;
+          state.orientation = header.orientation;
+          state.position = header.position;
+          if (state.aligned) {
+            state.noise_codes.assign(header.noise_count, '\0');
+            if (header.noise_count != 0) {
+              input.read(state.noise_codes.data(),
+                         static_cast<std::streamsize>(header.noise_count));
+              state.noise_positions.resize(header.noise_count);
+              input.read(reinterpret_cast<char *>(state.noise_positions.data()),
+                         static_cast<std::streamsize>(header.noise_count *
+                                                      sizeof(uint16_t)));
+            }
+          } else {
+            state.unaligned_bytes.assign(header.read_length, '\0');
+            if (header.read_length != 0) {
+              input.read(state.unaligned_bytes.data(),
+                         static_cast<std::streamsize>(header.read_length));
+            }
+          }
+          if (!input) {
+            throw std::runtime_error("Corruption in stream scratch block '" +
+                                     scratch_path + "'.");
+          }
+        }
+      }
+
+      for (uint32_t slot = 0; slot < reads_in_block; ++slot) {
+        const staged_read_state &read_1 = states[slot].read_1;
+        const staged_read_state &read_2 = states[slot].read_2;
+        if (!read_1.present || !read_2.present) {
+          throw std::runtime_error(
+              "Missing paired-end read state in stream scratch block.");
+        }
+        append_binary(block_buffers.read_length_bytes, read_1.read_length);
+        append_binary(block_buffers.read_length_bytes, read_2.read_length);
+        const int64_t mate_position_delta =
+            static_cast<int64_t>(read_2.position) -
+            static_cast<int64_t>(read_1.position);
+        int read_flag = 2;
+        if (read_1.aligned && read_2.aligned && mate_position_delta >= 0 &&
+            mate_position_delta < 32767) {
+          read_flag = 0;
+        } else if (read_1.aligned && read_2.aligned) {
+          read_flag = 1;
+        } else if (read_1.aligned && !read_2.aligned) {
+          read_flag = 3;
+        } else if (!read_1.aligned && read_2.aligned) {
+          read_flag = 4;
+        }
+
+        block_buffers.flag_bytes.push_back(static_cast<char>('0' + read_flag));
+        if (read_flag == 0) {
+          append_binary(block_buffers.mate_position_bytes,
+                        static_cast<int16_t>(mate_position_delta));
+          block_buffers.mate_orientation_bytes.push_back(
+              read_1.orientation != read_2.orientation ? '0' : '1');
+        }
+        if (read_flag == 0 || read_flag == 1 || read_flag == 3) {
+          write_aligned_position(block_buffers.position_bytes, preserve_order,
+                                 slot == 0, read_1.position, previous_position);
+          write_noise_for_state(block_buffers.noise_bytes,
+                                block_buffers.noise_position_bytes, read_1);
+          block_buffers.orientation_bytes.push_back(read_1.orientation);
+        } else {
+          write_unaligned_state(block_buffers.unaligned_bytes, read_1);
+        }
+
+        if (read_flag == 0 || read_flag == 1 || read_flag == 4) {
+          write_noise_for_state(block_buffers.noise_bytes,
+                                block_buffers.noise_position_bytes, read_2);
+          if (read_flag == 1 || read_flag == 4) {
+            append_binary(block_buffers.position_bytes, read_2.position);
+            block_buffers.orientation_bytes.push_back(read_2.orientation);
+          }
+        } else {
+          write_unaligned_state(block_buffers.unaligned_bytes, read_2);
+        }
+      }
+    }
+
+    block_members[static_cast<size_t>(block_index)] =
+        compress_output_block(block_buffers, paths, block_index, paired_end);
+  }
+
+  std::unordered_map<std::string, std::string> archive_members;
+  for (std::unordered_map<std::string, std::string> &block_output :
+       block_members) {
+    archive_members.insert(std::make_move_iterator(block_output.begin()),
+                           std::make_move_iterator(block_output.end()));
+  }
+  return archive_members;
 }
 
 std::unordered_map<std::string, std::string>
@@ -615,6 +1107,47 @@ reorder_compress_streams(const compression_params &cp,
     archive_members.insert(std::make_move_iterator(block_output.begin()),
                            std::make_move_iterator(block_output.end()));
   }
+  return archive_members;
+}
+
+std::unordered_map<std::string, std::string>
+reorder_compress_streams(const compression_params &cp,
+                         const reordered_stream_artifact &artifact,
+                         const std::string &read_order_entries_path) {
+  std::ifstream input(read_order_entries_path, std::ios::binary);
+  if (!input.is_open()) {
+    throw std::runtime_error("Failed to open read-order stream '" +
+                             read_order_entries_path + "'.");
+  }
+
+  std::vector<uint32_t> read_order_entries(cp.read_info.num_reads);
+  if (!read_order_entries.empty()) {
+    input.read(reinterpret_cast<char *>(read_order_entries.data()),
+               static_cast<std::streamsize>(read_order_entries.size() *
+                                            sizeof(uint32_t)));
+    if (!input) {
+      throw std::runtime_error(
+          "Corruption in read order stream: entry count does not match reads.");
+    }
+  }
+
+  return reorder_compress_streams(cp, artifact, &read_order_entries);
+}
+
+std::unordered_map<std::string, std::string>
+reorder_compress_streams(const compression_params &cp,
+                         const std::string &artifact_root_dir,
+                         const std::string &read_order_entries_path) {
+  const std::string scratch_root_dir =
+      (std::filesystem::path(artifact_root_dir).parent_path() /
+       "stream-rebuild")
+          .string();
+  partition_alignment_stream_records(cp, artifact_root_dir,
+                                     read_order_entries_path, scratch_root_dir);
+  std::unordered_map<std::string, std::string> archive_members =
+      rebuild_stream_blocks_from_scratch(cp, scratch_root_dir);
+  std::error_code cleanup_ec;
+  std::filesystem::remove_all(scratch_root_dir, cleanup_ec);
   return archive_members;
 }
 

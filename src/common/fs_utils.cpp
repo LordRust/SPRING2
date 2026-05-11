@@ -2,6 +2,7 @@
 // extraction, and in-memory member loading.
 
 #include "fs_utils.h"
+#include "io_utils.h"
 #include "progress.h"
 #include <archive.h>
 #include <archive_entry.h>
@@ -19,7 +20,12 @@
 #ifdef _WIN32
 #include <io.h>
 #include <share.h>
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <mach/mach.h>
+#include <sys/sysctl.h>
 #else
+#include <sys/sysinfo.h>
 #include <unistd.h>
 #endif
 
@@ -34,6 +40,16 @@
 namespace spring {
 
 namespace {
+
+bool path_has_gzip_suffix(const std::string &path) {
+  std::string normalized_path = path;
+  for (char &character : normalized_path) {
+    character =
+        static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+  }
+  return normalized_path.size() >= 3 &&
+         normalized_path.substr(normalized_path.size() - 3) == ".gz";
+}
 
 void validate_archive_entry_name(const std::string &entry_name) {
   if (entry_name.empty()) {
@@ -88,6 +104,70 @@ void write_archive_memory_entry(struct archive *archive_writer,
           "Failed to write archive data for '" + entry_path + "'" +
           (message ? ": " + std::string(message) : std::string()));
     }
+  }
+
+  archive_entry_free(entry);
+}
+
+void write_archive_file_entry(struct archive *archive_writer,
+                              const std::string &entry_path,
+                              const std::string &disk_path) {
+  validate_archive_entry_name(entry_path);
+
+  std::error_code file_ec;
+  const uint64_t file_size = std::filesystem::file_size(disk_path, file_ec);
+  if (file_ec) {
+    throw std::runtime_error("Failed to stat archive input '" + disk_path +
+                             "': " + file_ec.message());
+  }
+
+  std::ifstream input(disk_path, std::ios::binary);
+  if (!input.is_open()) {
+    throw std::runtime_error("Failed to open archive input '" + disk_path +
+                             "'.");
+  }
+
+  struct archive_entry *entry = archive_entry_new();
+  if (entry == nullptr) {
+    throw std::runtime_error("Failed to allocate archive entry for: " +
+                             entry_path);
+  }
+
+  archive_entry_set_pathname(entry, entry_path.c_str());
+  archive_entry_set_size(entry, static_cast<la_int64_t>(file_size));
+  archive_entry_set_filetype(entry, AE_IFREG);
+  archive_entry_set_perm(entry, 0644);
+  if (archive_write_header(archive_writer, entry) != ARCHIVE_OK) {
+    const char *message = archive_error_string(archive_writer);
+    archive_entry_free(entry);
+    throw std::runtime_error(
+        "Failed to write archive header for '" + entry_path + "'" +
+        (message ? ": " + std::string(message) : std::string()));
+  }
+
+  std::vector<char> buffer(1 << 20);
+  while (input) {
+    input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+    const std::streamsize bytes_read = input.gcount();
+    if (bytes_read <= 0) {
+      break;
+    }
+
+    const la_ssize_t written = archive_write_data(
+        archive_writer, buffer.data(), static_cast<size_t>(bytes_read));
+    if (written < 0 || written != static_cast<la_ssize_t>(bytes_read)) {
+      const char *message = archive_error_string(archive_writer);
+      archive_entry_free(entry);
+      throw std::runtime_error(
+          "Failed to write archive data for '" + entry_path + "'" +
+          (message ? ": " + std::string(message) : std::string()));
+    }
+  }
+
+  if (!input.eof() && input.fail()) {
+    archive_entry_free(entry);
+    throw std::runtime_error("Failed reading archive input '" + disk_path +
+                             "'.");
   }
 
   archive_entry_free(entry);
@@ -176,23 +256,18 @@ std::string create_tar_archive_from_sources_impl(
         continue;
       }
 
-      std::ifstream input(source.disk_path, std::ios::binary);
-      if (!input.is_open()) {
-        throw std::runtime_error("Failed to open archive input '" +
-                                 source.disk_path + "'.");
-      }
-
-      std::ostringstream content;
-      content << input.rdbuf();
-      if (!input.good() && !input.eof()) {
-        throw std::runtime_error("Failed reading archive input '" +
-                                 source.disk_path + "'.");
-      }
-
-      const std::string bytes = content.str();
-      write_archive_memory_entry(archive_writer, source.archive_path, bytes);
+      write_archive_file_entry(archive_writer, source.archive_path,
+                               source.disk_path);
       archived_file_count++;
-      archived_total_bytes += static_cast<uint64_t>(bytes.size());
+
+      std::error_code file_ec;
+      const uint64_t file_size =
+          std::filesystem::file_size(source.disk_path, file_ec);
+      if (file_ec) {
+        throw std::runtime_error("Failed to stat archive input '" +
+                                 source.disk_path + "': " + file_ec.message());
+      }
+      archived_total_bytes += file_size;
     }
 
     if (archive_write_close(archive_writer) != ARCHIVE_OK) {
@@ -351,6 +426,151 @@ std::string shell_quote(const std::string &value) {
 
 std::string shell_path(const std::string &value) {
   return std::filesystem::path(value).generic_string();
+}
+
+uint64_t detect_available_memory_bytes() noexcept {
+#ifdef _WIN32
+  MEMORYSTATUSEX memory_status{};
+  memory_status.dwLength = sizeof(memory_status);
+  if (GlobalMemoryStatusEx(&memory_status)) {
+    return static_cast<uint64_t>(memory_status.ullAvailPhys);
+  }
+  return 0;
+#elif defined(__linux__)
+  std::ifstream meminfo("/proc/meminfo");
+  if (meminfo.is_open()) {
+    std::string label;
+    uint64_t value_kib = 0;
+    std::string unit;
+    while (meminfo >> label >> value_kib >> unit) {
+      if (label == "MemAvailable:") {
+        return value_kib * 1024ULL;
+      }
+    }
+  }
+
+  struct sysinfo info{};
+  if (sysinfo(&info) == 0) {
+    return static_cast<uint64_t>(info.freeram) *
+           static_cast<uint64_t>(info.mem_unit);
+  }
+  return 0;
+#elif defined(__APPLE__)
+  mach_port_t host_port = mach_host_self();
+  vm_size_t page_size = 0;
+  if (host_page_size(host_port, &page_size) != KERN_SUCCESS) {
+    return 0;
+  }
+
+  vm_statistics64_data_t vm_stats{};
+  mach_msg_type_number_t host_size = HOST_VM_INFO64_COUNT;
+  if (host_statistics64(host_port, HOST_VM_INFO64,
+                        reinterpret_cast<host_info64_t>(&vm_stats),
+                        &host_size) != KERN_SUCCESS) {
+    return 0;
+  }
+
+  const uint64_t available_pages =
+      static_cast<uint64_t>(vm_stats.free_count) +
+      static_cast<uint64_t>(vm_stats.inactive_count);
+  return available_pages * static_cast<uint64_t>(page_size);
+#else
+  const long available_pages = sysconf(_SC_AVPHYS_PAGES);
+  const long page_size = sysconf(_SC_PAGESIZE);
+  if (available_pages > 0 && page_size > 0) {
+    return static_cast<uint64_t>(available_pages) *
+           static_cast<uint64_t>(page_size);
+  }
+  return 0;
+#endif
+}
+
+uint64_t estimate_input_file_size_bytes(const std::string &input_path) {
+  std::error_code file_ec;
+  const uint64_t disk_size = std::filesystem::file_size(input_path, file_ec);
+  if (file_ec) {
+    throw std::runtime_error("Failed to stat input file '" + input_path +
+                             "': " + file_ec.message());
+  }
+
+  if (!path_has_gzip_suffix(input_path)) {
+    return disk_size;
+  }
+
+  bool is_gzipped = false;
+  uint8_t flg = 0;
+  uint32_t mtime = 0;
+  uint8_t xfl = 0;
+  uint8_t os = 0;
+  std::string name;
+  bool is_bgzf = false;
+  uint16_t bgzf_block_size = 0;
+  uint64_t uncompressed_size = 0;
+  uint64_t compressed_size = 0;
+  uint32_t member_count = 0;
+  extract_gzip_detailed_info(input_path, is_gzipped, flg, mtime, xfl, os, name,
+                             is_bgzf, bgzf_block_size, uncompressed_size,
+                             compressed_size, member_count);
+
+  if (is_gzipped) {
+    return uncompressed_size;
+  }
+
+  return disk_size;
+}
+
+uint64_t
+estimate_total_input_size_bytes(const std::vector<std::string> &input_paths) {
+  uint64_t total_size = 0;
+  for (const std::string &input_path : input_paths) {
+    total_size += estimate_input_file_size_bytes(input_path);
+  }
+  return total_size;
+}
+
+std::string resolve_archive_entry_disk_path(const std::string &root_dir,
+                                            const std::string &entry_name) {
+  const std::filesystem::path root_path(root_dir);
+  std::error_code create_ec;
+  std::filesystem::create_directories(root_path, create_ec);
+  if (create_ec) {
+    throw std::runtime_error("Failed to create archive work directory '" +
+                             root_dir + "': " + create_ec.message());
+  }
+
+  const std::filesystem::path canonical_root =
+      std::filesystem::weakly_canonical(root_path);
+  return validated_archive_entry_destination(canonical_root, entry_name.c_str())
+      .string();
+}
+
+void write_archive_member_file(const std::string &root_dir,
+                               const std::string &entry_name,
+                               const std::string &contents) {
+  const std::filesystem::path output_path =
+      resolve_archive_entry_disk_path(root_dir, entry_name);
+  std::error_code create_ec;
+  std::filesystem::create_directories(output_path.parent_path(), create_ec);
+  if (create_ec) {
+    throw std::runtime_error("Failed to create archive member directory for '" +
+                             output_path.string() +
+                             "': " + create_ec.message());
+  }
+
+  std::ofstream output(output_path, std::ios::binary | std::ios::trunc);
+  if (!output.is_open()) {
+    throw std::runtime_error("Failed to open archive work file '" +
+                             output_path.string() + "'.");
+  }
+
+  if (!contents.empty()) {
+    output.write(contents.data(),
+                 static_cast<std::streamsize>(contents.size()));
+    if (!output) {
+      throw std::runtime_error("Failed to write archive work file '" +
+                               output_path.string() + "'.");
+    }
+  }
 }
 
 bool safe_remove_file(const std::string &path) noexcept {

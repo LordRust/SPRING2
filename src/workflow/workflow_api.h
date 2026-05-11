@@ -30,7 +30,7 @@ void compress(const string_list &input_paths, const string_list &output_paths,
               const std::string &i2_path = std::string(),
               const std::string &assay_type = "auto",
               const std::string &cb_source_path = std::string(),
-              uint32_t cb_len = 16);
+              uint32_t cb_len = 16, double memory_cap_gb = 0.0);
 
 void decompress(const string_list &input_paths, const string_list &output_paths,
                 const int num_thr, const int compression_level,

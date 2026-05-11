@@ -542,7 +542,7 @@ void run_requested_mode(const command_line_options &options) {
         options.i2_path, options.assay,
         options
             .i1_path, // cb_source_path: use I1 lane for SC barcode extraction
-        options.cb_len);
+        options.cb_len, options.memory_cap_gb);
     return;
   }
 

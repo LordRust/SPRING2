@@ -29,6 +29,14 @@ struct reordered_stream_artifact {
 std::unordered_map<std::string, std::string> reorder_compress_streams(
     const compression_params &cp, const reordered_stream_artifact &artifact,
     const std::vector<uint32_t> *read_order_override = nullptr);
+std::unordered_map<std::string, std::string>
+reorder_compress_streams(const compression_params &cp,
+                         const reordered_stream_artifact &artifact,
+                         const std::string &read_order_entries_path);
+std::unordered_map<std::string, std::string>
+reorder_compress_streams(const compression_params &cp,
+                         const std::string &artifact_root_dir,
+                         const std::string &read_order_entries_path);
 
 } // namespace spring
 
