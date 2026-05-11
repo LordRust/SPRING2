@@ -77,7 +77,7 @@ jobs:
                     (dnf config-manager --set-enabled powertools || \
                       dnf config-manager --set-enabled crb) && \
                     dnf install -y gcc-toolset-12-gcc-c++ libomp-devel \
-                      python39 python39-pip wget \
+                      python39 python39-pip wget appstream \
                       fuse-libs file && \
                     source /opt/rh/gcc-toolset-12/enable && \
                     python3.9 -m venv .cmake-venv && \
@@ -103,20 +103,19 @@ jobs:
                     URL=\"\${URL}linuxdeploy-\$ARCH_SUFFIX.AppImage\" && \
                     wget \"\$URL\" -O linuxdeploy && \
                     chmod +x linuxdeploy && \
-                    echo '[Desktop Entry]' > logo.desktop && \
-                    echo 'Type=Application' >> logo.desktop && \
-                    echo 'Name=SPRING2' >> logo.desktop && \
-                    echo 'Exec=spring2' >> logo.desktop && \
-                    echo 'Icon=logo' >> logo.desktop && \
-                    echo 'Categories=Science;Biology;' >> logo.desktop && \
-                    echo 'Terminal=true' >> logo.desktop && \
                     export EXTRA_QT_PLUGINS= && \
-                    cp docs/assets/icons/logo.png logo.png && \
+                    mkdir -p AppDir/usr/share/metainfo && \
+                    mkdir -p AppDir/usr/share/icons/hicolor/512x512/apps && \
+                    cp packaging/linux/spring2.appdata.xml \
+                      AppDir/usr/share/metainfo/spring2.appdata.xml && \
+                    cp docs/assets/icons/logo.png \
+                      AppDir/usr/share/icons/hicolor/512x512/apps/spring2.png && \
                     ./linuxdeploy --appimage-extract-and-run \
                       --appdir AppDir \
                       --executable dist/bin/spring2 \
-                      --desktop-file logo.desktop \
-                      --icon-file logo.png \
+                      --desktop-file packaging/linux/spring2.desktop \
+                      --icon-file \
+                        AppDir/usr/share/icons/hicolor/512x512/apps/spring2.png \
                       --output appimage \
                       --verbosity=2 && \
                     mv SPRING2-*.AppImage spring2-linux-${{ matrix.arch }}.AppImage
@@ -380,6 +379,15 @@ jobs:
                       dist/bin/spring2
                   retention-days: 1
 
+            - name: Upload Windows binary for installer packaging
+              if: matrix.name == 'windows'
+              uses: actions/upload-artifact@v7
+              with:
+                  name: spring2-windows-${{ matrix.arch }}-binary
+                  path: |
+                      dist/bin/spring2.exe
+                  retention-days: 1
+
             - name: Upload Artifact to Release
               uses: softprops/action-gh-release@v2
               if: startsWith(github.ref, 'refs/tags/')
@@ -388,6 +396,122 @@ jobs:
                       release/${{ matrix.artifact_name }}
                       release/*.AppImage
                       release/*.tar.gz
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    windows-installers:
+        name: Create Windows Installers
+        needs: build
+        if: always() && needs.build.result != 'cancelled'
+        runs-on: windows-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+
+            - name: Download x86_64 binary
+              uses: actions/download-artifact@v8
+              with:
+                  name: spring2-windows-x86_64-binary
+                  path: windows-bin/x86_64
+
+            - name: Download arm64 binary
+              uses: actions/download-artifact@v8
+              with:
+                  name: spring2-windows-arm64-binary
+                  path: windows-bin/arm64
+
+            - name: Install Inno Setup
+              shell: powershell
+              run: |
+                  choco install innosetup --no-progress -y
+                  $iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
+                  if (-not $iscc) {
+                    throw 'Unable to locate Inno Setup Compiler (iscc.exe) after installation'
+                  }
+
+            - name: Resolve release version
+              shell: powershell
+              run: |
+                  $versionHeader = Get-Content src/common/version.h -Raw
+                  if ($versionHeader -notmatch 'VERSION\[\]\s*=\s*"([^"]+)"') {
+                    throw 'Unable to extract SPRING2 version from src/common/version.h'
+                  }
+
+                  $version = $Matches[1]
+                  if ($version -match '^(\d+)\.(\d+)\.(\d+)-rc\.(\d+)$') {
+                    $numericVersion = "$($Matches[1]).$($Matches[2]).$($Matches[3]).$($Matches[4])"
+                  } elseif ($version -match '^(\d+)\.(\d+)\.(\d+)$') {
+                    $numericVersion = "$($Matches[1]).$($Matches[2]).$($Matches[3]).0"
+                  } else {
+                    throw "Unsupported SPRING2 version format: $version"
+                  }
+
+                  Add-Content -Path $env:GITHUB_ENV -Value "SPRING_VERSION=$version"
+                  Add-Content -Path $env:GITHUB_ENV -Value "SPRING_WINDOWS_NUMERIC_VERSION=$numericVersion"
+
+            - name: Optionally sign Windows binaries
+              shell: powershell
+              env:
+                  WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
+                  WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
+              run: |
+                  .\packaging\windows\sign-artifact.ps1 `
+                    -FilePath @(
+                      "$env:GITHUB_WORKSPACE\windows-bin\x86_64\spring2.exe",
+                      "$env:GITHUB_WORKSPACE\windows-bin\arm64\spring2.exe"
+                    )
+
+            - name: Build x86_64 installer
+              shell: powershell
+              run: |
+                  New-Item -ItemType Directory -Force -Path release | Out-Null
+                  $iscc = (Get-Command iscc.exe -ErrorAction Stop).Source
+                  & $iscc `
+                    "/DRepositoryRoot=$env:GITHUB_WORKSPACE" `
+                    "/DBinarySourceDir=$env:GITHUB_WORKSPACE\windows-bin\x86_64" `
+                    "/DOutputDir=$env:GITHUB_WORKSPACE\release" `
+                    "/DAppVersion=$env:SPRING_VERSION" `
+                    "/DAppNumericVersion=$env:SPRING_WINDOWS_NUMERIC_VERSION" `
+                    "/DBuildArch=x86_64" `
+                    "/DArchitecturesAllowed=x64compatible" `
+                    "/DArchitecturesInstallIn64BitMode=x64compatible" `
+                    "$env:GITHUB_WORKSPACE\packaging\windows\spring2.iss"
+                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+            - name: Build arm64 installer
+              shell: powershell
+              run: |
+                  $iscc = (Get-Command iscc.exe -ErrorAction Stop).Source
+                  & $iscc `
+                    "/DRepositoryRoot=$env:GITHUB_WORKSPACE" `
+                    "/DBinarySourceDir=$env:GITHUB_WORKSPACE\windows-bin\arm64" `
+                    "/DOutputDir=$env:GITHUB_WORKSPACE\release" `
+                    "/DAppVersion=$env:SPRING_VERSION" `
+                    "/DAppNumericVersion=$env:SPRING_WINDOWS_NUMERIC_VERSION" `
+                    "/DBuildArch=arm64" `
+                    "/DArchitecturesAllowed=arm64" `
+                    "/DArchitecturesInstallIn64BitMode=arm64" `
+                    "$env:GITHUB_WORKSPACE\packaging\windows\spring2.iss"
+                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+            - name: Optionally sign Windows installers
+              shell: powershell
+              env:
+                  WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
+                  WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
+              run: |
+                  .\packaging\windows\sign-artifact.ps1 `
+                    -FilePath @(
+                      "$env:GITHUB_WORKSPACE\release\spring2-windows-x86_64-setup.exe",
+                      "$env:GITHUB_WORKSPACE\release\spring2-windows-arm64-setup.exe"
+                    )
+
+            - name: Upload Artifact to Release
+              uses: softprops/action-gh-release@v2
+              if: startsWith(github.ref, 'refs/tags/')
+              with:
+                  files: |
+                      release/spring2-windows-*-setup.exe
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -419,6 +543,27 @@ jobs:
                     -output universal-bin/spring2
                   chmod +x universal-bin/spring2
 
+            - name: Resolve macOS package version
+              run: |
+                  SPRING_VERSION=$(python3 - <<'PY'
+                  import pathlib, re
+                  text = pathlib.Path('src/common/version.h').read_text(encoding='utf-8')
+                  match = re.search(r'VERSION\[\]\s*=\s*"([^"]+)"', text)
+                  if not match:
+                    raise SystemExit('Unable to extract SPRING2 version from src/common/version.h')
+                  version = match.group(1)
+                  rc_match = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)-rc\.(\d+)', version)
+                  if rc_match:
+                    print('.'.join(rc_match.groups()))
+                  else:
+                    stable_match = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)', version)
+                    if not stable_match:
+                      raise SystemExit(f'Unsupported SPRING2 version format: {version}')
+                    print(f'{version}.0')
+                  PY
+                  )
+                  echo "SPRING_MACOS_PKG_VERSION=$SPRING_VERSION" >> "$GITHUB_ENV"
+
             - name: Generate macOS Icon
               run: |
                   mkdir spring2.iconset
@@ -442,19 +587,36 @@ jobs:
                   brew install create-dmg
                   mkdir -p dmg-root
                   cp universal-bin/spring2 dmg-root/
-                  ln -s /usr/local/bin dmg-root/bin
+                  cp packaging/macos/README.txt dmg-root/
+                  cp packaging/macos/install-spring2.command dmg-root/
+                  chmod +x dmg-root/spring2 dmg-root/install-spring2.command
 
                   create-dmg \
                     --volname "SPRING2" \
                     --volicon "spring2.icns" \
                     --window-pos 200 120 \
-                    --window-size 600 300 \
+                    --window-size 760 320 \
                     --icon-size 100 \
-                    --icon "spring2" 200 150 \
-                    --icon "bin" 400 150 \
+                    --icon "spring2" 180 150 \
+                    --icon "install-spring2.command" 380 150 \
+                    --icon "README.txt" 580 150 \
                     --hide-extension "spring2" \
+                    --hide-extension "install-spring2.command" \
                     "spring2-macos-universal.dmg" \
                     "dmg-root/"
+
+            - name: Create PKG Installer
+              run: |
+                  mkdir -p pkg-root/usr/local/bin
+                  cp universal-bin/spring2 pkg-root/usr/local/bin/spring2
+                  chmod +x pkg-root/usr/local/bin/spring2
+
+                  pkgbuild \
+                    --root pkg-root \
+                    --identifier io.github.thisisamirv.spring2 \
+                    --version "$SPRING_MACOS_PKG_VERSION" \
+                    --install-location / \
+                    "spring2-macos-universal.pkg"
 
             - name: Upload Artifact to Release
               uses: softprops/action-gh-release@v2
@@ -462,5 +624,6 @@ jobs:
               with:
                   files: |
                       spring2-macos-universal.dmg
+                      spring2-macos-universal.pkg
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

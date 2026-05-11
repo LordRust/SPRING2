@@ -53,6 +53,8 @@ SPRING2 is built and validated on:
 
 The easiest way to use SPRING2 is to download the pre-built binaries from the **[Releases](https://github.com/thisisamirv/SPRING/releases)** page.
 
+Windows releases include both portable `spring2.exe` binaries and architecture-specific Inno Setup installers with embedded version, icon, and publisher metadata.
+
 ## Running SPRING
 
 Current command-line help:

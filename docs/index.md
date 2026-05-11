@@ -7,6 +7,7 @@ Welcome to the published documentation for SPRING2.
 Start here if you want to build, run, or inspect archives created by SPRING2:
 
 - [User Docs Overview](user/README.md)
+- [Installation Guide](user/INSTALLING.md)
 - [Building Guide](user/BUILDING.md)
 - [Usage Guide](user/USAGE.md)
 - [End-to-End Examples](user/EXAMPLES.md)

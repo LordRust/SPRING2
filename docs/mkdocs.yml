@@ -62,6 +62,7 @@ nav:
   - Home: index.md
   - User Docs:
       - Overview: user/README.md
+      - Installation: user/INSTALLING.md
       - Building: user/BUILDING.md
       - Platform Build Commands: user/BUILDING_PLATFORMS.md
       - Usage: user/USAGE.md

@@ -8,6 +8,13 @@
 
 - Added memory-aware compression-path planning helpers that detect available system memory, estimate total input size including `.gz` inputs by inferred uncompressed size, and honor the user-provided `-m` memory cap when choosing between in-memory and disk-backed compression.
 - Added a regression test covering compression storage planning so the memory-path versus disk-path decision now stays pinned to the required peak-memory threshold instead of only raw input bytes.
+- Added Windows release packaging with architecture-specific Inno Setup installers, embedded executable and installer version metadata, publisher details, release icon assets, and optional code-signing hooks for GitHub Actions.
+- Added Linux release packaging metadata with repo-owned AppImage desktop and AppStream files so release builds ship cleaner, more standards-compliant Linux application metadata.
+- Added macOS release packaging assets, DMG staging, and a native `.pkg` installer so universal macOS releases now include install guidance, a helper install script, and a no-terminal installer path alongside the `spring2` binary.
+- Added an optional Windows installer task that appends the SPRING2 install directory to the system PATH and removes it again on uninstall.
+- Added Windows installer shortcuts: Start Menu launch entry by default and an optional desktop shortcut task for `spring2.exe`.
+- Added release-engineering documentation covering optional Windows code-signing setup and the available Windows installer tasks.
+- Added installation guides to the docs.
 
 ### Changed
 

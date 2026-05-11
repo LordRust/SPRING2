@@ -5,6 +5,8 @@ inspecting SPRING2 archives.
 
 ## Start Here
 
+- [Installation Guide](INSTALLING.md): prebuilt binaries, installers, and
+  platform-specific install notes.
 - [Building Overview](BUILDING.md): prerequisites, build strategy, and links to
   platform-specific build commands.
 - [Usage Overview](USAGE.md): quick-start examples and a map of the runtime

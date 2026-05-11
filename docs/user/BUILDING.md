@@ -73,5 +73,5 @@ If you want a compilation database for editor integration, build once and use
 
 ## Installation Alternative
 
-If you do not need to build from source, prefer the prebuilt binaries from the
-project releases page referenced in the top-level README.
+If you do not need to build from source, prefer the prebuilt binaries and
+installers documented in [Installing SPRING2](INSTALLING.md).
