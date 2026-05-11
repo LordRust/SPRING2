@@ -32,13 +32,13 @@ AssayScoreBreakdown score_atac_assay(const AssayDetectionStats &stats,
       static_cast<double>(stats.atac_adapters_found) / stats.total_reads;
   if (atac_adapter_frac > 0.05) {
     result.score += 90.0;
-    result.evidence.push_back("Tn5 adapters (>5%)");
+    result.evidence.emplace_back("Tn5 adapters (>5%)");
   } else if (atac_adapter_frac > 0.01) {
     result.score += 70.0;
-    result.evidence.push_back("Tn5 adapters");
+    result.evidence.emplace_back("Tn5 adapters");
   } else if (atac_adapter_frac > 0.003) {
     result.score += 35.0;
-    result.evidence.push_back("Tn5 adapters (weak)");
+    result.evidence.emplace_back("Tn5 adapters (weak)");
   }
 
   if (reference_loaded && stats.total_sampled_kmers > 0) {
@@ -46,7 +46,7 @@ AssayScoreBreakdown score_atac_assay(const AssayDetectionStats &stats,
         static_cast<double>(stats.atac_hits) / (stats.intron_hits + 1);
     if (atac_ref_score > 5.0) {
       result.score += 50.0;
-      result.evidence.push_back("promoter alignment");
+      result.evidence.emplace_back("promoter alignment");
     } else if (atac_ref_score > 2.0) {
       result.score += 25.0;
     }

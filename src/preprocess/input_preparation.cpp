@@ -850,10 +850,15 @@ preprocess(const std::string &infile_1, const std::string &infile_2,
         cp.encoding.cb_prefix_len = cp.encoding.cb_len;
       }
 
-      SPRING_LOG_DEBUG(
-          "Preprocess step: stream=" + std::to_string(stream_index + 1) +
-          ", reads_in_step=" + std::to_string(reads_in_step) +
-          ", blocks_done=" + std::to_string(num_blocks_done));
+        std::string preprocess_step_log;
+        preprocess_step_log.reserve(96);
+        preprocess_step_log.append("Preprocess step: stream=");
+        preprocess_step_log.append(std::to_string(stream_index + 1));
+        preprocess_step_log.append(", reads_in_step=");
+        preprocess_step_log.append(std::to_string(reads_in_step));
+        preprocess_step_log.append(", blocks_done=");
+        preprocess_step_log.append(std::to_string(num_blocks_done));
+        SPRING_LOG_DEBUG(preprocess_step_log);
       if (reads_in_step < num_reads_per_step)
         done[stream_index] = true;
       if (reads_in_step == 0)

@@ -28,7 +28,7 @@ jobs:
 
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Ensure vendored tools and scripts are executable on Unix
               if: runner.os != 'Windows'
@@ -283,7 +283,7 @@ jobs:
 
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Ensure vendored tools are executable
               if: matrix.name != 'Windows arm64'
@@ -291,21 +291,6 @@ jobs:
               run: |
                   chmod +x tools/host/ninja/linux/ninja tools/host/ninja/linux-aarch64/ninja tools/host/ninja/mac/ninja
                   chmod +x tools/host/nasm/linux/nasm tools/host/nasm/macosx/nasm
-
-            - name: Install Linux arm64 dependencies
-              if: matrix.name == 'Linux arm64'
-              shell: bash
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install -y \
-                    build-essential \
-                    ccache \
-                    libomp-dev \
-                    lld \
-                    mold \
-                    python3 \
-                    python3-pip \
-                    python3-venv
 
             - name: Install macOS arm64 dependencies
               if: matrix.name == 'macOS arm64'
@@ -316,7 +301,7 @@ jobs:
                   echo "MACOS_LIBOMP_PREFIX=$(brew --prefix libomp)" >> "$GITHUB_ENV"
 
             - name: Install CMake
-              if: matrix.name != 'Windows arm64'
+              if: matrix.name == 'macOS arm64'
               shell: bash
               run: |
                   CMAKE_VENV="$RUNNER_TEMP/cmake-venv"
@@ -399,19 +384,31 @@ jobs:
                   Write-Host "Using vendored Ninja executable: $vendoredNinja"
                   Write-Host "Using vendored NASM executable: $vendoredNasm"
 
-            - name: Configure Linux arm64
+            - name: Build Linux arm64 in release-like Docker environment
               if: matrix.name == 'Linux arm64'
               shell: bash
-              env:
-                  CC: gcc
-                  CXX: g++
               run: |
-                  cmake -S . -B out/build-${{ matrix.os }} -G Ninja \
-                    -DCMAKE_MAKE_PROGRAM="$GITHUB_WORKSPACE/${{ matrix.ninja_path }}" \
-                    -DLIBRAPIDARCHIVE_WITH_ISAL=OFF \
-                    -DCMAKE_C_FLAGS='-march=armv8-a+crc' \
-                    -DCMAKE_CXX_FLAGS='-march=armv8-a+crc' \
-                    -DSPRING_ENABLE_IPO=OFF
+                  docker run --rm --platform linux/arm64 \
+                    -v "$PWD":/work -w /work arm64v8/almalinux:8 /bin/bash -c "
+                    dnf install -y epel-release dnf-plugins-core && \
+                    (dnf config-manager --set-enabled powertools || \
+                      dnf config-manager --set-enabled crb) && \
+                    dnf install -y gcc-toolset-12-gcc-c++ libomp-devel \
+                      python39 python39-pip && \
+                    source /opt/rh/gcc-toolset-12/enable && \
+                    python3.9 -m venv .cmake-venv && \
+                    . .cmake-venv/bin/activate && \
+                    chmod +x /work/tools/host/ninja/linux-aarch64/ninja \
+                      /work/tools/host/nasm/linux/nasm && \
+                    python3.9 -m pip install 'cmake==4.2.0' && \
+                    cmake -S . -B out/build-${{ matrix.os }} -G Ninja \
+                      -DCMAKE_MAKE_PROGRAM=/work/${{ matrix.ninja_path }} \
+                      -DLIBRAPIDARCHIVE_WITH_ISAL=OFF \
+                      -DCMAKE_C_FLAGS='-march=armv8-a+crc' \
+                      -DCMAKE_CXX_FLAGS='-march=armv8-a+crc' \
+                      -DSPRING_ENABLE_IPO=OFF && \
+                    cmake --build out/build-${{ matrix.os }} --parallel
+                  "
 
             - name: Configure macOS arm64
               if: matrix.name == 'macOS arm64'
@@ -436,7 +433,7 @@ jobs:
                   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
             - name: Build additional architecture target
-              if: matrix.name != 'Windows arm64'
+              if: matrix.name == 'macOS arm64'
               shell: bash
               run: |
                   cmake --build out/build-${{ matrix.os }} --parallel
@@ -475,7 +472,7 @@ jobs:
 
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Ensure vendored tools are executable on Unix
               if: runner.os != 'Windows'
@@ -746,7 +743,7 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
-                sanitizer: [ asan_ubsan, tsan ]
+                sanitizer: [asan_ubsan, tsan]
                 include:
                     - sanitizer: asan_ubsan
                       build_dir: out/build-asan
@@ -757,13 +754,14 @@ jobs:
                       build_dir: out/build-tsan
                       san_flags: "-g -O1 -fno-omit-frame-pointer -fsanitize=thread"
                       ld_flags: "-fsanitize=thread"
-                      options: "TSAN_OPTIONS=halt_on_error=1:suppressions=${{ github.workspace
+                      options:
+                          "TSAN_OPTIONS=halt_on_error=1:suppressions=${{ github.workspace
                           }}/tests/support/tsan.supp"
         env:
             BUILD_DIR: ${{ matrix.build_dir }}
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Ensure vendored tools are executable
               run: |
@@ -806,7 +804,7 @@ jobs:
 
             - name: Upload logs on failure
               if: failure()
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v7
               with:
                   name: ${{ matrix.sanitizer }}-build-artifacts
                   path: |

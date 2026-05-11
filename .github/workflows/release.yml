@@ -3,7 +3,7 @@ name: Release
 
 "on":
     release:
-        types: [ published ]
+        types: [published]
     workflow_dispatch:
 
 permissions:
@@ -44,7 +44,7 @@ jobs:
 
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Ensure vendored tools are executable on Unix
               if: matrix.name != 'windows'
@@ -373,7 +373,7 @@ jobs:
 
             - name: Upload binary for universalizing
               if: matrix.name == 'macos'
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v7
               with:
                   name: ${{ matrix.artifact_name }}
                   path: |
@@ -398,16 +398,16 @@ jobs:
         runs-on: macos-latest
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Download arm64 binaries
-              uses: actions/download-artifact@v4
+              uses: actions/download-artifact@v8
               with:
                   name: spring2-macos-arm64
                   path: bin-arm64
 
             - name: Download x86_64 binaries
-              uses: actions/download-artifact@v4
+              uses: actions/download-artifact@v8
               with:
                   name: spring2-macos-x86_64
                   path: bin-x86_64

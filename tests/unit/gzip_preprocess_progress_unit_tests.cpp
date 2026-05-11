@@ -57,11 +57,14 @@ void write_gzip_fastq(const std::filesystem::path &path, int read_count) {
   REQUIRE(output.is_open());
 
   std::string fastq;
+  fastq.reserve(static_cast<size_t>(read_count) * 32);
   for (int i = 0; i < read_count; ++i) {
-    fastq += "@read_" + std::to_string(i) + "\n";
-    fastq += "ACGTACGT\n";
-    fastq += "+\n";
-    fastq += "IIIIIIII\n";
+    fastq.append("@read_");
+    fastq.append(std::to_string(i));
+    fastq.push_back('\n');
+    fastq.append("ACGTACGT\n");
+    fastq.append("+\n");
+    fastq.append("IIIIIIII\n");
   }
 
   output.write(fastq.data(), static_cast<std::streamsize>(fastq.size()));

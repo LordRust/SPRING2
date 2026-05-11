@@ -25,7 +25,6 @@
 #include <sstream>
 #include <system_error>
 
-
 namespace spring {
 
 namespace {
@@ -369,7 +368,7 @@ void compress_standard(const string_list &input_paths,
                           standard_work_dir.string(), archive_path));
   };
   auto stage_archive_members =
-      [&](std::unordered_map<std::string, std::string> archive_members) {
+      [&](const std::unordered_map<std::string, std::string> &archive_members) {
         for (const auto &[archive_path, contents] : archive_members) {
           stage_archive_member(archive_path, contents);
         }
@@ -623,7 +622,7 @@ void compress_standard(const string_list &input_paths,
 
     std::unordered_map<std::string, std::string> archive_members;
     if (use_disk_workspace) {
-      stage_archive_members(std::move(preprocess_output.archive_members));
+      stage_archive_members(preprocess_output.archive_members);
     } else {
       archive_members = std::move(preprocess_output.archive_members);
     }
@@ -711,7 +710,7 @@ void compress_standard(const string_list &input_paths,
                             post_encode_side_streams,
                             reordered_streams_artifact.read_order_entries, cp);
               if (use_disk_workspace) {
-                stage_archive_members(std::move(quality_id_members));
+                stage_archive_members(quality_id_members);
               } else {
                 merge_archive_members(archive_members,
                                       std::move(quality_id_members));

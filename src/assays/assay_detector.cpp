@@ -413,7 +413,7 @@ AssayDetector::evaluate_stages(const AssayDetectionStats &stats,
     base_assay = "dna";
     confidence_level = "low";
     evidence.clear();
-    evidence.push_back("default");
+    evidence.emplace_back("default");
   } else if (bisulfite_score == max_score && bisulfite_score >= 20.0) {
     base_assay = "bisulfite";
     confidence_level = (bisulfite_score >= 70.0) ? "high" : "medium";
@@ -429,7 +429,7 @@ AssayDetector::evaluate_stages(const AssayDetectionStats &stats,
   } else {
     base_assay = "dna";
     confidence_level = "low";
-    evidence.push_back("ambiguous signals");
+    evidence.emplace_back("ambiguous signals");
   }
 
   SingleCellDetectionEvidence sc_layout =

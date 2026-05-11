@@ -22,7 +22,7 @@ detect_sc_atac_layout(const AssayDetectionStats &stats,
   result.is_single_cell = explicit_sc_layout;
 
   if (explicit_sc_layout) {
-    result.evidence.push_back("explicit lanes");
+    result.evidence.emplace_back("explicit lanes");
     result.indicator_count++;
   }
 
@@ -35,7 +35,7 @@ detect_sc_atac_layout(const AssayDetectionStats &stats,
   if (cb_tag_frac > 0.5) {
     result.is_single_cell = true;
     result.indicator_count++;
-    result.evidence.push_back("CB tags");
+    result.evidence.emplace_back("CB tags");
   }
 
   const double umi_tag_frac =
@@ -43,7 +43,7 @@ detect_sc_atac_layout(const AssayDetectionStats &stats,
   if (umi_tag_frac > 0.5) {
     result.is_single_cell = true;
     result.indicator_count++;
-    result.evidence.push_back("UMI tags");
+    result.evidence.emplace_back("UMI tags");
   }
 
   if (!stats.r1_lengths.empty() && !stats.r2_lengths.empty()) {
@@ -59,7 +59,7 @@ detect_sc_atac_layout(const AssayDetectionStats &stats,
     if (med_r1 <= 45 && (med_r2 - med_r1) >= 30) {
       result.is_single_cell = true;
       result.indicator_count++;
-      result.evidence.push_back("read length asymmetry");
+      result.evidence.emplace_back("read length asymmetry");
     }
   }
 

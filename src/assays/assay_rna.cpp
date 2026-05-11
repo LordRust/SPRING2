@@ -27,10 +27,10 @@ AssayScoreBreakdown score_rna_assay(const AssayDetectionStats &stats,
   if (!suppress_poly_a_signal) {
     if (poly_a_frac > 0.10) {
       result.score += 80.0;
-      result.evidence.push_back("poly-A/T tails (>10%)");
+      result.evidence.emplace_back("poly-A/T tails (>10%)");
     } else if (poly_a_frac > 0.03) {
       result.score += 60.0;
-      result.evidence.push_back("poly-A/T tails");
+      result.evidence.emplace_back("poly-A/T tails");
     }
   }
 
@@ -39,7 +39,7 @@ AssayScoreBreakdown score_rna_assay(const AssayDetectionStats &stats,
         static_cast<double>(stats.rna_hits) / (stats.intron_hits + 1);
     if (rna_ref_score > 10.0) {
       result.score += 60.0;
-      result.evidence.push_back("exon alignment");
+      result.evidence.emplace_back("exon alignment");
     } else if (rna_ref_score > 5.0) {
       result.score += 30.0;
     }
