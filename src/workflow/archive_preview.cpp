@@ -14,8 +14,19 @@
 #include "fs_utils.h"
 #include "params.h"
 #include "workflow_api.h"
+#include "workflow_internal.h"
 
 namespace spring {
+
+namespace {
+
+std::string preview_archive_version(const compression_params &cp) {
+  return cp.read_info.compressor_version.empty()
+             ? "1.0.0-rc.1"
+             : cp.read_info.compressor_version;
+}
+
+} // namespace
 
 // Helper function to print gzip compression info for a single file
 void print_gzip_compression_info(int idx, const std::string &filename,
@@ -97,13 +108,13 @@ void preview_single(const std::string &archive_path, bool audit_only) {
   if (!in.good()) {
     throw std::runtime_error("Could not parse cp.bin from the archive.");
   }
+  const archive_decompression_plan decompression_plan =
+      build_archive_decompression_plan(cp);
 
   std::cout << "SPRING2 Archive Metadata Preview:\n";
   std::cout << "--------------------------------\n";
-  if (!cp.read_info.compressor_version.empty()) {
-    std::cout << "Compressor Version: " << cp.read_info.compressor_version
-              << "\n";
-  }
+  (void)decompression_plan;
+  std::cout << "Archive Version:   " << preview_archive_version(cp) << "\n";
   std::cout << "Original Input 1:  " << cp.read_info.input_filename_1 << "\n";
   if (cp.encoding.paired_end) {
     std::cout << "Original Input 2:  " << cp.read_info.input_filename_2 << "\n";
@@ -267,6 +278,8 @@ void preview(const std::string &archive_path, bool audit_only) {
     if (!in_reads.good()) {
       throw std::runtime_error("Could not parse cp.bin in reads archive.");
     }
+    const archive_decompression_plan reads_plan =
+        build_archive_decompression_plan(cp_reads);
 
     // Read metadata from R3 archive if present
     compression_params cp_r3{};
@@ -299,10 +312,9 @@ void preview(const std::string &archive_path, bool audit_only) {
     // Display unified metadata
     std::cout << "\nSPRING2 Archive Metadata Preview:\n";
     std::cout << "--------------------------------\n";
-    if (!cp_reads.read_info.compressor_version.empty()) {
-      std::cout << "Compressor Version: "
-                << cp_reads.read_info.compressor_version << "\n";
-    }
+    (void)reads_plan;
+    std::cout << "Archive Version:   " << preview_archive_version(cp_reads)
+              << "\n";
     if (!cp_reads.read_info.note.empty()) {
       std::cout << "Note:              " << cp_reads.read_info.note << "\n";
     }

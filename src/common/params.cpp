@@ -3,7 +3,9 @@
 
 #include "params.h"
 #include "core_utils.h"
+
 #include <iostream>
+#include <stdexcept>
 
 namespace spring {
 
@@ -39,6 +41,8 @@ std::string read_string(std::istream &in) {
 
 namespace {
 
+constexpr char kRc1ArchiveVersion[] = "1.0.0-rc.1";
+
 void apply_legacy_stream_metadata(compression_params &cp) {
   cp.encoding.use_crlf_by_stream[0] = cp.encoding.use_crlf;
   cp.encoding.use_crlf_by_stream[1] =
@@ -49,9 +53,58 @@ void apply_legacy_stream_metadata(compression_params &cp) {
       cp.encoding.paired_end ? cp.read_info.quality_header_has_id : false;
 }
 
-} // namespace
+void initialize_optional_archive_metadata_defaults(compression_params &cp) {
+  cp.read_info.assay = "auto";
+  cp.read_info.assay_confidence = "N/A";
+  cp.read_info.compressor_version = kRc1ArchiveVersion;
+  cp.encoding.barcode_sort = false;
+  cp.encoding.cb_len = 16;
+  cp.encoding.bisulfite_ternary = false;
+  cp.encoding.depleted_base = 'N';
+  cp.encoding.poly_at_stripped = false;
+  cp.encoding.cb_prefix_stripped = false;
+  cp.encoding.cb_prefix_len = 0;
+  cp.read_info.quality_header_has_id = false;
+  cp.encoding.atac_adapter_stripped = false;
+  cp.encoding.index_id_suffix_reconstructed = false;
+}
 
-void write_compression_params(std::ostream &out, const compression_params &cp) {
+void write_archive_metadata_header(std::ostream &out, uint32_t version) {
+  out.write(byte_ptr(&ARCHIVE_METADATA_MAGIC), sizeof(uint32_t));
+  out.write(byte_ptr(&version), sizeof(uint32_t));
+}
+
+uint32_t read_archive_metadata_header(std::istream &in) {
+  const std::istream::pos_type start_pos = in.tellg();
+  uint32_t magic = 0;
+  in.read(byte_ptr(&magic), sizeof(uint32_t));
+  if (!in.good()) {
+    in.clear();
+    if (start_pos != std::istream::pos_type(-1)) {
+      in.seekg(start_pos);
+    }
+    return LEGACY_ARCHIVE_FORMAT_VERSION;
+  }
+
+  if (magic != ARCHIVE_METADATA_MAGIC) {
+    in.clear();
+    if (start_pos != std::istream::pos_type(-1)) {
+      in.seekg(start_pos);
+    }
+    return LEGACY_ARCHIVE_FORMAT_VERSION;
+  }
+
+  uint32_t version = LEGACY_ARCHIVE_FORMAT_VERSION;
+  in.read(byte_ptr(&version), sizeof(uint32_t));
+  if (!in.good()) {
+    throw std::runtime_error("Archive metadata header is truncated.");
+  }
+
+  return version;
+}
+
+void write_compression_params_body(std::ostream &out,
+                                   const compression_params &cp) {
   write_bool(out, cp.encoding.paired_end);
   write_bool(out, cp.encoding.preserve_order);
   write_bool(out, cp.encoding.preserve_quality);
@@ -134,8 +187,10 @@ void write_compression_params(std::ostream &out, const compression_params &cp) {
     write_bool(out, cp.read_info.quality_header_has_id_by_stream[i]);
 }
 
-void read_compression_params(std::istream &in, compression_params &cp) {
+void read_compression_params_body(std::istream &in, compression_params &cp,
+                                  uint32_t archive_format_version) {
   bool has_stream_specific_fastq_metadata = false;
+  cp.read_info.archive_format_version = archive_format_version;
   cp.encoding.paired_end = read_bool(in);
   cp.encoding.preserve_order = read_bool(in);
   cp.encoding.preserve_quality = read_bool(in);
@@ -191,14 +246,13 @@ void read_compression_params(std::istream &in, compression_params &cp) {
   for (int i = 0; i < 2; ++i)
     in.read(byte_ptr(&cp.gzip.streams[i].member_count), sizeof(uint32_t));
 
-  // Initialize digests to 0 (backward compatibility for older archives)
   for (int i = 0; i < 2; ++i) {
     cp.read_info.sequence_crc[i] = 0;
     cp.read_info.quality_crc[i] = 0;
     cp.read_info.id_crc[i] = 0;
   }
+  initialize_optional_archive_metadata_defaults(cp);
 
-  // Attempt to read digests if they exist in the stream
   if (in.peek() != std::char_traits<char>::eof()) {
     for (int i = 0; i < 2; ++i) {
       in.read(byte_ptr(&cp.read_info.sequence_crc[i]), sizeof(uint32_t));
@@ -210,13 +264,9 @@ void read_compression_params(std::istream &in, compression_params &cp) {
       cp.read_info.assay = read_string(in);
       if (in.peek() != std::char_traits<char>::eof()) {
         cp.read_info.assay_confidence = read_string(in);
-      } else {
-        cp.read_info.assay_confidence = "N/A";
       }
       if (in.peek() != std::char_traits<char>::eof()) {
         cp.read_info.compressor_version = read_string(in);
-      } else {
-        cp.read_info.compressor_version = "<unknown>";
       }
       if (in.peek() != std::char_traits<char>::eof()) {
         cp.encoding.barcode_sort = read_bool(in);
@@ -245,94 +295,15 @@ void read_compression_params(std::istream &in, compression_params &cp) {
                         }
                         has_stream_specific_fastq_metadata = true;
                       }
-                    } else {
-                      cp.encoding.index_id_suffix_reconstructed = false;
                     }
-                  } else {
-                    cp.encoding.atac_adapter_stripped = false;
-                    cp.encoding.index_id_suffix_reconstructed = false;
                   }
-                } else {
-                  cp.read_info.quality_header_has_id = false;
-                  cp.encoding.atac_adapter_stripped = false;
-                  cp.encoding.index_id_suffix_reconstructed = false;
                 }
-              } else {
-                cp.encoding.cb_prefix_stripped = false;
-                cp.encoding.cb_prefix_len = 0;
-                cp.read_info.quality_header_has_id = false;
-                cp.encoding.atac_adapter_stripped = false;
-                cp.encoding.index_id_suffix_reconstructed = false;
               }
-            } else {
-              cp.encoding.poly_at_stripped = false;
-              cp.encoding.cb_prefix_stripped = false;
-              cp.encoding.cb_prefix_len = 0;
-              cp.read_info.quality_header_has_id = false;
-              cp.encoding.atac_adapter_stripped = false;
-              cp.encoding.index_id_suffix_reconstructed = false;
             }
-          } else {
-            cp.encoding.depleted_base = 'N';
-            cp.encoding.poly_at_stripped = false;
-            cp.encoding.cb_prefix_stripped = false;
-            cp.encoding.cb_prefix_len = 0;
-            cp.read_info.quality_header_has_id = false;
-            cp.encoding.atac_adapter_stripped = false;
-            cp.encoding.index_id_suffix_reconstructed = false;
           }
-        } else {
-          cp.encoding.bisulfite_ternary = false;
-          cp.encoding.depleted_base = 'N';
-          cp.encoding.poly_at_stripped = false;
-          cp.encoding.cb_prefix_stripped = false;
-          cp.encoding.cb_prefix_len = 0;
-          cp.read_info.quality_header_has_id = false;
-          cp.encoding.atac_adapter_stripped = false;
-          cp.encoding.index_id_suffix_reconstructed = false;
         }
-      } else {
-        cp.encoding.barcode_sort = false;
-        cp.encoding.cb_len = 16;
-        cp.encoding.bisulfite_ternary = false;
-        cp.encoding.depleted_base = 'N';
-        cp.encoding.poly_at_stripped = false;
-        cp.encoding.cb_prefix_stripped = false;
-        cp.encoding.cb_prefix_len = 0;
-        cp.read_info.quality_header_has_id = false;
-        cp.read_info.compressor_version = "<unknown>";
-        cp.encoding.atac_adapter_stripped = false;
-        cp.encoding.index_id_suffix_reconstructed = false;
       }
-    } else {
-      cp.read_info.assay = "auto";
-      cp.read_info.assay_confidence = "N/A";
-      cp.read_info.compressor_version = "<unknown>";
-      cp.encoding.barcode_sort = false;
-      cp.encoding.cb_len = 16;
-      cp.encoding.bisulfite_ternary = false;
-      cp.encoding.depleted_base = 'N';
-      cp.encoding.poly_at_stripped = false;
-      cp.encoding.cb_prefix_stripped = false;
-      cp.encoding.cb_prefix_len = 0;
-      cp.read_info.quality_header_has_id = false;
-      cp.encoding.atac_adapter_stripped = false;
-      cp.encoding.index_id_suffix_reconstructed = false;
     }
-  } else {
-    cp.read_info.assay = "auto";
-    cp.read_info.assay_confidence = "N/A";
-    cp.read_info.compressor_version = "<unknown>";
-    cp.read_info.assay_confidence = "N/A";
-    cp.encoding.barcode_sort = false;
-    cp.encoding.cb_len = 16;
-    cp.encoding.bisulfite_ternary = false;
-    cp.encoding.depleted_base = 'N';
-    cp.encoding.poly_at_stripped = false;
-    cp.encoding.cb_prefix_stripped = false;
-    cp.encoding.cb_prefix_len = 0;
-    cp.encoding.atac_adapter_stripped = false;
-    cp.encoding.index_id_suffix_reconstructed = false;
   }
 
   if (!has_stream_specific_fastq_metadata) {
@@ -344,6 +315,28 @@ void read_compression_params(std::istream &in, compression_params &cp) {
       (cp.encoding.paired_end && cp.encoding.use_crlf_by_stream[1]);
   cp.read_info.quality_header_has_id =
       cp.read_info.quality_header_has_id_by_stream[0];
+
+  if (cp.read_info.archive_format_version == LEGACY_ARCHIVE_FORMAT_VERSION &&
+      cp.read_info.compressor_version.empty()) {
+    cp.read_info.compressor_version = kRc1ArchiveVersion;
+  }
+}
+
+} // namespace
+
+void write_compression_params(std::ostream &out, const compression_params &cp) {
+  write_archive_metadata_header(out, CURRENT_ARCHIVE_FORMAT_VERSION);
+  write_compression_params_body(out, cp);
+}
+
+void read_compression_params(std::istream &in, compression_params &cp) {
+  const uint32_t archive_format_version = read_archive_metadata_header(in);
+  if (archive_format_version > CURRENT_ARCHIVE_FORMAT_VERSION) {
+    throw std::runtime_error("Unsupported archive metadata format version: " +
+                             std::to_string(archive_format_version));
+  }
+
+  read_compression_params_body(in, cp, archive_format_version);
 }
 
 } // namespace spring

@@ -53,6 +53,20 @@ struct compression_storage_plan {
   compression_storage_path selected_path = compression_storage_path::disk_path;
 };
 
+struct archive_semantic_version {
+  int major = -1;
+  int minor = -1;
+  int patch = -1;
+  bool valid = false;
+};
+
+struct archive_decompression_plan {
+  uint32_t archive_format_version = LEGACY_ARCHIVE_FORMAT_VERSION;
+  std::string compressor_version;
+  archive_semantic_version archive_version;
+  bool is_legacy_unversioned = true;
+};
+
 std::string default_archive_name_from_input(const std::string &input_path);
 bool paths_refer_to_same_file(const std::string &left,
                               const std::string &right);
@@ -117,6 +131,14 @@ void merge_archive_members(
     std::unordered_map<std::string, std::string> &archive_members,
     std::unordered_map<std::string, std::string> new_members);
 std::string serialize_compression_params(const compression_params &cp);
+archive_decompression_plan
+build_archive_decompression_plan(const compression_params &cp);
+std::string archive_decompression_route_name(
+    const archive_decompression_plan &decompression_plan);
+void execute_archive_decompression_plan(
+    const decompression_archive_artifact &artifact, DecompressionSink &sink,
+    compression_params &cp, int decoding_num_thr,
+    const archive_decompression_plan &decompression_plan);
 std::vector<tar_archive_source> build_archive_sources(
     const std::unordered_map<std::string, std::string> &archive_members);
 std::vector<tar_archive_source> build_archive_sources_from_disk(

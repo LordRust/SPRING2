@@ -216,6 +216,17 @@ That same `out/build` tree is also the default source for `out/clangd/compile_co
 - **Integration Tests**: `tests/integration/*.cpp` (Split by archive integrity, reader behavior, assay workflows, and grouped archive scenarios).
 - **Smoke Tests**: `tests/smoke/*.cpp` (Split C++ CLI behavioral validation executed through the `smoke-tests` binary).
 
+### Archive Metadata Version Compatibility
+
+SPRING2 now treats archive creator versioning as part of the compatibility contract:
+
+- New archives write a metadata header version and preserve the exact creator version string in `cp.bin`.
+- Older archives that predate the metadata header are still supported and default to creator version `1.0.0-rc.1` when no explicit version string is present.
+- User-facing preview output should show the effective human-readable archive version and should not expose internal compatibility-routing labels unless you are debugging the implementation.
+- Future decompression-path changes should continue to route by parsed archive version, not by a coarse legacy/current split.
+
+Coverage for this behavior lives in `tests/unit/archive_metadata_version_unit_tests.cpp`. If you change metadata layout, version parsing, preview version reporting, or decompression routing, update that test first and keep backward compatibility expectations explicit.
+
 ### Benchmark/Test Scripts
 
 The `tests/` directory also includes benchmark and comparison scripts used for manual performance checks:

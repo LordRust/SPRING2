@@ -28,6 +28,8 @@ void decompress_archive_artifact(const decompression_archive_artifact &artifact,
   read_compression_params(compression_params_input, cp);
   if (!compression_params_input.good())
     throw std::runtime_error("Can't read compression parameters.");
+  const archive_decompression_plan decompression_plan =
+      build_archive_decompression_plan(cp);
   const int decoding_num_thr = (num_thr > 0) ? num_thr : cp.encoding.num_thr;
 
   const bool paired_end = cp.encoding.paired_end;
@@ -41,7 +43,12 @@ void decompress_archive_artifact(const decompression_archive_artifact &artifact,
       std::string(cp.encoding.preserve_quality ? "true" : "false") +
       ", preserve_id=" +
       std::string(cp.encoding.preserve_id ? "true" : "false") +
-      ", fasta_mode=" + std::string(cp.encoding.fasta_mode ? "true" : "false"));
+      ", fasta_mode=" + std::string(cp.encoding.fasta_mode ? "true" : "false") +
+      ", archive_format_version=" +
+      std::to_string(decompression_plan.archive_format_version) +
+      ", compressor_version=" + decompression_plan.compressor_version +
+      ", decompression_route=" +
+      archive_decompression_route_name(decompression_plan));
 
   const decompression_io_config io_config =
       resolve_decompression_io(input_paths, output_paths, paired_end);
@@ -78,11 +85,8 @@ void decompress_archive_artifact(const decompression_archive_artifact &artifact,
           io_config.output_path_1, io_config.output_path_2, cp,
           compression_levels, should_gzip, should_bgzf, write_enabled);
 
-  if (cp.encoding.long_flag) {
-    decompress_long(artifact, *sink, cp, decoding_num_thr);
-  } else {
-    decompress_short(artifact, *sink, cp, decoding_num_thr);
-  }
+  execute_archive_decompression_plan(artifact, *sink, cp, decoding_num_thr,
+                                     decompression_plan);
 
   run_timed_step("Verifying integrity ...", "Integrity check", [&] {
     const bool is_lossless =
@@ -184,6 +188,8 @@ void materialize_aliased_group_output_from_memory(
   if (!compression_params_input.good()) {
     throw std::runtime_error("Can't read compression parameters.");
   }
+  const archive_decompression_plan decompression_plan =
+      build_archive_decompression_plan(cp);
 
   const int decoding_num_thr = (num_thr > 0) ? num_thr : cp.encoding.num_thr;
   const int selected_stream = (alias_source == "R2") ? 1 : 0;
@@ -207,11 +213,8 @@ void materialize_aliased_group_output_from_memory(
   FileDecompressionSink sink(output_path_1, output_path_2, cp,
                              compression_levels, should_gzip, should_bgzf,
                              write_enabled);
-  if (cp.encoding.long_flag) {
-    decompress_long(artifact, sink, cp, decoding_num_thr);
-  } else {
-    decompress_short(artifact, sink, cp, decoding_num_thr);
-  }
+  execute_archive_decompression_plan(artifact, sink, cp, decoding_num_thr,
+                                     decompression_plan);
 
   const bool is_lossless = cp.encoding.preserve_order &&
                            cp.encoding.preserve_quality &&

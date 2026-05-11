@@ -873,6 +873,7 @@ set(unit_test_sources
     tests/unit/assay_detector_unit_tests.cpp
     tests/unit/assay_detector_real_data_unit_tests.cpp
     tests/unit/compression_storage_plan_unit_tests.cpp
+    tests/unit/archive_metadata_version_unit_tests.cpp
     tests/unit/gzip_preprocess_progress_unit_tests.cpp
 )
 add_executable(spring2-tests ${unit_test_sources} ${core_source_files})

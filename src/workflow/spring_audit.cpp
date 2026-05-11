@@ -24,13 +24,12 @@ void perform_audit_standard_artifact(
   if (!compression_params_input.good()) {
     throw std::runtime_error("Can't read parameter file in audit.");
   }
+  const archive_decompression_plan decompression_plan =
+      build_archive_decompression_plan(cp);
 
   NullDecompressionSink sink;
-  if (cp.encoding.long_flag) {
-    decompress_long(artifact, sink, cp, cp.encoding.num_thr);
-  } else {
-    decompress_short(artifact, sink, cp, cp.encoding.num_thr);
-  }
+  execute_archive_decompression_plan(artifact, sink, cp, cp.encoding.num_thr,
+                                     decompression_plan);
 
   const bool is_lossless = cp.encoding.preserve_order &&
                            cp.encoding.preserve_quality &&

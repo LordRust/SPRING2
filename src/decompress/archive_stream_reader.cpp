@@ -7,6 +7,7 @@
 #include "integrity_utils.h"
 #include "params.h"
 #include "progress.h"
+#include "workflow_internal.h"
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
@@ -15,7 +16,6 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
-
 
 namespace spring {
 
@@ -202,6 +202,8 @@ public:
     if (!cp_in.good()) {
       throw std::runtime_error("Failed to parse archive metadata.");
     }
+    const archive_decompression_plan decompression_plan =
+        build_archive_decompression_plan(params_);
 
     decode_num_thr_ =
         (user_num_thr_ > 0) ? user_num_thr_ : params_.encoding.num_thr;
@@ -212,20 +214,22 @@ public:
         std::string(params_.encoding.paired_end ? "true" : "false") +
         ", long_mode=" +
         std::string(params_.encoding.long_flag ? "true" : "false") +
+        ", archive_format_version=" +
+        std::to_string(decompression_plan.archive_format_version) +
+        ", compressor_version=" + decompression_plan.compressor_version +
+        ", decompression_route=" +
+        archive_decompression_route_name(decompression_plan) +
         ", encoding_threads=" + std::to_string(params_.encoding.num_thr) +
         ", decoding_threads=" + std::to_string(decode_num_thr_));
 
     // Start worker thread
-    worker_thread_ = std::thread([this]() {
+    worker_thread_ = std::thread([this, decompression_plan]() {
       try {
         const auto worker_start = std::chrono::steady_clock::now();
         BufferDecompressionSink sink(queue_, mutex_, cv_, shutdown_requested_,
                                      params_.encoding.paired_end, 2);
-        if (params_.encoding.long_flag) {
-          decompress_long(artifact_, sink, params_, decode_num_thr_);
-        } else {
-          decompress_short(artifact_, sink, params_, decode_num_thr_);
-        }
+        execute_archive_decompression_plan(artifact_, sink, params_,
+                                           decode_num_thr_, decompression_plan);
         sink.log_summary();
         sink.copy_digests(sequence_crc_, quality_crc_, id_crc_);
         const auto elapsed_ms =

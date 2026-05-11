@@ -9,6 +9,10 @@
 
 namespace spring {
 
+constexpr uint32_t ARCHIVE_METADATA_MAGIC = 0x32505343U;
+constexpr uint32_t LEGACY_ARCHIVE_FORMAT_VERSION = 0;
+constexpr uint32_t CURRENT_ARCHIVE_FORMAT_VERSION = 1;
+
 // Shared bounds and sentinel values used across the compression pipeline.
 constexpr uint16_t MAX_READ_LEN = 511;
 constexpr uint32_t MAX_READ_LEN_LONG = 4294967290U;
@@ -135,6 +139,7 @@ struct compression_params {
     std::string assay;
     std::string assay_confidence;
     std::string compressor_version; // SPRING2 version that created this archive
+    uint32_t archive_format_version = CURRENT_ARCHIVE_FORMAT_VERSION;
     uint32_t sequence_crc[2];
     uint32_t quality_crc[2];
     uint32_t id_crc[2];

@@ -21,6 +21,8 @@ namespace spring {
 
 namespace {
 
+constexpr char kRc1ArchiveVersion[] = "1.0.0-rc.1";
+
 constexpr uint64_t kPeakIntermediateMultiplier = 4;
 constexpr uint64_t kSafetyMarginDivisor = 2;
 constexpr uint64_t kMinimumSafetyMarginBytes = 512ULL * 1024ULL * 1024ULL;
@@ -54,6 +56,75 @@ uint64_t estimate_memory_path_safety_margin_bytes(
   const uint64_t peak_based_margin =
       estimated_peak_intermediate_bytes / kSafetyMarginDivisor;
   return std::max(kMinimumSafetyMarginBytes, peak_based_margin);
+}
+
+archive_semantic_version
+parse_archive_semantic_version(const std::string &version_text) {
+  archive_semantic_version version;
+  size_t offset = 0;
+
+  auto parse_component = [&](int &value) {
+    if (offset >= version_text.size() ||
+        !std::isdigit(static_cast<unsigned char>(version_text[offset]))) {
+      return false;
+    }
+
+    value = 0;
+    while (offset < version_text.size() &&
+           std::isdigit(static_cast<unsigned char>(version_text[offset]))) {
+      value = value * 10 + (version_text[offset] - '0');
+      ++offset;
+    }
+    return true;
+  };
+
+  if (!parse_component(version.major)) {
+    return version;
+  }
+  if (offset >= version_text.size() || version_text[offset] != '.') {
+    return version;
+  }
+  ++offset;
+
+  if (!parse_component(version.minor)) {
+    return version;
+  }
+
+  version.patch = 0;
+  if (offset < version_text.size() && version_text[offset] == '.') {
+    ++offset;
+    if (!parse_component(version.patch)) {
+      return version;
+    }
+  }
+
+  version.valid = true;
+  return version;
+}
+
+bool is_supported_archive_decompression_version(
+    const archive_semantic_version &version) {
+  return version.valid && version.major == 1 && version.minor == 0;
+}
+
+void validate_supported_archive_decompression_version(
+    const compression_params &cp, const archive_semantic_version &version) {
+  if (cp.read_info.archive_format_version == LEGACY_ARCHIVE_FORMAT_VERSION) {
+    return;
+  }
+
+  if (!version.valid) {
+    throw std::runtime_error(
+        "Archive compressor version is missing or invalid for format version " +
+        std::to_string(cp.read_info.archive_format_version) + ".");
+  }
+
+  if (is_supported_archive_decompression_version(version)) {
+    return;
+  }
+
+  throw std::runtime_error("Unsupported archive compressor version: " +
+                           cp.read_info.compressor_version);
 }
 
 } // namespace
@@ -623,6 +694,52 @@ std::string serialize_compression_params(const compression_params &cp) {
   std::ostringstream output(std::ios::binary);
   write_compression_params(output, cp);
   return output.str();
+}
+
+archive_decompression_plan
+build_archive_decompression_plan(const compression_params &cp) {
+  archive_decompression_plan plan;
+  plan.archive_format_version = cp.read_info.archive_format_version;
+  plan.compressor_version = cp.read_info.compressor_version;
+  plan.archive_version =
+      parse_archive_semantic_version(plan.compressor_version);
+  plan.is_legacy_unversioned =
+      cp.read_info.archive_format_version == LEGACY_ARCHIVE_FORMAT_VERSION;
+  validate_supported_archive_decompression_version(cp, plan.archive_version);
+  return plan;
+}
+
+std::string archive_decompression_route_name(
+    const archive_decompression_plan &decompression_plan) {
+  if (decompression_plan.is_legacy_unversioned) {
+    return "legacy-unversioned";
+  }
+
+  if (!decompression_plan.compressor_version.empty()) {
+    return decompression_plan.compressor_version;
+  }
+
+  return kRc1ArchiveVersion;
+}
+
+void execute_archive_decompression_plan(
+    const decompression_archive_artifact &artifact, DecompressionSink &sink,
+    compression_params &cp, const int decoding_num_thr,
+    const archive_decompression_plan &decompression_plan) {
+  if (decompression_plan.is_legacy_unversioned ||
+      is_supported_archive_decompression_version(
+          decompression_plan.archive_version)) {
+    if (cp.encoding.long_flag) {
+      decompress_long(artifact, sink, cp, decoding_num_thr);
+    } else {
+      decompress_short(artifact, sink, cp, decoding_num_thr);
+    }
+    return;
+  }
+
+  throw std::runtime_error(
+      "Unsupported archive decompression route: " +
+      archive_decompression_route_name(decompression_plan));
 }
 
 std::vector<tar_archive_source> build_archive_sources(
