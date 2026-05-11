@@ -846,6 +846,9 @@ endif()
 if(SPRING_OPENMP_INCLUDE_DIRS)
     target_include_directories(spring2-tests SYSTEM PRIVATE ${SPRING_OPENMP_INCLUDE_DIRS})
 endif()
+target_compile_definitions(spring2-tests PRIVATE
+    UNIT_TEST_ASSET_DIR="${CMAKE_SOURCE_DIR}/data/samples"
+)
 add_test(NAME unit_tests COMMAND spring2-tests)
 
 set(integration_test_sources

@@ -2,7 +2,18 @@
 
 #include "../../src/workflow/workflow_internal.h"
 
+#include <filesystem>
+
 namespace {
+
+std::string sample_asset_path(const std::string &name) {
+#ifdef UNIT_TEST_ASSET_DIR
+  return (std::filesystem::path(UNIT_TEST_ASSET_DIR) / name).generic_string();
+#else
+  return (std::filesystem::path("..") / ".." / "data" / "samples" / name)
+      .generic_string();
+#endif
+}
 
 double bytes_to_gib(const uint64_t bytes) {
   return static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0);
@@ -11,7 +22,7 @@ double bytes_to_gib(const uint64_t bytes) {
 } // namespace
 
 TEST_CASE("Compression storage plan uses peak intermediate memory margin") {
-  const spring::string_list input_paths = {"data/samples/test_1.fastq"};
+  const spring::string_list input_paths = {sample_asset_path("test_1.fastq")};
   const spring::compression_storage_plan baseline_plan =
       spring::build_compression_storage_plan(input_paths, 1024.0);
 
