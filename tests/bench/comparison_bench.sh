@@ -19,6 +19,9 @@ INPUT_FASTQ_1=${INPUT_FASTQ_1:-"$DEFAULT_PATH_R1"}
 INPUT_FASTQ_2=${INPUT_FASTQ_2:-"$DEFAULT_PATH_R2"}
 BUILD_LOG="$TMP_LOG_DIR/build.log"
 SPRING_V1_ENV_NAME="spring_v1"
+SPRING_MEMORY_PATH_MEMORY_GB=${SPRING_MEMORY_PATH_MEMORY_GB:-1024}
+SPRING_DISK_PATH_MEMORY_GB=${SPRING_DISK_PATH_MEMORY_GB:-0.00001}
+DISK_PATH_SELECTION_MESSAGE="Disk-backed compression path selected based on estimated peak working memory and available memory."
 
 detect_cpu_threads() {
 	local detected=""
@@ -327,9 +330,51 @@ is_spring_v1_label() {
 	[[ "$label" == "spring_v1" ]]
 }
 
+is_current_memory_label() {
+	local label="$1"
+	[[ "$label" == "current_memory" ]]
+}
+
+is_current_disk_label() {
+	local label="$1"
+	[[ "$label" == "current_disk" ]]
+}
+
+is_current_spring_label() {
+	local label="$1"
+	is_current_memory_label "$label" || is_current_disk_label "$label"
+}
+
 is_gzip_label() {
 	local label="$1"
 	[[ "$label" == "gzip" ]]
+}
+
+verify_storage_path_selection() {
+	local label="$1"
+	local log_file="$2"
+
+	if ! is_current_spring_label "$label"; then
+		return
+	fi
+
+	if [[ ! -f "$log_file" ]]; then
+		echo "Expected compression log not found for $label: $log_file" >&2
+		exit 1
+	fi
+
+	if is_current_disk_label "$label"; then
+		if ! grep -Fq "$DISK_PATH_SELECTION_MESSAGE" "$log_file"; then
+			echo "SPRING2 disk_path benchmark did not report disk-backed path selection." >&2
+			exit 1
+		fi
+		return
+	fi
+
+	if grep -Fq "$DISK_PATH_SELECTION_MESSAGE" "$log_file"; then
+		echo "SPRING2 memory_path benchmark unexpectedly reported disk-backed path selection." >&2
+		exit 1
+	fi
 }
 
 write_metrics_file() {
@@ -487,6 +532,8 @@ run_benchmark() {
 	local output_prefix="$TMP_OUTPUT_DIR/$INPUT_STEM.$label"
 	local compress_resource_log="$TMP_LOG_DIR/${label}_compress_resource_usage.log"
 	local decompress_resource_log="$TMP_LOG_DIR/${label}_decompress_resource_usage.log"
+	local compress_output_log="$TMP_LOG_DIR/${label}_compress.log"
+	local decompress_output_log="$TMP_LOG_DIR/${label}_decompress.log"
 	local metrics_path="$TMP_LOG_DIR/${label}.metrics"
 	local gzip_compress_runner="$TMP_LOG_DIR/${label}_compress_runner.sh"
 	local gzip_decompress_runner="$TMP_LOG_DIR/${label}_decompress_runner.sh"
@@ -503,6 +550,8 @@ run_benchmark() {
 	local roundtrip_status="different"
 	local file_count=1
 	local index
+	local storage_mode="default"
+	local memory_budget_gb=""
 
 	if [[ -n "$INPUT_ABS_2" ]]; then
 		input_paths+=("$INPUT_ABS_2")
@@ -527,6 +576,7 @@ run_benchmark() {
 	mkdir -p "$TMP_INPUT_DIR" "$TMP_LOG_DIR" "$TMP_OUTPUT_DIR"
 	rm -f "${compressed_paths[@]}" "${decompressed_paths[@]}"
 	rm -f "$compress_resource_log" "$decompress_resource_log" "$metrics_path"
+	rm -f "$compress_output_log" "$decompress_output_log"
 	rm -f "$gzip_compress_runner" "$gzip_decompress_runner"
 
 	echo "Running $display_name lossless compression"
@@ -537,6 +587,15 @@ run_benchmark() {
 	echo "  output:  ${compressed_paths[*]}"
 	if ! is_gzip_label "$label"; then
 		echo "  threads: $THREADS"
+	fi
+	if is_current_memory_label "$label"; then
+		storage_mode="memory_path"
+		memory_budget_gb="$SPRING_MEMORY_PATH_MEMORY_GB"
+		echo "  storage path: forced $storage_mode (-m $memory_budget_gb)"
+	elif is_current_disk_label "$label"; then
+		storage_mode="disk_path"
+		memory_budget_gb="$SPRING_DISK_PATH_MEMORY_GB"
+		echo "  storage path: forced $storage_mode (-m $memory_budget_gb)"
 	fi
 	echo "  max read length: $MAX_READ_LENGTH"
 	if ((${MAX_READ_LENGTH} > ${MAX_SHORT_READ_LENGTH})) && is_spring_v1_label "$label"; then
@@ -567,7 +626,9 @@ fi
 EOF
 		fi
 		chmod +x "$gzip_compress_runner"
-		run_with_resource_log "$compress_resource_log" "$gzip_compress_runner"
+		run_with_resource_log "$compress_resource_log" \
+			bash -lc 'log_file="$1"; shift; exec "$@" >"$log_file" 2>&1' _ \
+			"$compress_output_log" "$gzip_compress_runner"
 	else
 		local spring_args=(
 			-c
@@ -592,6 +653,11 @@ EOF
 				-t "$THREADS"
 				-q lossless
 			)
+			if is_current_spring_label "$label"; then
+				spring_args+=(
+					-m "$memory_budget_gb"
+				)
+			fi
 		fi
 		if ((${MAX_READ_LENGTH} > ${MAX_SHORT_READ_LENGTH})) && is_spring_v1_label "$label"; then
 			spring_args+=(-l)
@@ -600,7 +666,10 @@ EOF
 			spring_args=(-g "${spring_args[@]}")
 		fi
 
-		run_with_resource_log "$compress_resource_log" "$runner" "${spring_args[@]}"
+		run_with_resource_log "$compress_resource_log" \
+			bash -lc 'log_file="$1"; shift; exec "$@" >"$log_file" 2>&1' _ \
+			"$compress_output_log" "$runner" "${spring_args[@]}"
+		verify_storage_path_selection "$label" "$compress_output_log"
 	fi
 
 	echo "Running $display_name decompression"
@@ -617,7 +686,9 @@ EOF
 			printf 'gzip -dc -- "%s" > "%s"\n' "${compressed_paths[1]}" "${decompressed_paths[1]}" >>"$gzip_decompress_runner"
 		fi
 		chmod +x "$gzip_decompress_runner"
-		run_with_resource_log "$decompress_resource_log" "$gzip_decompress_runner"
+		run_with_resource_log "$decompress_resource_log" \
+			bash -lc 'log_file="$1"; shift; exec "$@" >"$log_file" 2>&1' _ \
+			"$decompress_output_log" "$gzip_decompress_runner"
 	else
 		local decompress_args=(
 			-d
@@ -630,7 +701,9 @@ EOF
 			decompress_args=(-g "${decompress_args[@]}")
 		fi
 
-		run_with_resource_log "$decompress_resource_log" "$runner" "${decompress_args[@]}"
+		run_with_resource_log "$decompress_resource_log" \
+			bash -lc 'log_file="$1"; shift; exec "$@" >"$log_file" 2>&1' _ \
+			"$decompress_output_log" "$runner" "${decompress_args[@]}"
 	fi
 
 	input_size=$(sum_normalized_input_sizes "${input_paths[@]}")
@@ -719,6 +792,7 @@ EOF
 
 	write_metrics_file "$metrics_path" \
 		"label=$display_name" \
+		"storage_mode=$storage_mode" \
 		"input_size=$input_size" \
 		"output_size=$output_size" \
 		"decompressed_size=$decompressed_size" \
@@ -735,47 +809,110 @@ EOF
 
 }
 
-print_comparison_summary() {
-	local current_metrics="$1"
-	local v1_metrics="$2"
-	local gzip_metrics="$3"
+print_current_path_summary() {
+	local memory_metrics="$1"
+	local disk_metrics="$2"
 
-	load_metrics_file current "$current_metrics"
+	load_metrics_file memory "$memory_metrics"
+	load_metrics_file disk "$disk_metrics"
+
+	awk \
+		-v memory_output_size="$memory_output_size" \
+		-v disk_output_size="$disk_output_size" \
+		-v memory_ratio="$memory_compression_ratio" \
+		-v disk_ratio="$disk_compression_ratio" \
+		-v memory_reduction="$memory_reduction_percent" \
+		-v disk_reduction="$disk_reduction_percent" \
+		-v memory_compress_elapsed="$memory_compress_elapsed_seconds" \
+		-v disk_compress_elapsed="$disk_compress_elapsed_seconds" \
+		-v memory_decompress_elapsed="$memory_decompress_elapsed_seconds" \
+		-v disk_decompress_elapsed="$disk_decompress_elapsed_seconds" \
+		-v memory_compress_rss="$memory_compress_max_rss_kb" \
+		-v disk_compress_rss="$disk_compress_max_rss_kb" \
+		-v memory_roundtrip="$memory_roundtrip_status" \
+		-v disk_roundtrip="$disk_roundtrip_status" '
+BEGIN {
+  printf("\nSPRING2 storage-path comparison\n")
+  printf("  memory_path compressed bytes: %d\n", memory_output_size)
+  printf("  disk_path compressed bytes:   %d\n", disk_output_size)
+  printf("  memory_path ratio:            %sx\n", memory_ratio)
+  printf("  disk_path ratio:              %sx\n", disk_ratio)
+  printf("  memory_path reduction:        %s%%\n", memory_reduction)
+  printf("  disk_path reduction:          %s%%\n", disk_reduction)
+  if (memory_compress_elapsed != "" && disk_compress_elapsed != "") {
+    printf("  memory_path compression time: %ss\n", memory_compress_elapsed)
+    printf("  disk_path compression time:   %ss\n", disk_compress_elapsed)
+  }
+  if (memory_decompress_elapsed != "" && disk_decompress_elapsed != "") {
+    printf("  memory_path decompression:    %ss\n", memory_decompress_elapsed)
+    printf("  disk_path decompression:      %ss\n", disk_decompress_elapsed)
+  }
+  if (memory_compress_rss != "" && memory_compress_rss != "unavailable" && disk_compress_rss != "" && disk_compress_rss != "unavailable") {
+    printf("  memory_path peak RSS:         %s KB\n", memory_compress_rss)
+    printf("  disk_path peak RSS:           %s KB\n", disk_compress_rss)
+  }
+  printf("  memory_path round-trip:       %s\n", memory_roundtrip)
+  printf("  disk_path round-trip:         %s\n", disk_roundtrip)
+}
+'
+}
+
+print_comparison_summary() {
+	local current_memory_metrics="$1"
+	local current_disk_metrics="$2"
+	local v1_metrics="$3"
+	local gzip_metrics="$4"
+
+	load_metrics_file current_memory "$current_memory_metrics"
+	load_metrics_file current_disk "$current_disk_metrics"
 	load_metrics_file v1 "$v1_metrics"
 	load_metrics_file gzip "$gzip_metrics"
 
 	awk \
-		-v current_output_size="$current_output_size" \
+		-v current_memory_output_size="$current_memory_output_size" \
+		-v current_disk_output_size="$current_disk_output_size" \
 		-v v1_output_size="$v1_output_size" \
 		-v gzip_output_size="$gzip_output_size" \
-		-v current_ratio="$current_compression_ratio" \
+		-v current_memory_ratio="$current_memory_compression_ratio" \
+		-v current_disk_ratio="$current_disk_compression_ratio" \
 		-v v1_ratio="$v1_compression_ratio" \
 		-v gzip_ratio="$gzip_compression_ratio" \
-		-v current_reduction="$current_reduction_percent" \
+		-v current_memory_reduction="$current_memory_reduction_percent" \
+		-v current_disk_reduction="$current_disk_reduction_percent" \
 		-v v1_reduction="$v1_reduction_percent" \
 		-v gzip_reduction="$gzip_reduction_percent" \
-		-v current_compress_elapsed="$current_compress_elapsed_seconds" \
+		-v current_memory_compress_elapsed="$current_memory_compress_elapsed_seconds" \
+		-v current_disk_compress_elapsed="$current_disk_compress_elapsed_seconds" \
 		-v v1_compress_elapsed="$v1_compress_elapsed_seconds" \
 		-v gzip_compress_elapsed="$gzip_compress_elapsed_seconds" \
-		-v current_decompress_elapsed="$current_decompress_elapsed_seconds" \
+		-v current_memory_decompress_elapsed="$current_memory_decompress_elapsed_seconds" \
+		-v current_disk_decompress_elapsed="$current_disk_decompress_elapsed_seconds" \
 		-v v1_decompress_elapsed="$v1_decompress_elapsed_seconds" \
 		-v gzip_decompress_elapsed="$gzip_decompress_elapsed_seconds" \
-		-v current_compress_cpu="$current_compress_cpu_percent" \
+		-v current_memory_compress_cpu="$current_memory_compress_cpu_percent" \
+		-v current_disk_compress_cpu="$current_disk_compress_cpu_percent" \
 		-v v1_compress_cpu="$v1_compress_cpu_percent" \
 		-v gzip_compress_cpu="$gzip_compress_cpu_percent" \
-		-v current_decompress_cpu="$current_decompress_cpu_percent" \
+		-v current_memory_decompress_cpu="$current_memory_decompress_cpu_percent" \
+		-v current_disk_decompress_cpu="$current_disk_decompress_cpu_percent" \
 		-v v1_decompress_cpu="$v1_decompress_cpu_percent" \
 		-v gzip_decompress_cpu="$gzip_decompress_cpu_percent" \
-		-v current_compress_rss="$current_compress_max_rss_kb" \
+		-v current_memory_compress_rss="$current_memory_compress_max_rss_kb" \
+		-v current_disk_compress_rss="$current_disk_compress_max_rss_kb" \
 		-v v1_compress_rss="$v1_compress_max_rss_kb" \
 		-v gzip_compress_rss="$gzip_compress_max_rss_kb" \
-		-v current_decompress_rss="$current_decompress_max_rss_kb" \
+		-v current_memory_decompress_rss="$current_memory_decompress_max_rss_kb" \
+		-v current_disk_decompress_rss="$current_disk_decompress_max_rss_kb" \
 		-v v1_decompress_rss="$v1_decompress_max_rss_kb" \
 		-v gzip_decompress_rss="$gzip_decompress_max_rss_kb" '
 BEGIN {
-	winner_label = "current Spring"
-	winner_size = current_output_size
+	winner_label = "Current Spring (memory_path)"
+	winner_size = current_memory_output_size
 	runner_up_size = -1
+	if (current_disk_output_size < winner_size) {
+		winner_label = "Current Spring (disk_path)"
+		winner_size = current_disk_output_size
+	}
 	if (v1_output_size < winner_size) {
 		winner_label = "Spring v1"
 		winner_size = v1_output_size
@@ -784,8 +921,11 @@ BEGIN {
 		winner_label = "gzip"
 		winner_size = gzip_output_size
 	}
-	if (current_output_size != winner_size) {
-		runner_up_size = current_output_size
+	if (current_memory_output_size != winner_size) {
+		runner_up_size = current_memory_output_size
+	}
+	if (current_disk_output_size != winner_size && (runner_up_size < 0 || current_disk_output_size < runner_up_size)) {
+		runner_up_size = current_disk_output_size
 	}
 	if (v1_output_size != winner_size && (runner_up_size < 0 || v1_output_size < runner_up_size)) {
 		runner_up_size = v1_output_size
@@ -794,49 +934,58 @@ BEGIN {
 		runner_up_size = gzip_output_size
 	}
   printf("\nComparison summary\n")
-  printf("  current compressed bytes:   %d\n", current_output_size)
+	printf("  current memory bytes:      %d\n", current_memory_output_size)
+	printf("  current disk bytes:        %d\n", current_disk_output_size)
   printf("  spring v1 compressed bytes: %d\n", v1_output_size)
 	printf("  gzip compressed bytes:      %d\n", gzip_output_size)
-	if ((current_output_size == v1_output_size) && (current_output_size == gzip_output_size)) {
+	if ((current_memory_output_size == current_disk_output_size) && (current_memory_output_size == v1_output_size) && (current_memory_output_size == gzip_output_size)) {
 		printf("  size winner:                tie\n")
 	} else if (runner_up_size >= 0) {
 		printf("  size winner:                %s by %d bytes\n", winner_label, runner_up_size - winner_size)
   } else {
 		printf("  size winner:                %s\n", winner_label)
   }
-  printf("  current compression ratio:  %sx\n", current_ratio)
+	printf("  current memory ratio:      %sx\n", current_memory_ratio)
+	printf("  current disk ratio:        %sx\n", current_disk_ratio)
   printf("  spring v1 compression ratio:%sx\n", v1_ratio)
 	printf("  gzip compression ratio:     %sx\n", gzip_ratio)
-  printf("  current size reduction:     %s%%\n", current_reduction)
+	printf("  current memory reduction:  %s%%\n", current_memory_reduction)
+	printf("  current disk reduction:    %s%%\n", current_disk_reduction)
   printf("  spring v1 size reduction:   %s%%\n", v1_reduction)
 	printf("  gzip size reduction:        %s%%\n", gzip_reduction)
-	if (current_compress_elapsed != "" && v1_compress_elapsed != "" && gzip_compress_elapsed != "") {
-    printf("  current compression time:   %ss\n", current_compress_elapsed)
+	if (current_memory_compress_elapsed != "" && current_disk_compress_elapsed != "" && v1_compress_elapsed != "" && gzip_compress_elapsed != "") {
+		printf("  current memory time:       %ss\n", current_memory_compress_elapsed)
+		printf("  current disk time:         %ss\n", current_disk_compress_elapsed)
     printf("  spring v1 compression time: %ss\n", v1_compress_elapsed)
 		printf("  gzip compression time:      %ss\n", gzip_compress_elapsed)
   }
-	if (current_decompress_elapsed != "" && v1_decompress_elapsed != "" && gzip_decompress_elapsed != "") {
-    printf("  current decompression time: %ss\n", current_decompress_elapsed)
+	if (current_memory_decompress_elapsed != "" && current_disk_decompress_elapsed != "" && v1_decompress_elapsed != "" && gzip_decompress_elapsed != "") {
+		printf("  current memory decomp:     %ss\n", current_memory_decompress_elapsed)
+		printf("  current disk decomp:       %ss\n", current_disk_decompress_elapsed)
     printf("  spring v1 decompression time:%ss\n", v1_decompress_elapsed)
 		printf("  gzip decompression time:    %ss\n", gzip_decompress_elapsed)
   }
-	if (current_compress_cpu != "" && v1_compress_cpu != "" && gzip_compress_cpu != "") {
-    printf("  current compression CPU usage:   %s\n", current_compress_cpu)
+	if (current_memory_compress_cpu != "" && current_disk_compress_cpu != "" && v1_compress_cpu != "" && gzip_compress_cpu != "") {
+		printf("  current memory CPU usage:  %s\n", current_memory_compress_cpu)
+		printf("  current disk CPU usage:    %s\n", current_disk_compress_cpu)
     printf("  spring v1 compression CPU usage: %s\n", v1_compress_cpu)
 		printf("  gzip compression CPU usage:      %s\n", gzip_compress_cpu)
   }
-	if (current_decompress_cpu != "" && v1_decompress_cpu != "" && gzip_decompress_cpu != "") {
-    printf("  current decompression CPU usage: %s\n", current_decompress_cpu)
+	if (current_memory_decompress_cpu != "" && current_disk_decompress_cpu != "" && v1_decompress_cpu != "" && gzip_decompress_cpu != "") {
+		printf("  current memory decomp CPU: %s\n", current_memory_decompress_cpu)
+		printf("  current disk decomp CPU:   %s\n", current_disk_decompress_cpu)
     printf("  spring v1 decompression CPU usage:%s\n", v1_decompress_cpu)
 		printf("  gzip decompression CPU usage:    %s\n", gzip_decompress_cpu)
   }
-	if (current_compress_rss != "" && current_compress_rss != "unavailable" && v1_compress_rss != "" && v1_compress_rss != "unavailable" && gzip_compress_rss != "" && gzip_compress_rss != "unavailable") {
-    printf("  current peak compression RSS: %s KB\n", current_compress_rss)
+	if (current_memory_compress_rss != "" && current_memory_compress_rss != "unavailable" && current_disk_compress_rss != "" && current_disk_compress_rss != "unavailable" && v1_compress_rss != "" && v1_compress_rss != "unavailable" && gzip_compress_rss != "" && gzip_compress_rss != "unavailable") {
+		printf("  current memory peak RSS:   %s KB\n", current_memory_compress_rss)
+		printf("  current disk peak RSS:     %s KB\n", current_disk_compress_rss)
     printf("  spring v1 peak compression RSS: %s KB\n", v1_compress_rss)
 		printf("  gzip peak compression RSS:      %s KB\n", gzip_compress_rss)
   }
-	if (current_decompress_rss != "" && current_decompress_rss != "unavailable" && v1_decompress_rss != "" && v1_decompress_rss != "unavailable" && gzip_decompress_rss != "" && gzip_decompress_rss != "unavailable") {
-    printf("  current peak decompression RSS: %s KB\n", current_decompress_rss)
+	if (current_memory_decompress_rss != "" && current_memory_decompress_rss != "unavailable" && current_disk_decompress_rss != "" && current_disk_decompress_rss != "unavailable" && v1_decompress_rss != "" && v1_decompress_rss != "unavailable" && gzip_decompress_rss != "" && gzip_decompress_rss != "unavailable") {
+		printf("  current memory decomp RSS: %s KB\n", current_memory_decompress_rss)
+		printf("  current disk decomp RSS:   %s KB\n", current_disk_decompress_rss)
     printf("  spring v1 peak decompression RSS: %s KB\n", v1_decompress_rss)
 		printf("  gzip peak decompression RSS:      %s KB\n", gzip_decompress_rss)
   }
@@ -861,7 +1010,13 @@ INPUT_STEM=${INPUT_BASENAME%.*}
 MAX_SHORT_READ_LENGTH=511
 MAX_READ_LENGTH=$(stream_input_bytes "$INPUT_ABS_1" | awk 'NR % 4 == 2 { if (length($0) > max_len) max_len = length($0) } END { print max_len + 0 }')
 
-run_benchmark "current" "Current Spring" "$SPRING_BIN"
+run_benchmark "current_memory" "Current Spring (memory_path)" "$SPRING_BIN"
+run_benchmark "current_disk" "Current Spring (disk_path)" "$SPRING_BIN"
 run_benchmark "spring_v1" "Spring v1" "$SPRING_V1_RUNNER"
 run_benchmark "gzip" "gzip" "gzip"
-print_comparison_summary "$TMP_LOG_DIR/current.metrics" "$TMP_LOG_DIR/spring_v1.metrics" "$TMP_LOG_DIR/gzip.metrics"
+print_current_path_summary "$TMP_LOG_DIR/current_memory.metrics" "$TMP_LOG_DIR/current_disk.metrics"
+print_comparison_summary \
+	"$TMP_LOG_DIR/current_memory.metrics" \
+	"$TMP_LOG_DIR/current_disk.metrics" \
+	"$TMP_LOG_DIR/spring_v1.metrics" \
+	"$TMP_LOG_DIR/gzip.metrics"
