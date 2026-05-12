@@ -7,48 +7,47 @@
 # Normally configure builds both a static and a shared library.
 # If you want to build just a static library, use: ./configure --static
 
-
 # To install /usr/local/lib/libz.* and /usr/local/include/zlib.h, type:
 #    make install
 # To install in $HOME instead of /usr/local, use:
 #    make install prefix=$HOME
 
-TGT_ARCH=x86_64
-CC=gcc
+TGT_ARCH = x86_64
+CC = gcc
 
-CFLAGS=-DHAS_PCLMUL -mpclmul -DHAS_SSE42 -msse4.2 -DADLER32_SIMD_SSSE3 -mssse3 -DINFLATE_CHUNK_SIMD_SSE2 -DHAS_SSE2 -msse2 -DINFLATE_CHUNK_READ_64LE -O3 -D_LARGEFILE64_SOURCE=1 -DHAVE_HIDDEN
+CFLAGS = -DHAS_PCLMUL -mpclmul -DHAS_SSE42 -msse4.2 -DADLER32_SIMD_SSSE3 -mssse3 -DINFLATE_CHUNK_SIMD_SSE2 -DHAS_SSE2 -msse2 -DINFLATE_CHUNK_READ_64LE -O3 -D_LARGEFILE64_SOURCE=1 -DHAVE_HIDDEN
 #CFLAGS=-O -DMAX_WBITS=14 -DMAX_MEM_LEVEL=7
 #CFLAGS=-g -DZLIB_DEBUG
 #CFLAGS=-O3 -Wall -Wwrite-strings -Wpointer-arith -Wconversion \
 #           -Wstrict-prototypes -Wmissing-prototypes
 
-SFLAGS=-DHAS_PCLMUL -mpclmul -DHAS_SSE42 -msse4.2 -DADLER32_SIMD_SSSE3 -mssse3 -DINFLATE_CHUNK_SIMD_SSE2 -DHAS_SSE2 -msse2 -DINFLATE_CHUNK_READ_64LE -O3 -fPIC -D_LARGEFILE64_SOURCE=1 -DHAVE_HIDDEN
-LDFLAGS=
-TEST_LDFLAGS=-L. libz.a
-LDSHARED=gcc
-CPP=gcc -E
+SFLAGS = -DHAS_PCLMUL -mpclmul -DHAS_SSE42 -msse4.2 -DADLER32_SIMD_SSSE3 -mssse3 -DINFLATE_CHUNK_SIMD_SSE2 -DHAS_SSE2 -msse2 -DINFLATE_CHUNK_READ_64LE -O3 -fPIC -D_LARGEFILE64_SOURCE=1 -DHAVE_HIDDEN
+LDFLAGS =
+TEST_LDFLAGS = -L. libz.a
+LDSHARED = gcc
+CPP = gcc -E
 
-STATICLIB=libz.a
-SHAREDLIB=
-SHAREDLIBV=
-SHAREDLIBM=
-LIBS=$(STATICLIB) $(SHAREDLIBV)
+STATICLIB = libz.a
+SHAREDLIB =
+SHAREDLIBV =
+SHAREDLIBM =
+LIBS = $(STATICLIB) $(SHAREDLIBV)
 
-AR=ar
-ARFLAGS=rc
-RANLIB=ranlib
-LDCONFIG=ldconfig
-LDSHAREDLIBC=-lc
-TAR=tar
-SHELL=/bin/sh
-EXE=
+AR = ar
+ARFLAGS = rc
+RANLIB = ranlib
+LDCONFIG = ldconfig
+LDSHAREDLIBC = -lc
+TAR = tar
+SHELL = /bin/sh
+EXE =
 
-prefix =/usr/local
-exec_prefix =${prefix}
-libdir =${exec_prefix}/lib
-sharedlibdir =${libdir}
-includedir =${prefix}/include
-mandir =${prefix}/share/man
+prefix = /usr/local
+exec_prefix = ${prefix}
+libdir = ${exec_prefix}/lib
+sharedlibdir = ${libdir}
+includedir = ${prefix}/include
+mandir = ${prefix}/share/man
 man3dir = ${mandir}/man3
 pkgconfigdir = ${libdir}/pkgconfig
 
@@ -245,9 +244,9 @@ zlib.3.pdf: zlib.3
 
 zconf.h.cmakein: zconf.h.in
 	-@ TEMPFILE=zconfh_$$; \
-	echo "/#define ZCONF_H/ a\\\\\n#cmakedefine Z_PREFIX\\\\\n#cmakedefine Z_HAVE_UNISTD_H\n" >> $$TEMPFILE &&\
-	sed -f $$TEMPFILE zconf.h.in > zconf.h.cmakein &&\
-	touch -r zconf.h.in zconf.h.cmakein &&\
+	echo "/#define ZCONF_H/ a\\\\\n#cmakedefine Z_PREFIX\\\\\n#cmakedefine Z_HAVE_UNISTD_H\n" >> $$TEMPFILE && \
+	sed -f $$TEMPFILE zconf.h.in > zconf.h.cmakein && \
+	touch -r zconf.h.in zconf.h.cmakein && \
 	rm $$TEMPFILE
 
 zconf: zconf.h.in

@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.10)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     message(STATUS "No build type selected; defaulting to Release")
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build" FORCE)
@@ -10,11 +10,13 @@ if(POLICY CMP0092)
     cmake_policy(SET CMP0092 NEW)
 endif()
 set(VERSION_REGEX "#define LIBDEFLATE_VERSION_STRING[ \t]+\"([0-9\\.]+)\"")
-file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/libdeflate.h VERSION_STRING REGEX ${VERSION_REGEX})
+file(
+    STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/libdeflate.h
+    VERSION_STRING
+    REGEX ${VERSION_REGEX}
+)
 string(REGEX REPLACE ${VERSION_REGEX} "\\1" VERSION_STRING "${VERSION_STRING}")
-project(libdeflate
-    LANGUAGES C
-    VERSION ${VERSION_STRING})
+project(libdeflate LANGUAGES C VERSION ${VERSION_STRING})
 include(CheckCCompilerFlag)
 option(LIBDEFLATE_BUILD_STATIC_LIB "Build the static library" ON)
 option(LIBDEFLATE_BUILD_SHARED_LIB "Build the shared library" ON)
@@ -24,14 +26,24 @@ option(LIBDEFLATE_ZLIB_SUPPORT "Support the zlib format" ON)
 option(LIBDEFLATE_GZIP_SUPPORT "Support the gzip format" ON)
 option(LIBDEFLATE_FREESTANDING "Build a freestanding library" OFF)
 if(NOT LIBDEFLATE_USER_SET_RELEASE_FLAGS)
-    set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG"
-        CACHE STRING "C compiler flags for release builds" FORCE)
+    set(CMAKE_C_FLAGS_RELEASE
+        "-O2 -DNDEBUG"
+        CACHE STRING
+        "C compiler flags for release builds"
+        FORCE
+    )
 endif()
 set(CMAKE_C_STANDARD 99)
 if(NOT MSVC)
-    check_c_compiler_flag(-Wdeclaration-after-statement HAVE_WDECLARATION_AFTER_STATEMENT)
+    check_c_compiler_flag(
+        -Wdeclaration-after-statement
+        HAVE_WDECLARATION_AFTER_STATEMENT
+    )
     check_c_compiler_flag(-Wimplicit-fallthrough HAVE_WIMPLICIT_FALLTHROUGH)
-    check_c_compiler_flag(-Wmissing-field-initializers HAVE_WMISSING_FIELD_INITIALIZERS)
+    check_c_compiler_flag(
+        -Wmissing-field-initializers
+        HAVE_WMISSING_FIELD_INITIALIZERS
+    )
     check_c_compiler_flag(-Wmissing-prototypes HAVE_WMISSING_PROTOTYPES)
     check_c_compiler_flag(-Wpedantic HAVE_WPEDANTIC)
     check_c_compiler_flag(-Wshadow HAVE_WSHADOW)
@@ -69,7 +81,8 @@ set(LIB_SOURCES
     cpu_features_x86.h
 )
 if(LIBDEFLATE_COMPRESSION_SUPPORT)
-    list(APPEND LIB_SOURCES
+    list(
+        APPEND LIB_SOURCES
         matchfinder_impl_arm.h
         bt_matchfinder.h
         deflate_compress.c
@@ -82,14 +95,16 @@ if(LIBDEFLATE_COMPRESSION_SUPPORT)
     )
 endif()
 if(LIBDEFLATE_DECOMPRESSION_SUPPORT)
-    list(APPEND LIB_SOURCES
+    list(
+        APPEND LIB_SOURCES
         decompress_template.h
         deflate_decompress.c
         decompress_impl.h
     )
 endif()
 if(LIBDEFLATE_ZLIB_SUPPORT)
-    list(APPEND LIB_SOURCES
+    list(
+        APPEND LIB_SOURCES
         adler32.c
         adler32_impl_arm.h
         adler32_impl_x86.h
@@ -104,7 +119,8 @@ if(LIBDEFLATE_ZLIB_SUPPORT)
     endif()
 endif()
 if(LIBDEFLATE_GZIP_SUPPORT)
-    list(APPEND LIB_SOURCES
+    list(
+        APPEND LIB_SOURCES
         crc32_impl_arm.h
         crc32_pmull_helpers.h
         crc32_pmull_wide.h
@@ -122,9 +138,7 @@ if(LIBDEFLATE_GZIP_SUPPORT)
         list(APPEND LIB_SOURCES gzip_decompress.c)
     endif()
 endif()
-set(LIB_INCLUDE_DIRS
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-)
+set(LIB_INCLUDE_DIRS $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
 if(LIBDEFLATE_BUILD_STATIC_LIB)
     add_library(libdeflate_static STATIC ${LIB_SOURCES})
     add_library(libdeflate::libdeflate_static ALIAS libdeflate_static)
@@ -133,10 +147,14 @@ if(LIBDEFLATE_BUILD_STATIC_LIB)
     else()
         set(STATIC_LIB_NAME deflate)
     endif()
-    set_target_properties(libdeflate_static PROPERTIES
-        OUTPUT_NAME ${STATIC_LIB_NAME}
-        PUBLIC_HEADER libdeflate.h)
+    set_target_properties(
+        libdeflate_static
+        PROPERTIES OUTPUT_NAME ${STATIC_LIB_NAME} PUBLIC_HEADER libdeflate.h
+    )
     target_include_directories(libdeflate_static PUBLIC ${LIB_INCLUDE_DIRS})
-    target_compile_definitions(libdeflate_static PRIVATE ${LIB_COMPILE_DEFINITIONS})
+    target_compile_definitions(
+        libdeflate_static
+        PRIVATE ${LIB_COMPILE_DEFINITIONS}
+    )
     target_compile_options(libdeflate_static PRIVATE ${LIB_COMPILE_OPTIONS})
 endif()

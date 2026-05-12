@@ -1,4 +1,4 @@
-﻿include(CheckCCompilerFlag)
+include(CheckCCompilerFlag)
 if(CMAKE_CXX_COMPILER)
     include(CheckCXXCompilerFlag)
 endif()
@@ -34,8 +34,14 @@ function(EnableCompilerFlag _flag _C _CXX _LD)
             set(LD_FLAG_${varname} false)
         endif()
         if(LD_FLAG_${varname})
-            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${_flag}" PARENT_SCOPE)
-            set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${_flag}" PARENT_SCOPE)
+            set(CMAKE_EXE_LINKER_FLAGS
+                "${CMAKE_EXE_LINKER_FLAGS} ${_flag}"
+                PARENT_SCOPE
+            )
+            set(CMAKE_SHARED_LINKER_FLAGS
+                "${CMAKE_SHARED_LINKER_FLAGS} ${_flag}"
+                PARENT_SCOPE
+            )
         endif()
     endif()
 endfunction()
@@ -43,25 +49,25 @@ macro(ADD_ZSTD_COMPILATION_FLAGS _C _CXX _LD)
     set(ZSTD_HAS_NOEXECSTACK false)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" OR MINGW)
         if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND MSVC)
-            EnableCompilerFlag("/clang:-Wall" _C _CXX false)
+            enablecompilerflag("/clang:-Wall" _C _CXX false)
         else()
-            EnableCompilerFlag("-Wall" _C _CXX false)
+            enablecompilerflag("-Wall" _C _CXX false)
         endif()
-        EnableCompilerFlag("-Wextra" _C _CXX false)
-        EnableCompilerFlag("-Wundef" _C _CXX false)
-        EnableCompilerFlag("-Wshadow" _C _CXX false)
-        EnableCompilerFlag("-Wcast-align" _C _CXX false)
-        EnableCompilerFlag("-Wcast-qual" _C _CXX false)
-        EnableCompilerFlag("-Wstrict-prototypes" _C false false)
+        enablecompilerflag("-Wextra" _C _CXX false)
+        enablecompilerflag("-Wundef" _C _CXX false)
+        enablecompilerflag("-Wshadow" _C _CXX false)
+        enablecompilerflag("-Wcast-align" _C _CXX false)
+        enablecompilerflag("-Wcast-qual" _C _CXX false)
+        enablecompilerflag("-Wstrict-prototypes" _C false false)
         if(CMAKE_BUILD_TYPE MATCHES "Debug")
-            EnableCompilerFlag("-DDEBUGLEVEL=1" _C _CXX false)
+            enablecompilerflag("-DDEBUGLEVEL=1" _C _CXX false)
         endif()
-        EnableCompilerFlag("-Wl,-z,noexecstack" false false _LD)
+        enablecompilerflag("-Wl,-z,noexecstack" false false _LD)
         if(CMAKE_C_COMPILER_ID MATCHES "Clang")
-            EnableCompilerFlag("-Qunused-arguments" _C _CXX false)
+            enablecompilerflag("-Qunused-arguments" _C _CXX false)
         endif()
         if(NOT CMAKE_INTERPROCEDURAL_OPTIMIZATION)
-            EnableCompilerFlag("-Wa,--noexecstack" _C _CXX false)
+            enablecompilerflag("-Wa,--noexecstack" _C _CXX false)
         endif()
         if(${LD_FLAG_WL_Z_NOEXECSTACK})
             if(${C_FLAG_WA_NOEXECSTACK})
@@ -71,30 +77,55 @@ macro(ADD_ZSTD_COMPILATION_FLAGS _C _CXX _LD)
             endif()
         endif()
     elseif(MSVC)
-        set(ACTIVATE_MULTITHREADED_COMPILATION "ON" CACHE BOOL "activate multi-threaded compilation (/MP flag)")
-        if(CMAKE_GENERATOR MATCHES "Visual Studio" AND ACTIVATE_MULTITHREADED_COMPILATION)
-            EnableCompilerFlag("/MP" _C _CXX false)
+        set(ACTIVATE_MULTITHREADED_COMPILATION
+            "ON"
+            CACHE BOOL
+            "activate multi-threaded compilation (/MP flag)"
+        )
+        if(
+            CMAKE_GENERATOR MATCHES "Visual Studio"
+            AND ACTIVATE_MULTITHREADED_COMPILATION
+        )
+            enablecompilerflag("/MP" _C _CXX false)
         endif()
-        EnableCompilerFlag("/D_UNICODE" _C _CXX false)
-        EnableCompilerFlag("/DUNICODE" _C _CXX false)
+        enablecompilerflag("/D_UNICODE" _C _CXX false)
+        enablecompilerflag("/DUNICODE" _C _CXX false)
         if(CMAKE_BUILD_TYPE MATCHES "Debug")
-            EnableCompilerFlag("/DDEBUGLEVEL=1" _C _CXX false)
+            enablecompilerflag("/DDEBUGLEVEL=1" _C _CXX false)
         endif()
     endif()
-    foreach(flag_var CMAKE_C_FLAGS CMAKE_C_FLAGS_DEBUG CMAKE_C_FLAGS_RELEASE
-        CMAKE_C_FLAGS_MINSIZEREL CMAKE_C_FLAGS_RELWITHDEBINFO
-        CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE
-        CMAKE_CXX_FLAGS_MINSIZEREL CMAKE_CXX_FLAGS_RELWITHDEBINFO)
+    foreach(
+        flag_var
+        CMAKE_C_FLAGS
+        CMAKE_C_FLAGS_DEBUG
+        CMAKE_C_FLAGS_RELEASE
+        CMAKE_C_FLAGS_MINSIZEREL
+        CMAKE_C_FLAGS_RELWITHDEBINFO
+        CMAKE_CXX_FLAGS
+        CMAKE_CXX_FLAGS_DEBUG
+        CMAKE_CXX_FLAGS_RELEASE
+        CMAKE_CXX_FLAGS_MINSIZEREL
+        CMAKE_CXX_FLAGS_RELWITHDEBINFO
+    )
         if(${flag_var})
             separate_arguments(${flag_var})
             string(REPLACE ";" " " ${flag_var} "${${flag_var}}")
         endif()
     endforeach()
     if(MSVC AND ZSTD_USE_STATIC_RUNTIME)
-        foreach(flag_var CMAKE_C_FLAGS CMAKE_C_FLAGS_DEBUG CMAKE_C_FLAGS_RELEASE
-            CMAKE_C_FLAGS_MINSIZEREL CMAKE_C_FLAGS_RELWITHDEBINFO
-            CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE
-            CMAKE_CXX_FLAGS_MINSIZEREL CMAKE_CXX_FLAGS_RELWITHDEBINFO)
+        foreach(
+            flag_var
+            CMAKE_C_FLAGS
+            CMAKE_C_FLAGS_DEBUG
+            CMAKE_C_FLAGS_RELEASE
+            CMAKE_C_FLAGS_MINSIZEREL
+            CMAKE_C_FLAGS_RELWITHDEBINFO
+            CMAKE_CXX_FLAGS
+            CMAKE_CXX_FLAGS_DEBUG
+            CMAKE_CXX_FLAGS_RELEASE
+            CMAKE_CXX_FLAGS_MINSIZEREL
+            CMAKE_CXX_FLAGS_RELWITHDEBINFO
+        )
             if(${flag_var})
                 string(REGEX REPLACE "/MD" "/MT" ${flag_var} "${${flag_var}}")
             endif()

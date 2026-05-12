@@ -1,11 +1,8 @@
-﻿add_definitions(-DHAVE_CONFIG_H)
+add_definitions(-DHAVE_CONFIG_H)
 if(ANDROID)
     include_directories(${PROJECT_SOURCE_DIR}/contrib/android/include)
 endif()
-set(include_HEADERS
-    archive.h
-    archive_entry.h
-)
+set(include_HEADERS archive.h archive_entry.h)
 set(libarchive_SOURCES
     archive_acl.c
     archive_acl_private.h
@@ -108,12 +105,18 @@ target_include_directories(archive_static PUBLIC .)
 target_link_libraries(archive_static ${ADDITIONAL_LIBS})
 target_compile_definitions(archive_static PUBLIC LIBARCHIVE_STATIC)
 if(WIN32 AND MSVC AND MSVC_USE_STATIC_CRT)
-    set_property(TARGET archive_static PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    set_property(
+        TARGET archive_static
+        PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+    )
 endif(WIN32 AND MSVC AND MSVC_USE_STATIC_CRT)
 set_target_properties(archive_static PROPERTIES OUTPUT_NAME archive)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU")
     if(CMAKE_C_COMPILER_ID MATCHES "GNU")
-        target_compile_options(archive_static PRIVATE -Wno-discarded-qualifiers -Wno-stringop-overflow)
+        target_compile_options(
+            archive_static
+            PRIVATE -Wno-discarded-qualifiers -Wno-stringop-overflow
+        )
     elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|AppleClang")
         target_compile_options(archive_static PRIVATE -Wno-ignored-qualifiers)
     endif()

@@ -1,4 +1,4 @@
-﻿# cmake-format: off
+# cmake-format: off
 # Copyright (c) 2025, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
@@ -101,7 +101,5 @@ elseif(CPU_RISCV64)
 elseif(CPU_UNDEFINED)
     list(APPEND IGZIP_SOURCES ${IGZIP_BASE_ALIASES_SOURCES})
 endif()
-set(IGZIP_HEADERS
-    include/igzip_lib.h
-)
+set(IGZIP_HEADERS include/igzip_lib.h)
 list(APPEND EXTERN_HEADERS ${IGZIP_HEADERS})

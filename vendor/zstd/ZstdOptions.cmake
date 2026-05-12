@@ -1,11 +1,14 @@
-﻿add_definitions(-DZSTD_LEGACY_SUPPORT=0)
+add_definitions(-DZSTD_LEGACY_SUPPORT=0)
 if(APPLE)
     option(ZSTD_FRAMEWORK "Build as Apple Framework" OFF)
 endif()
 if(ANDROID)
     set(ZSTD_MULTITHREAD_SUPPORT_DEFAULT OFF)
     if((NOT ANDROID_PLATFORM_LEVEL) OR (ANDROID_PLATFORM_LEVEL VERSION_LESS 24))
-        message(STATUS "Configuring for old Android API - disabling fseeko/ftello")
+        message(
+            STATUS
+            "Configuring for old Android API - disabling fseeko/ftello"
+        )
         add_compile_definitions(LIBC_NO_FSEEKO)
     endif()
 else()

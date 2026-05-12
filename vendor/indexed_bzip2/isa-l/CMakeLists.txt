@@ -1,4 +1,4 @@
-﻿# cmake-format: off
+# cmake-format: off
 # Copyright (c) 2025, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
@@ -29,15 +29,24 @@ cmake_policy(VERSION 3.12)
 if(POLICY CMP194)
     cmake_policy(SET CMP194 NEW)
 endif()
-project(ISA-L
+project(
+    ISA-L
     VERSION 2.31.0
     DESCRIPTION "Intel's ISA-L (Intelligent Storage Acceleration Library)"
     LANGUAGES C
 )
-if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "AMD64")
+if(
+    CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64"
+    OR CMAKE_SYSTEM_PROCESSOR STREQUAL "AMD64"
+)
     if(DEFINED SPRING_HAVE_NASM AND SPRING_HAVE_NASM)
         if(DEFINED SPRING_NASM_EXECUTABLE AND SPRING_NASM_EXECUTABLE)
-            set(CMAKE_ASM_NASM_COMPILER "${SPRING_NASM_EXECUTABLE}" CACHE FILEPATH "NASM assembler" FORCE)
+            set(CMAKE_ASM_NASM_COMPILER
+                "${SPRING_NASM_EXECUTABLE}"
+                CACHE FILEPATH
+                "NASM assembler"
+                FORCE
+            )
             enable_language(ASM_NASM)
         endif()
         set(USE_NASM ON)
@@ -48,10 +57,16 @@ endif()
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
-if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "AMD64")
+if(
+    CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64"
+    OR CMAKE_SYSTEM_PROCESSOR STREQUAL "AMD64"
+)
     set(CPU_X86_64 ON)
     set(ARCH_DEF "x86_64")
-elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+elseif(
+    CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64"
+    OR CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64"
+)
     set(CPU_AARCH64 ON)
     set(ARCH_DEF "aarch64")
 elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "ppc64le")
@@ -75,9 +90,7 @@ if(CPU_X86_64)
 elseif(CPU_AARCH64 OR CPU_RISCV64)
     set(ASM_FILTER "${CMAKE_C_COMPILER} -D__ASSEMBLY__")
 endif()
-set(ISAL_INCLUDE_DIRS
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
+set(ISAL_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include)
 set(EXTERN_HEADERS)
 if(ARCH_DEF)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D${ARCH_DEF}")
@@ -92,55 +105,85 @@ include(cmake/crc.cmake)
 include(cmake/igzip.cmake)
 option(ISAL_BUILD_SHARED_LIBS "Build shared libraries" ON)
 set(BUILD_SHARED_LIBS ${ISAL_BUILD_SHARED_LIBS})
-add_library(isal
+add_library(
+    isal
     ${ERASURE_CODE_SOURCES}
     ${RAID_SOURCES}
     ${CRC_SOURCES}
     ${IGZIP_SOURCES}
     ${MEM_SOURCES}
 )
-set_target_properties(isal PROPERTIES
-    VERSION ${LIBISAL_VERSION_MAJOR}.${LIBISAL_VERSION_MINOR}.${LIBISAL_VERSION_PATCH}
-    SOVERSION ${LIBISAL_VERSION_MAJOR}
-    PUBLIC_HEADER "${EXTERN_HEADERS}"
+set_target_properties(
+    isal
+    PROPERTIES
+        VERSION
+            ${LIBISAL_VERSION_MAJOR}.${LIBISAL_VERSION_MINOR}.${LIBISAL_VERSION_PATCH}
+        SOVERSION ${LIBISAL_VERSION_MAJOR}
+        PUBLIC_HEADER "${EXTERN_HEADERS}"
 )
-if(WIN32 AND CMAKE_C_COMPILER_ID STREQUAL "Clang"
-    AND (MSVC OR CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
-         OR CMAKE_C_SIMULATE_ID STREQUAL "MSVC"))
-    target_compile_options(isal PRIVATE
-        -Wno-cast-align
-        -Wno-cast-qual
-        -Wno-conditional-uninitialized
-        -Wno-declaration-after-statement
-        -Wno-implicit-fallthrough
-        -Wno-implicit-int-conversion
-        -Wno-microsoft-enum-value
-        -Wno-missing-prototypes
-        -Wno-missing-variable-declarations
-        -Wno-reserved-identifier
-        -Wno-reserved-macro-identifier
-        -Wno-shorten-64-to-32
-        -Wno-sign-conversion
-        -Wno-switch-default
-        -Wno-unreachable-code
-        -Wno-unsafe-buffer-usage
-        -Wno-unused-macros
+if(
+    WIN32
+    AND CMAKE_C_COMPILER_ID STREQUAL "Clang"
+    AND (
+        MSVC
+        OR CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
+        OR CMAKE_C_SIMULATE_ID STREQUAL "MSVC"
+    )
+)
+    target_compile_options(
+        isal
+        PRIVATE
+            -Wno-cast-align
+            -Wno-cast-qual
+            -Wno-conditional-uninitialized
+            -Wno-declaration-after-statement
+            -Wno-implicit-fallthrough
+            -Wno-implicit-int-conversion
+            -Wno-microsoft-enum-value
+            -Wno-missing-prototypes
+            -Wno-missing-variable-declarations
+            -Wno-reserved-identifier
+            -Wno-reserved-macro-identifier
+            -Wno-shorten-64-to-32
+            -Wno-sign-conversion
+            -Wno-switch-default
+            -Wno-unreachable-code
+            -Wno-unsafe-buffer-usage
+            -Wno-unused-macros
     )
 endif()
 if(CPU_X86_64 AND USE_NASM)
-    foreach(source IN LISTS ERASURE_CODE_SOURCES RAID_SOURCES CRC_SOURCES IGZIP_SOURCES MEM_SOURCES)
+    foreach(
+        source
+        IN
+        LISTS
+            ERASURE_CODE_SOURCES
+            RAID_SOURCES
+            CRC_SOURCES
+            IGZIP_SOURCES
+            MEM_SOURCES
+    )
         if(source MATCHES "\\.asm$")
             get_filename_component(source_dir ${source} DIRECTORY)
-            set_source_files_properties(${source} PROPERTIES
-                INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/include;${CMAKE_CURRENT_SOURCE_DIR}/${source_dir}")
+            set_source_files_properties(
+                ${source}
+                PROPERTIES
+                    INCLUDE_DIRECTORIES
+                        "${CMAKE_CURRENT_SOURCE_DIR}/include;${CMAKE_CURRENT_SOURCE_DIR}/${source_dir}"
+            )
         endif()
     endforeach()
 endif()
-target_include_directories(isal
+target_include_directories(
+    isal
     PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-    $<INSTALL_INTERFACE:include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<INSTALL_INTERFACE:include>
 )
 set(ISAL_HEADER "${CMAKE_BINARY_DIR}/isa-l.h")
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/isa-l.h.in ${ISAL_HEADER} @ONLY)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/isa-l.h.in
+    ${ISAL_HEADER}
+    @ONLY
+)

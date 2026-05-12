@@ -1,4 +1,4 @@
-﻿# cmake-format: off
+# cmake-format: off
 # Copyright (c) 2025, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
@@ -24,13 +24,8 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 # cmake-format: on
-set(CRC_BASE_SOURCES
-    crc/crc_base.c
-    crc/crc64_base.c
-)
-set(CRC_BASE_ALIASES_SOURCES
-    crc/crc_base_aliases.c
-)
+set(CRC_BASE_SOURCES crc/crc_base.c crc/crc64_base.c)
+set(CRC_BASE_ALIASES_SOURCES crc/crc_base_aliases.c)
 set(CRC_X86_64_SOURCES
     crc/crc16_t10dif_01.asm
     crc/crc16_t10dif_by4.asm
@@ -104,8 +99,5 @@ elseif(CPU_AARCH64)
 elseif(CPU_PPC64LE OR CPU_RISCV64 OR CPU_UNDEFINED)
     list(APPEND CRC_SOURCES ${CRC_BASE_ALIASES_SOURCES})
 endif()
-set(CRC_HEADERS
-    include/crc.h
-    include/crc64.h
-)
+set(CRC_HEADERS include/crc.h include/crc64.h)
 list(APPEND EXTERN_HEADERS ${CRC_HEADERS})
