@@ -110,14 +110,14 @@ jobs:
                     export EXTRA_QT_PLUGINS= && \
                     mkdir -p AppDir/usr/share/metainfo && \
                     mkdir -p AppDir/usr/share/icons/hicolor/512x512/apps && \
-                    cp tools/release/linux/spring2.appdata.xml \
-                      AppDir/usr/share/metainfo/spring2.appdata.xml && \
+                    cp tools/release/linux/io.github.thisisamirv.spring2.appdata.xml \
+                      AppDir/usr/share/metainfo/io.github.thisisamirv.spring2.appdata.xml && \
                     cp docs/assets/icons/logo.png \
                       AppDir/usr/share/icons/hicolor/512x512/apps/spring2.png && \
                     ./linuxdeploy --appimage-extract-and-run \
                       --appdir AppDir \
                       --executable out/bin/spring2 \
-                      --desktop-file tools/release/linux/spring2.desktop \
+                      --desktop-file tools/release/linux/io.github.thisisamirv.spring2.desktop \
                       --icon-file \
                         AppDir/usr/share/icons/hicolor/512x512/apps/spring2.png \
                       --output appimage \

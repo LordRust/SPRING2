@@ -549,7 +549,8 @@ jobs:
                   icx --version
                   icpx --version
                   CC=icx CXX=icpx cmake -S . -B ${{ matrix.build_dir }} -G Ninja \
-                    -DCMAKE_MAKE_PROGRAM="$GITHUB_WORKSPACE/tools/host/ninja/linux/ninja"
+                    -DCMAKE_MAKE_PROGRAM="$GITHUB_WORKSPACE/tools/host/ninja/linux/ninja" \
+                    -DSPRING_ENABLE_IPO=OFF
 
             - name: Build Linux IntelLLVM target
               if: matrix.name == 'Linux IntelLLVM'

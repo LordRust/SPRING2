@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-    <id>spring2.desktop</id>
+    <id>io.github.thisisamirv.spring2.desktop</id>
     <name>SPRING2</name>
     <summary>FASTQ and FASTA compressor for sequencing data</summary>
     <metadata_license>CC0-1.0</metadata_license>
     <project_license>LicenseRef-SPRING-Research-Only</project_license>
     <developer_name>SPRING2 contributors</developer_name>
-    <launchable type="desktop-id">spring2.desktop</launchable>
+    <launchable type="desktop-id">io.github.thisisamirv.spring2.desktop</launchable>
     <provides>
         <binary>spring2</binary>
     </provides>
@@ -20,7 +20,6 @@
     </description>
     <url type="homepage">https://spring2.readthedocs.io/</url>
     <url type="bugtracker">https://github.com/thisisamirv/SPRING2/issues</url>
-    <url type="vcs-browser">https://github.com/thisisamirv/SPRING2</url>
     <categories>
         <category>Science</category>
         <category>Biology</category>
