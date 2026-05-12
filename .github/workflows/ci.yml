@@ -29,6 +29,10 @@ jobs:
         steps:
             - name: Checkout repository
               uses: actions/checkout@v6
+              env:
+                  GIT_CONFIG_COUNT: 1
+                  GIT_CONFIG_KEY_0: init.defaultBranch
+                  GIT_CONFIG_VALUE_0: main
 
             - name: Ensure vendored tools and scripts are executable on Unix
               if: runner.os != 'Windows'
@@ -69,8 +73,8 @@ jobs:
               run: |
                   CMAKE_VENV="$RUNNER_TEMP/cmake-venv"
                   python3 -m venv "$CMAKE_VENV"
-                  "$CMAKE_VENV/bin/python" -m pip install --upgrade pip
-                  "$CMAKE_VENV/bin/python" -m pip install "cmake==4.2.0"
+                  "$CMAKE_VENV/bin/python" -m pip install --no-cache-dir --upgrade pip
+                  "$CMAKE_VENV/bin/python" -m pip install --no-cache-dir "cmake==4.2.0"
                   echo "$CMAKE_VENV/bin" >> "$GITHUB_PATH"
                   "$CMAKE_VENV/bin/cmake" --version
 
@@ -213,7 +217,7 @@ jobs:
               uses: msys2/setup-msys2@v2
               with:
                   msystem: UCRT64
-                  update: true
+                  update: false
                   install: >-
                       mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake
                       mingw-w64-ucrt-x86_64-clang-tools-extra
@@ -288,6 +292,10 @@ jobs:
         steps:
             - name: Checkout repository
               uses: actions/checkout@v6
+              env:
+                  GIT_CONFIG_COUNT: 1
+                  GIT_CONFIG_KEY_0: init.defaultBranch
+                  GIT_CONFIG_VALUE_0: main
 
             - name: Ensure vendored tools are executable
               if: matrix.name != 'Windows arm64'
@@ -310,8 +318,8 @@ jobs:
               run: |
                   CMAKE_VENV="$RUNNER_TEMP/cmake-venv"
                   python3 -m venv "$CMAKE_VENV"
-                  "$CMAKE_VENV/bin/python" -m pip install --upgrade pip
-                  "$CMAKE_VENV/bin/python" -m pip install "cmake==4.2.0"
+                  "$CMAKE_VENV/bin/python" -m pip install --no-cache-dir --upgrade pip
+                  "$CMAKE_VENV/bin/python" -m pip install --no-cache-dir "cmake==4.2.0"
                   echo "$CMAKE_VENV/bin" >> "$GITHUB_PATH"
                   "$CMAKE_VENV/bin/cmake" --version
 
@@ -393,18 +401,20 @@ jobs:
               shell: bash
               run: |
                   docker run --rm --platform linux/arm64 \
+                    -e container=docker \
                     -v "$PWD":/work -w /work arm64v8/almalinux:8 /bin/bash -c "
-                    dnf install -y epel-release dnf-plugins-core && \
+                    dnf install -y --setopt=install_weak_deps=False epel-release dnf-plugins-core && \
                     (dnf config-manager --set-enabled powertools || \
                       dnf config-manager --set-enabled crb) && \
-                    dnf install -y gcc-toolset-12-gcc-c++ libomp-devel \
+                    dnf install -y --setopt=install_weak_deps=False gcc-toolset-12-gcc-c++ libomp-devel \
                       python39 python39-pip && \
                     source /opt/rh/gcc-toolset-12/enable && \
                     python3.9 -m venv .cmake-venv && \
                     . .cmake-venv/bin/activate && \
                     chmod +x /work/tools/host/ninja/linux-aarch64/ninja \
                       /work/tools/host/nasm/linux/nasm && \
-                    python3.9 -m pip install 'cmake==4.2.0' && \
+                    python3.9 -m pip install --no-cache-dir --upgrade pip && \
+                    python3.9 -m pip install --no-cache-dir 'cmake==4.2.0' && \
                     cmake -S . -B out/build-${{ matrix.os }} -G Ninja \
                       -DCMAKE_MAKE_PROGRAM=/work/${{ matrix.ninja_path }} \
                       -DLIBRAPIDARCHIVE_WITH_ISAL=OFF \
@@ -474,6 +484,10 @@ jobs:
         steps:
             - name: Checkout repository
               uses: actions/checkout@v6
+              env:
+                  GIT_CONFIG_COUNT: 1
+                  GIT_CONFIG_KEY_0: init.defaultBranch
+                  GIT_CONFIG_VALUE_0: main
 
             - name: Ensure vendored tools are executable on Unix
               if: runner.os != 'Windows'
@@ -500,8 +514,8 @@ jobs:
               run: |
                   CMAKE_VENV="$RUNNER_TEMP/cmake-venv"
                   python3 -m venv "$CMAKE_VENV"
-                  "$CMAKE_VENV/bin/python" -m pip install --upgrade pip
-                  "$CMAKE_VENV/bin/python" -m pip install "cmake==4.2.0"
+                  "$CMAKE_VENV/bin/python" -m pip install --no-cache-dir --upgrade pip
+                  "$CMAKE_VENV/bin/python" -m pip install --no-cache-dir "cmake==4.2.0"
                   echo "$CMAKE_VENV/bin" >> "$GITHUB_PATH"
                   "$CMAKE_VENV/bin/cmake" --version
 
@@ -523,7 +537,7 @@ jobs:
               uses: msys2/setup-msys2@v2
               with:
                   msystem: CLANG64
-                  update: true
+                  update: false
                   install: >-
                       mingw-w64-clang-x86_64-clang mingw-w64-clang-x86_64-lld
                       mingw-w64-clang-x86_64-python
@@ -726,6 +740,10 @@ jobs:
         steps:
             - name: Checkout
               uses: actions/checkout@v6
+              env:
+                  GIT_CONFIG_COUNT: 1
+                  GIT_CONFIG_KEY_0: init.defaultBranch
+                  GIT_CONFIG_VALUE_0: main
 
             - name: Ensure vendored tools are executable
               run: |
@@ -741,7 +759,8 @@ jobs:
               run: |
                   CMAKE_VENV="$RUNNER_TEMP/cmake-venv"
                   python3 -m venv "$CMAKE_VENV"
-                  "$CMAKE_VENV/bin/python" -m pip install "cmake==4.2.0"
+                  "$CMAKE_VENV/bin/python" -m pip install --no-cache-dir --upgrade pip
+                  "$CMAKE_VENV/bin/python" -m pip install --no-cache-dir "cmake==4.2.0"
                   echo "$CMAKE_VENV/bin" >> "$GITHUB_PATH"
 
             - name: Configure CMake with sanitizer flags

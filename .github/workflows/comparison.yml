@@ -22,6 +22,10 @@ jobs:
         steps:
             - name: Checkout repository
               uses: actions/checkout@v6
+              env:
+                  GIT_CONFIG_COUNT: 1
+                  GIT_CONFIG_KEY_0: init.defaultBranch
+                  GIT_CONFIG_VALUE_0: main
               with:
                   ref: ${{ github.event_name == 'workflow_run' &&
                       github.event.workflow_run.head_sha || github.sha }}
@@ -47,8 +51,8 @@ jobs:
               run: |
                   CMAKE_VENV="$RUNNER_TEMP/cmake-venv"
                   python3 -m venv "$CMAKE_VENV"
-                  "$CMAKE_VENV/bin/python" -m pip install --upgrade pip
-                  "$CMAKE_VENV/bin/python" -m pip install "cmake==4.2.0"
+                                    "$CMAKE_VENV/bin/python" -m pip install --no-cache-dir --upgrade pip
+                                    "$CMAKE_VENV/bin/python" -m pip install --no-cache-dir "cmake==4.2.0"
                   echo "$CMAKE_VENV/bin" >> "$GITHUB_PATH"
                   "$CMAKE_VENV/bin/cmake" --version
 
@@ -81,5 +85,4 @@ jobs:
             - name: Run comparison benchmark
               shell: bash -el {0}
               run: |
-                  chmod +x tests/bench/comparison_bench.sh
-                  tests/bench/comparison_bench.sh --no_debug
+                  python3 tests/bench/comparison_bench.py

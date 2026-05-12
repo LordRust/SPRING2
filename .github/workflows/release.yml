@@ -45,6 +45,10 @@ jobs:
         steps:
             - name: Checkout repository
               uses: actions/checkout@v6
+              env:
+                  GIT_CONFIG_COUNT: 1
+                  GIT_CONFIG_KEY_0: init.defaultBranch
+                  GIT_CONFIG_VALUE_0: main
 
             - name: Ensure vendored tools are executable on Unix
               if: matrix.name != 'windows'
@@ -70,14 +74,15 @@ jobs:
                   fi
 
                   docker run --rm --platform "$DOCKER_PLATFORM" \
+                    -e container=docker \
                     -e ARCH_SUFFIX="$ARCH_SUFFIX" \
                     -e CMAKE_EXTRA_FLAGS="$CMAKE_EXTRA_FLAGS" \
                     -v "$PWD":/work -w /work "$DOCKER_IMAGE" /bin/bash -c "
-                    dnf install -y epel-release dnf-plugins-core && \
+                    dnf install -y --setopt=install_weak_deps=False epel-release dnf-plugins-core && \
                     (dnf config-manager --set-enabled powertools || \
                       dnf config-manager --set-enabled crb) && \
-                    dnf install -y gcc-toolset-12-gcc-c++ libomp-devel \
-                      python39 python39-pip wget appstream \
+                    dnf install -y --setopt=install_weak_deps=False gcc-toolset-12-gcc-c++ libomp-devel \
+                      patchelf python39 python39-pip wget appstream \
                       fuse-libs file && \
                     source /opt/rh/gcc-toolset-12/enable && \
                     python3.9 -m venv .cmake-venv && \
@@ -87,6 +92,7 @@ jobs:
                       NINJA_PATH=/work/tools/host/ninja/linux-aarch64/ninja; \
                     fi && \
                     chmod +x \$NINJA_PATH /work/tools/host/nasm/linux/nasm && \
+                    python3.9 -m pip install --upgrade pip && \
                     python3.9 -m pip install 'cmake==4.2.0' && \
                     cmake -S . -B out/build -G Ninja \
                       -DCMAKE_MAKE_PROGRAM=\$NINJA_PATH \
@@ -101,6 +107,10 @@ jobs:
                     fi && \
                     file out/bin/spring2 && \
                     ldd out/bin/spring2 && \
+                    if [ -d out/lib ]; then \
+                      export LD_LIBRARY_PATH="/work/out/lib"; \
+                    fi && \
+                    patchelf --remove-rpath out/bin/spring2 && \
                     export LINUXDEPLOY_DEBUG=1 && \
                     URL='https://github.com/linuxdeploy/linuxdeploy/' && \
                     URL=\"\${URL}releases/download/continuous/\" && \
@@ -129,10 +139,11 @@ jobs:
               if: matrix.name == 'macos'
               run: |
                   brew update
-                  brew install libomp python
+                  brew install libomp
                   echo "MACOS_LIBOMP_PREFIX=$(brew --prefix libomp)" >> "$GITHUB_ENV"
                   CMAKE_VENV="$RUNNER_TEMP/cmake-venv"
                   python3 -m venv "$CMAKE_VENV"
+                  "$CMAKE_VENV/bin/python" -m pip install --upgrade pip
                   "$CMAKE_VENV/bin/python" -m pip install "cmake==4.2.0"
                   echo "$CMAKE_VENV/bin" >> "$GITHUB_PATH"
 
@@ -265,7 +276,8 @@ jobs:
               if: matrix.name == 'macos'
               run: |
                   cmake -S . -B out/build -G Ninja \
-                    -DCMAKE_MAKE_PROGRAM="$GITHUB_WORKSPACE/tools/host/ninja/mac/ninja"
+                    -DCMAKE_MAKE_PROGRAM="$GITHUB_WORKSPACE/tools/host/ninja/mac/ninja" \
+                    -DSPRING_ENABLE_COMPILER_CACHE=OFF
 
             - name: Build and Strip (macOS)
               if: matrix.name == 'macos'
@@ -411,15 +423,23 @@ jobs:
         steps:
             - name: Checkout repository
               uses: actions/checkout@v6
+              env:
+                  GIT_CONFIG_COUNT: 1
+                  GIT_CONFIG_KEY_0: init.defaultBranch
+                  GIT_CONFIG_VALUE_0: main
 
             - name: Download x86_64 binary
               uses: actions/download-artifact@v8
+              env:
+                  NODE_OPTIONS: --no-deprecation
               with:
                   name: spring2-windows-x86_64-binary
                   path: windows-bin/x86_64
 
             - name: Download arm64 binary
               uses: actions/download-artifact@v8
+              env:
+                  NODE_OPTIONS: --no-deprecation
               with:
                   name: spring2-windows-arm64-binary
                   path: windows-bin/arm64
@@ -527,15 +547,23 @@ jobs:
         steps:
             - name: Checkout repository
               uses: actions/checkout@v6
+              env:
+                  GIT_CONFIG_COUNT: 1
+                  GIT_CONFIG_KEY_0: init.defaultBranch
+                  GIT_CONFIG_VALUE_0: main
 
             - name: Download arm64 binaries
               uses: actions/download-artifact@v8
+              env:
+                  NODE_OPTIONS: --no-deprecation
               with:
                   name: spring2-macos-arm64
                   path: bin-arm64
 
             - name: Download x86_64 binaries
               uses: actions/download-artifact@v8
+              env:
+                  NODE_OPTIONS: --no-deprecation
               with:
                   name: spring2-macos-x86_64
                   path: bin-x86_64

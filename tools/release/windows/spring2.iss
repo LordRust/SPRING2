@@ -94,9 +94,6 @@ Filename: "{app}\README.txt"; Description: "Open Windows installation notes"; Fl
 const
   EnvironmentKey = 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment';
   PathValueName = 'Path';
-  HWND_BROADCAST = $FFFF;
-  WM_SETTINGCHANGE = $001A;
-  SMTO_ABORTIFHUNG = $0002;
 
 function SendMessageTimeout(hWnd: Integer; Msg: Integer; wParam: Integer; lParam: string;
   fuFlags: Integer; uTimeout: Integer; out lpdwResult: Integer): Integer;
