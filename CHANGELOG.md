@@ -7,31 +7,23 @@
 ### Added
 
 - Added memory-aware compression-path planning helpers that detect available system memory, estimate total input size including `.gz` inputs by inferred uncompressed size, and honor the user-provided `-m` memory cap when choosing between in-memory and disk-backed compression.
-- Added a regression test covering compression storage planning so the memory-path versus disk-path decision now stays pinned to the required peak-memory threshold instead of only raw input bytes.
-- Added version-aware decompression for backward compability.
-- Added support for legacy Spring archives, including preview, decompression, and `SpringReader` compatibility for checked-in legacy `*.spring` sample fixtures from SPRING1.
-- Added archive-metadata version regression coverage so current archives keep their exact stored creator version, headered metadata remains version-aware, and older headerless archives are pinned to `1.0.0-rc.1` for preview and decompression compatibility.
+- Added version-aware decompression support for backward compability in SPRING2 future versions. Current archives keep their exact stored creator version, headered metadata remains version-aware, and older headerless archives are pinned to `1.0.0-rc.1` for preview and decompression compatibility.
+- Added support for legacy SPRING archives, including preview, decompression, and `SpringReader` compatibility for checked-in legacy `*.spring` sample fixtures from SPRING1.
 - Added Windows release packaging with architecture-specific Inno Setup installers, embedded executable and installer version metadata, publisher details, release icon assets, and optional code-signing hooks for GitHub Actions.
 - Added Linux release packaging metadata with repo-owned AppImage desktop and AppStream files so release builds ship cleaner, more standards-compliant Linux application metadata.
 - Added macOS release packaging assets, DMG staging, and a native `.pkg` installer so universal macOS releases now include install guidance, a helper install script, and a no-terminal installer path alongside the `spring2` binary.
-- Added an optional Windows installer task that appends the SPRING2 install directory to the system PATH and removes it again on uninstall.
-- Added Windows installer shortcuts: Start Menu launch entry by default and an optional desktop shortcut task for `spring2.exe`.
 - Added release-engineering documentation covering optional Windows code-signing setup and the available Windows installer tasks.
+- Added a regression test covering compression storage planning so the memory-path versus disk-path decision now stays pinned to the required peak-memory threshold instead of only raw input bytes.
 - Added installation guides to the docs.
 
 ### Changed
 
-- Changed compression to support a real disk-backed fallback path for memory-constrained runs: standard archives now stage work under `<archive>.work-tmp`, grouped bundle members under `<archive>.grouped-tmp`, and final tar assembly can stream staged files directly from disk instead of rebuilding all archive members in memory.
-- Changed short-read disk-path compression to spill reorder, encoder, and post-encode side-stream artifacts to disk between stages, shortening intermediate lifetimes and reducing peak RAM pressure during standard and grouped compression.
-- Changed disk-path stream rebuilding so the final alignment-stream stage now consumes spilled encoder metadata incrementally through block scratch files instead of reconstructing large per-read vectors in memory.
-- Changed disk-path quality and ID reordering to consume spilled side streams and read-order files directly from disk rather than requiring the full post-encode side-stream payloads to remain resident in memory.
+- Changed compression to support a real disk-backed fallback path for memory-constrained runs: SPRING2 now selects the in-memory path only when available RAM covers estimated input bytes plus an explicit peak-intermediate-memory estimate and additional safety margin; standard archives stage work under `<archive>.work-tmp`, grouped bundle members under `<archive>.grouped-tmp`, short-read disk-path compression spills reorder, encoder, and post-encode side-stream artifacts to disk between stages, and final archive assembly plus alignment, quality, and ID stream rebuilding can consume staged files directly from disk instead of rebuilding large in-memory payloads; paired-end order rewrites now persist updated `read_order_entries` into the spilled encoder artifact before downstream quality/ID and final stream reordering consume that metadata.
+- Replaced the Python-based embedded-reference generator with a native C++ codegen helper under `tools/codegen`, backed by `libdeflate`, so the build no longer depends on a Python interpreter to produce `reference_data.cpp`.
 
 ### Fixed
 
 - Fixed preprocessing progress reporting for gzipped input files by tracking gzip stream progress from the compressed byte offset instead of using invalid `tellg()` positions on the zlib-backed input stream; progress updates are now also clamped to valid bounds before rendering.
-- Fixed compression-path planning so SPRING2 now selects the in-memory path only when available RAM covers estimated input bytes plus an explicit peak-intermediate-memory estimate and additional safety margin, reducing false memory-path selections on large inputs.
-- Fixed disk-path archive assembly and grouped-bundle packaging so nested archives and staged members can be written from disk without first reloading them into a monolithic in-memory tar payload.
-- Fixed disk-path compression correctness after paired-end order rewriting by persisting updated `read_order_entries` into the spilled encoder artifact before downstream quality/ID and final stream reordering consume that metadata.
 
 ## V1.0.0-rc.1
 
