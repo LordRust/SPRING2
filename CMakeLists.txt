@@ -226,16 +226,6 @@ elseif("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
     endif()
 elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
     message(NOTICE "Detected compiler: Microsoft Visual C++")
-elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "IntelLLVM")
-    if(SPRING_MSVC_FRONTEND)
-        message(
-            NOTICE
-            "Detected compiler: IntelLLVM with an MSVC-compatible frontend"
-        )
-    else()
-        message(NOTICE "Detected compiler: IntelLLVM")
-        set(SPRING_COMPILER_SUPPORTS_GNU_STYLE_FLAGS TRUE)
-    endif()
 else()
     message(
         FATAL_ERROR
@@ -287,13 +277,6 @@ if(SPRING_ENABLE_FAST_LINKER)
 endif()
 
 option(SPRING_ENABLE_IPO "Enable Interprocedural Optimization if supported" ON)
-if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM" AND SPRING_ENABLE_IPO)
-    message(
-        NOTICE
-        "Disabling Interprocedural Optimization for IntelLLVM to avoid compiler hangs during full builds."
-    )
-    set(SPRING_ENABLE_IPO OFF)
-endif()
 
 if(
     NOT WIN32

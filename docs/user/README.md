@@ -14,8 +14,8 @@ inspecting SPRING2 archives.
 
 ## Task Guides
 
-- [Platform Build Commands](BUILDING_PLATFORMS.md): Linux, macOS, Windows,
-  and IntelLLVM build recipes.
+- [Platform Build Commands](BUILDING_PLATFORMS.md): Linux, macOS, and Windows
+  build recipes.
 - [Compression Guide](COMPRESSION.md): input layouts, grouped lanes,
   performance tuning, and archive creation examples.
 - [End-to-End Examples](EXAMPLES.md): complete command sequences for common

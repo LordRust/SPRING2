@@ -461,9 +461,6 @@ jobs:
                     - os: ubuntu-latest
                       name: Linux Clang
                       build_dir: out/build-linux-clang
-                    - os: ubuntu-latest
-                      name: Linux IntelLLVM
-                      build_dir: out/build-linux-intelllvm
                     - os: windows-latest
                       name: Windows MSVC
                       build_dir: out/build-windows-msvc
@@ -497,26 +494,6 @@ jobs:
                     python3-pip \
                     python3-venv
 
-            - name: Install Linux IntelLLVM dependencies
-              if: matrix.name == 'Linux IntelLLVM'
-              shell: bash
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install -y \
-                    ca-certificates \
-                    gpg \
-                    python3 \
-                    python3-pip \
-                    python3-venv \
-                    wget
-                  wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
-                    | gpg --dearmor \
-                    | sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
-                  echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
-                    | sudo tee /etc/apt/sources.list.d/oneAPI.list
-                  sudo apt-get update
-                  sudo apt-get install -y intel-oneapi-compiler-dpcpp-cpp
-
             - name: Install CMake on Linux
               if: runner.os == 'Linux'
               shell: bash
@@ -540,23 +517,6 @@ jobs:
             - name: Build Linux Clang target
               if: matrix.name == 'Linux Clang'
               run: cmake --build ${{ matrix.build_dir }} --parallel
-
-            - name: Configure Linux IntelLLVM build
-              if: matrix.name == 'Linux IntelLLVM'
-              shell: bash
-              run: |
-                  source /opt/intel/oneapi/setvars.sh
-                  icx --version
-                  icpx --version
-                  CC=icx CXX=icpx cmake -S . -B ${{ matrix.build_dir }} -G Ninja \
-                    -DCMAKE_MAKE_PROGRAM="$GITHUB_WORKSPACE/tools/host/ninja/linux/ninja"
-
-            - name: Build Linux IntelLLVM target
-              if: matrix.name == 'Linux IntelLLVM'
-              shell: bash
-              run: |
-                  source /opt/intel/oneapi/setvars.sh
-                  cmake --build ${{ matrix.build_dir }} --parallel
 
             - name: Set up MSYS2 Clang environment
               if: matrix.name == 'Windows Clang'

@@ -17,7 +17,6 @@ Supported compiler frontends include:
 - GCC
 - Clang / Apple Clang
 - MSVC
-- IntelLLVM
 
 Current CI validation covers Linux, macOS, and native Windows builds.
 
@@ -64,7 +63,6 @@ That guide contains separate sections for:
 - macOS
 - Windows with native MinGW-w64
 - Windows with MSVC or ClangCL
-- Linux with IntelLLVM
 
 ## Editor Tooling
 

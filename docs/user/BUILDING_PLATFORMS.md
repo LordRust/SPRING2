@@ -111,17 +111,6 @@ cmake --build out/build-clangcl --config Release --parallel
 cmake --install out/build-clangcl --config Release --prefix out
 ```
 
-## Linux (IntelLLVM)
-
-When oneAPI is installed and activated:
-
-```bash
-source /opt/intel/oneapi/setvars.sh
-CC=icx CXX=icpx cmake -S . -B out/build-intel -G Ninja
-cmake --build out/build-intel --parallel
-cmake --install out/build-intel --prefix out
-```
-
 ## Notes
 
 - CMake 4.2 or newer is required.
