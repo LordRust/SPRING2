@@ -557,7 +557,19 @@ jobs:
               shell: bash
               run: |
                   source /opt/intel/oneapi/setvars.sh
-                  cmake --build ${{ matrix.build_dir }} --parallel
+                  echo "IntelLLVM diagnostics before build:"
+                  which icx
+                  which icpx
+                  icx --version
+                  icpx --version
+                  "$GITHUB_WORKSPACE/tools/host/ninja/linux/ninja" --version
+                  ld.lld --version || true
+                  ldd --version || true
+                  free -h || true
+                  df -h . || true
+                  ulimit -a || true
+                  export NINJA_STATUS='[%f/%t] '
+                  cmake --build ${{ matrix.build_dir }} --parallel --verbose
 
             - name: Set up MSYS2 Clang environment
               if: matrix.name == 'Windows Clang'
