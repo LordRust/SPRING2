@@ -26,6 +26,28 @@ set_target_properties(libbsc PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if(TARGET OpenMP::OpenMP_CXX)
     target_link_libraries(libbsc PUBLIC OpenMP::OpenMP_CXX)
 endif()
+
+set(SPRING_LIBBSC_FLAG_TEXT "${CMAKE_C_FLAGS} ${CMAKE_CXX_FLAGS}")
+foreach(
+    flag_var
+    CMAKE_C_FLAGS_DEBUG
+    CMAKE_C_FLAGS_RELEASE
+    CMAKE_C_FLAGS_RELWITHDEBINFO
+    CMAKE_C_FLAGS_MINSIZEREL
+    CMAKE_CXX_FLAGS_DEBUG
+    CMAKE_CXX_FLAGS_RELEASE
+    CMAKE_CXX_FLAGS_RELWITHDEBINFO
+    CMAKE_CXX_FLAGS_MINSIZEREL
+)
+    if(DEFINED ${flag_var})
+        string(APPEND SPRING_LIBBSC_FLAG_TEXT " ${${flag_var}}")
+    endif()
+endforeach()
+
+if(SPRING_LIBBSC_FLAG_TEXT MATCHES "(^|[ 	])(-|/)fsanitize=")
+    target_compile_definitions(libbsc PRIVATE LIBBSC_NO_UNALIGNED_ACCESS)
+endif()
+
 if(
     WIN32
     AND CMAKE_C_COMPILER_ID STREQUAL "Clang"

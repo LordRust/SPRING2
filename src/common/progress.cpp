@@ -2,6 +2,7 @@
 // during compression and decompression stages.
 
 #include "progress.h"
+
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
@@ -11,7 +12,7 @@ namespace spring {
 
 namespace {
 log_level g_log_level = log_level::quiet;
-ProgressBar *g_global_progress_bar = nullptr;
+std::atomic<ProgressBar *> g_global_progress_bar{nullptr};
 } // namespace
 
 void Logger::set_level(log_level level) { g_log_level = level; }
@@ -24,10 +25,12 @@ bool Logger::is_debug_enabled() {
   return static_cast<int>(g_log_level) >= static_cast<int>(log_level::debug);
 }
 
-ProgressBar *ProgressBar::GlobalInstance() { return g_global_progress_bar; }
+ProgressBar *ProgressBar::GlobalInstance() {
+  return g_global_progress_bar.load(std::memory_order_acquire);
+}
 
 void ProgressBar::SetGlobalInstance(ProgressBar *instance) {
-  g_global_progress_bar = instance;
+  g_global_progress_bar.store(instance, std::memory_order_release);
 }
 
 void Logger::log_info(const std::string &msg) {
@@ -61,6 +64,10 @@ ProgressBar::ProgressBar(bool enabled) : enabled_(enabled) {
 }
 
 ProgressBar::~ProgressBar() {
+  if (GlobalInstance() == this) {
+    SetGlobalInstance(nullptr);
+  }
+
   if (enabled_ && !Logger::is_info_enabled()) {
     finalize();
   }

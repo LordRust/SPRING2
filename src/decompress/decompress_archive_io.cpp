@@ -15,6 +15,7 @@
 #include <fstream>
 #include <iterator>
 #include <omp.h>
+#include <sstream>
 #include <stdexcept>
 #include <utility>
 
@@ -535,12 +536,13 @@ std::vector<std::string> decompress_unpack_seq_chunks(
 
   if (std::cmp_greater(encoding_thread_count,
                        compression_params::ReadMetadata::kFileLenThrSize)) {
-    throw std::runtime_error(
-        std::string("Archive indicates too many sequence chunks "
-                    "(encoding_thread_count=") +
-        std::to_string(encoding_thread_count) + ") for metadata array size (" +
-        std::to_string(compression_params::ReadMetadata::kFileLenThrSize) +
-        "). Increase array size in params.h or recreate archive.");
+    std::ostringstream error;
+    error
+        << "Archive indicates too many sequence chunks (encoding_thread_count="
+        << encoding_thread_count << ") for metadata array size ("
+        << compression_params::ReadMetadata::kFileLenThrSize
+        << "). Increase array size in params.h or recreate archive.";
+    throw std::runtime_error(error.str());
   }
 
   std::vector<std::vector<char>> packed_chunks(

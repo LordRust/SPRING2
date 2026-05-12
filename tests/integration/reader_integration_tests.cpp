@@ -43,9 +43,10 @@ TEST_CASE("SpringReader Integration Test") {
   const int num_records = 100;
   create_dummy_fastq(input_fastq, num_records);
 
-  std::string compress_cmd = std::string(SPRING2_EXECUTABLE) + " -c --R1 " +
-                             input_fastq + " -o " + archive_spring + " -t 1";
-  REQUIRE(std::system(compress_cmd.c_str()) == 0);
+  std::ostringstream compress_cmd;
+  compress_cmd << SPRING2_EXECUTABLE << " -c --R1 " << input_fastq << " -o "
+               << archive_spring << " -t 1";
+  REQUIRE(std::system(compress_cmd.str().c_str()) == 0);
 
   SUBCASE("Stream decompression (Single End)") {
     SpringReader reader(archive_spring, 1);
@@ -92,11 +93,11 @@ TEST_CASE("SpringReader streams grouped archives via primary read member") {
   create_dummy_fastq(r3_fastq, 120);
   create_dummy_fastq(i1_fastq, 120);
 
-  const std::string compress_cmd = std::string(SPRING2_EXECUTABLE) +
-                                   " -c --R1 " + r1_fastq + " --R2 " +
-                                   r2_fastq + " --R3 " + r3_fastq + " --I1 " +
-                                   i1_fastq + " -o " + archive_path + " -t 1";
-  REQUIRE(std::system(compress_cmd.c_str()) == 0);
+  std::ostringstream compress_cmd;
+  compress_cmd << SPRING2_EXECUTABLE << " -c --R1 " << r1_fastq << " --R2 "
+               << r2_fastq << " --R3 " << r3_fastq << " --I1 " << i1_fastq
+               << " -o " << archive_path << " -t 1";
+  REQUIRE(std::system(compress_cmd.str().c_str()) == 0);
 
   SpringReader reader(archive_path, 1);
   ReadRecord mate1;

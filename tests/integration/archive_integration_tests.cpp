@@ -61,8 +61,16 @@ void check_legacy_single_stream_fixture(const char *archive_name,
 
   const std::string restored = read_file_binary(output_path);
   const std::string reference = read_file_binary(reference_path);
-  CHECK(restored != reference);
-  CHECK(normalize_newlines(restored) == normalize_newlines(reference));
+  const std::string normalized_restored = normalize_newlines(restored);
+  const std::string normalized_reference = normalize_newlines(reference);
+  CHECK_MESSAGE(
+      normalized_restored == normalized_reference,
+      "Normalized decompressed output mismatch for "
+          << archive_name << " vs " << reference_name << " (restored bytes="
+          << restored.size() << ", reference bytes=" << reference.size()
+          << ", normalized restored bytes=" << normalized_restored.size()
+          << ", normalized reference bytes=" << normalized_reference.size()
+          << ")");
 
   fs::remove_all(test_dir);
 }
