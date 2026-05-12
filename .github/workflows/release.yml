@@ -393,7 +393,7 @@ jobs:
                   retention-days: 1
 
             - name: Upload Artifact to Release
-              uses: softprops/action-gh-release@v2
+              uses: softprops/action-gh-release@v3
               if: startsWith(github.ref, 'refs/tags/')
               with:
                   files: |
@@ -511,7 +511,7 @@ jobs:
                     )
 
             - name: Upload Artifact to Release
-              uses: softprops/action-gh-release@v2
+              uses: softprops/action-gh-release@v3
               if: startsWith(github.ref, 'refs/tags/')
               with:
                   files: |
@@ -623,7 +623,7 @@ jobs:
                     "spring2-macos-universal.pkg"
 
             - name: Upload Artifact to Release
-              uses: softprops/action-gh-release@v2
+              uses: softprops/action-gh-release@v3
               if: startsWith(github.ref, 'refs/tags/')
               with:
                   files: |
