@@ -9,6 +9,7 @@
 - Added memory-aware compression-path planning helpers that detect available system memory, estimate total input size including `.gz` inputs by inferred uncompressed size, and honor the user-provided `-m` memory cap when choosing between in-memory and disk-backed compression.
 - Added a regression test covering compression storage planning so the memory-path versus disk-path decision now stays pinned to the required peak-memory threshold instead of only raw input bytes.
 - Added version-aware decompression for backward compability.
+- Added support for legacy Spring archives, including preview, decompression, and `SpringReader` compatibility for checked-in legacy `*.spring` sample fixtures from SPRING1.
 - Added archive-metadata version regression coverage so current archives keep their exact stored creator version, headered metadata remains version-aware, and older headerless archives are pinned to `1.0.0-rc.1` for preview and decompression compatibility.
 - Added Windows release packaging with architecture-specific Inno Setup installers, embedded executable and installer version metadata, publisher details, release icon assets, and optional code-signing hooks for GitHub Actions.
 - Added Linux release packaging metadata with repo-owned AppImage desktop and AppStream files so release builds ship cleaner, more standards-compliant Linux application metadata.

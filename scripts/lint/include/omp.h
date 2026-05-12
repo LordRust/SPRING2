@@ -7,7 +7,9 @@
 #if !defined(__OMP_H)
 #define __OMP_H
 
-typedef struct omp_lock_t { void *_lk; } omp_lock_t;
+typedef struct omp_lock_t {
+  void *_lk;
+} omp_lock_t;
 
 #ifdef __cplusplus
 extern "C" {

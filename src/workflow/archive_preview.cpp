@@ -134,11 +134,15 @@ void preview_single(const std::string &archive_path, bool audit_only) {
   if (!cp.read_info.note.empty()) {
     std::cout << "Note:              " << cp.read_info.note << "\n";
   }
-  std::cout << "Assay Type:        "
-            << (!cp.read_info.assay.empty() ? cp.read_info.assay : "auto");
-  if (!cp.read_info.assay_confidence.empty() &&
-      cp.read_info.assay_confidence != "N/A") {
-    std::cout << " (" << cp.read_info.assay_confidence << ")";
+  std::cout << "Assay Type:        ";
+  if (cp.read_info.legacy_spring) {
+    std::cout << "Unavailable in legacy spring archives";
+  } else {
+    std::cout << (!cp.read_info.assay.empty() ? cp.read_info.assay : "auto");
+    if (!cp.read_info.assay_confidence.empty() &&
+        cp.read_info.assay_confidence != "N/A") {
+      std::cout << " (" << cp.read_info.assay_confidence << ")";
+    }
   }
   std::cout << "\n";
   if (cp.encoding.cb_prefix_stripped) {
