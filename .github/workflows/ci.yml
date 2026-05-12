@@ -549,27 +549,14 @@ jobs:
                   icx --version
                   icpx --version
                   CC=icx CXX=icpx cmake -S . -B ${{ matrix.build_dir }} -G Ninja \
-                    -DCMAKE_MAKE_PROGRAM="$GITHUB_WORKSPACE/tools/host/ninja/linux/ninja" \
-                    -DSPRING_ENABLE_IPO=OFF
+                    -DCMAKE_MAKE_PROGRAM="$GITHUB_WORKSPACE/tools/host/ninja/linux/ninja"
 
             - name: Build Linux IntelLLVM target
               if: matrix.name == 'Linux IntelLLVM'
               shell: bash
               run: |
                   source /opt/intel/oneapi/setvars.sh
-                  echo "IntelLLVM diagnostics before build:"
-                  which icx
-                  which icpx
-                  icx --version
-                  icpx --version
-                  "$GITHUB_WORKSPACE/tools/host/ninja/linux/ninja" --version
-                  ld.lld --version || true
-                  ldd --version || true
-                  free -h || true
-                  df -h . || true
-                  ulimit -a || true
-                  export NINJA_STATUS='[%f/%t] '
-                  cmake --build ${{ matrix.build_dir }} --parallel --verbose
+                  cmake --build ${{ matrix.build_dir }} --parallel
 
             - name: Set up MSYS2 Clang environment
               if: matrix.name == 'Windows Clang'
