@@ -6,13 +6,13 @@
 #include "assay_bisulfite.h"
 #include "assay_detector.h"
 #include "assay_sc_bisulfite.h"
+#include "compression_dispatch.h"
 #include "input_preparation.h"
 #include "io_utils.h"
 #include "paired_end_mate_ordering.h"
 #include "progress.h"
 #include "quality_id_reordering.h"
 #include "stream_reordering.h"
-#include "template_dispatch.h"
 #include "version.h"
 
 #include <algorithm>

@@ -879,7 +879,7 @@ add_vendor_subdirectory_no_install("${INDEXED_BZIP2_DIR}" "${CMAKE_BINARY_DIR}/i
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 add_vendor_subdirectory_no_install("${LIBARCHIVE_DIR}" "${CMAKE_BINARY_DIR}/libarchive-build" EXCLUDE_FROM_ALL)
 
-# Core source files shared by the spring2 executable and tests.
+# Reference embedding and shared source lists.
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/generated)
 set(REFERENCE_GENERATED ${CMAKE_BINARY_DIR}/generated/reference_data.cpp)
 
@@ -903,37 +903,45 @@ add_custom_command(
 )
 
 set(core_source_files
-    ${source_dir}/workflow/workflow_shared.cpp
-    ${source_dir}/common/params.cpp
-    ${source_dir}/common/parse_utils.cpp
+    # Common
+    ${source_dir}/common/bitset_dictionary.cpp
+    ${source_dir}/common/bgzf.cpp
     ${source_dir}/common/dna_utils.cpp
     ${source_dir}/common/fs_utils.cpp
     ${source_dir}/common/io_utils.cpp
     ${source_dir}/common/legacy_id_codec.cpp
-    ${source_dir}/common/bitset_dictionary.cpp
-    ${source_dir}/assays/assay_rna.cpp
+    ${source_dir}/common/params.cpp
+    ${source_dir}/common/parse_utils.cpp
+    ${source_dir}/common/progress.cpp
+    # Assays
     ${source_dir}/assays/assay_atac.cpp
-    ${source_dir}/assays/assay_sc_atac.cpp
+    ${source_dir}/assays/assay_detector.cpp
     ${source_dir}/assays/assay_bisulfite.cpp
+    ${source_dir}/assays/assay_rna.cpp
+    ${source_dir}/assays/assay_sc_atac.cpp
     ${source_dir}/assays/assay_sc_bisulfite.cpp
     ${source_dir}/assays/assay_sc_rna.cpp
+    # Preprocess / reorder / encode
     ${source_dir}/preprocess/preprocess_artifacts.cpp
     ${source_dir}/preprocess/input_preparation.cpp
     ${source_dir}/encode/encoder.cpp
-    ${source_dir}/reorder/stream_reordering.cpp
+    ${source_dir}/encode/compression_dispatch_encoder.cpp
+    ${source_dir}/reorder/compression_dispatch_reorder.cpp
     ${source_dir}/reorder/paired_end_mate_ordering.cpp
     ${source_dir}/reorder/quality_id_reordering.cpp
-    ${source_dir}/decompress/decompress_archive_io.cpp
+    ${source_dir}/reorder/stream_reordering.cpp
+    # Decompression / archive IO
+    ${source_dir}/decompress/archive_stream_reader.cpp
     ${source_dir}/decompress/archive_record_reconstruction.cpp
+    ${source_dir}/decompress/decompress_archive_io.cpp
+    # Workflow
+    ${source_dir}/workflow/archive_preview.cpp
+    ${source_dir}/workflow/compression_dispatch.cpp
     ${source_dir}/workflow/compression_workflow.cpp
     ${source_dir}/workflow/decompression_workflow.cpp
     ${source_dir}/workflow/spring_audit.cpp
-    ${source_dir}/encode/template_dispatch.cpp
-    ${source_dir}/decompress/archive_stream_reader.cpp
-    ${source_dir}/common/progress.cpp
-    ${source_dir}/common/bgzf.cpp
-    ${source_dir}/assays/assay_detector.cpp
-    ${source_dir}/workflow/archive_preview.cpp
+    ${source_dir}/workflow/workflow_shared.cpp
+    # Generated
     ${REFERENCE_GENERATED}
 )
 
@@ -948,7 +956,13 @@ set(spring_src_include_dirs
     ${source_dir}/workflow
 )
 
-set(spring_vendor_src_include_dirs ${source_dir} ${source_dir}/common)
+set(spring_app_include_dirs ${include_dir} ${spring_src_include_dirs})
+set(spring_test_include_dirs
+    ${include_dir}
+    ${vendor_dir}
+    ${CMAKE_SOURCE_DIR}/tests/support
+    ${spring_src_include_dirs}
+)
 
 # Convenience targets for repository development checks.
 function(add_dev_script_target target_name script_path)
@@ -981,37 +995,12 @@ add_executable(
     ${win_resources}
 )
 
-# Configure precompiled headers for faster incremental builds
+# Shared target configuration helpers.
 option(
     SPRING_ENABLE_PRECOMPILED_HEADERS
     "Use precompiled headers to speed up compilation"
     ON
 )
-if(SPRING_ENABLE_PRECOMPILED_HEADERS)
-    target_precompile_headers(spring2 PRIVATE ${source_dir}/pch.h)
-    message(NOTICE "Precompiled headers enabled for faster rebuilds")
-endif()
-
-# Spring headers live in src/, while vendor/ exposes bundled libraries such
-# as BBHash, libbsc, id_compression, qvz, and the vendored libdeflate sources.
-target_include_directories(
-    spring2
-    PRIVATE ${include_dir} ${spring_src_include_dirs}
-)
-
-if(WIN32)
-    target_compile_definitions(spring2 PRIVATE LIBARCHIVE_STATIC)
-endif()
-
-if(SPRING_OPENMP_INCLUDE_DIRS)
-    target_include_directories(
-        spring2
-        SYSTEM
-        PRIVATE ${SPRING_OPENMP_INCLUDE_DIRS}
-    )
-endif()
-
-target_include_directories(spring2 SYSTEM PRIVATE ${LIBARCHIVE_DIR}/libarchive)
 
 set(spring_libs
     libdeflate::libdeflate_static
@@ -1024,19 +1013,58 @@ set(spring_libs
     archive_static
 )
 
-target_link_libraries(spring2 PUBLIC ${spring_libs})
-if(TARGET OpenMP::OpenMP_CXX)
-    target_link_libraries(spring2 PUBLIC OpenMP::OpenMP_CXX)
+function(spring_enable_precompiled_headers_if_requested target_name)
+    if(SPRING_ENABLE_PRECOMPILED_HEADERS)
+        target_precompile_headers(${target_name} PRIVATE ${source_dir}/pch.h)
+    endif()
+endfunction()
+
+if(SPRING_ENABLE_PRECOMPILED_HEADERS)
+    message(NOTICE "Precompiled headers enabled for faster rebuilds")
 endif()
 
-if(WIN32)
-    target_link_libraries(spring2 PRIVATE ws2_32 psapi)
-endif()
+function(spring_apply_common_target_settings target_name)
+    if(WIN32)
+        target_compile_definitions(${target_name} PRIVATE LIBARCHIVE_STATIC)
+    endif()
+
+    if(SPRING_OPENMP_INCLUDE_DIRS)
+        target_include_directories(
+            ${target_name}
+            SYSTEM
+            PRIVATE ${SPRING_OPENMP_INCLUDE_DIRS}
+        )
+    endif()
+endfunction()
+
+function(spring_link_project_libraries target_name link_scope)
+    target_link_libraries(${target_name} ${link_scope} ${spring_libs})
+    if(TARGET OpenMP::OpenMP_CXX)
+        target_link_libraries(${target_name} ${link_scope} OpenMP::OpenMP_CXX)
+    endif()
+endfunction()
+
+function(spring_link_windows_system_libraries target_name)
+    if(WIN32)
+        target_link_libraries(${target_name} PRIVATE ws2_32 psapi)
+    endif()
+endfunction()
+
+# Application target.
+spring_enable_precompiled_headers_if_requested(spring2)
+
+# Spring headers live in src/, while vendor/ exposes bundled libraries such
+# as BBHash, libbsc, id_compression, qvz, and the vendored libdeflate sources.
+target_include_directories(spring2 PRIVATE ${spring_app_include_dirs})
+target_include_directories(spring2 SYSTEM PRIVATE ${LIBARCHIVE_DIR}/libarchive)
+spring_apply_common_target_settings(spring2)
+spring_link_project_libraries(spring2 PUBLIC)
+spring_link_windows_system_libraries(spring2)
 
 if(WIN32)
     target_compile_definitions(
         spring2
-        PRIVATE IDOFILE_PATH_ROOT=\".spring-idtmp/idoFile.\"
+        PRIVATE IDOFILE_PATH_ROOT=".spring-idtmp/idoFile."
     )
 endif()
 
@@ -1247,7 +1275,7 @@ if(WIN32 AND NOT SPRING_STATIC_RUNTIMES)
     endforeach()
 endif()
 
-# Unit testing integration using doctest.
+# Tests.
 enable_testing()
 set(unit_test_sources
     tests/unit/unit_tests.cpp
@@ -1258,32 +1286,14 @@ set(unit_test_sources
     tests/unit/archive_metadata_version_unit_tests.cpp
     tests/unit/gzip_preprocess_progress_unit_tests.cpp
 )
+
 add_executable(unit-tests ${unit_test_sources} ${core_source_files})
-if(SPRING_ENABLE_PRECOMPILED_HEADERS)
-    target_precompile_headers(unit-tests PRIVATE ${source_dir}/pch.h)
-endif()
-target_include_directories(
-    unit-tests
-    PRIVATE
-        ${include_dir}
-        ${vendor_dir}
-        ${CMAKE_SOURCE_DIR}/tests/support
-        ${spring_src_include_dirs}
-)
-if(WIN32)
-    target_compile_definitions(unit-tests PRIVATE LIBARCHIVE_STATIC)
-endif()
-target_link_libraries(unit-tests PRIVATE ${spring_libs})
-if(TARGET OpenMP::OpenMP_CXX)
-    target_link_libraries(unit-tests PRIVATE OpenMP::OpenMP_CXX)
-endif()
-if(SPRING_OPENMP_INCLUDE_DIRS)
-    target_include_directories(
-        unit-tests
-        SYSTEM
-        PRIVATE ${SPRING_OPENMP_INCLUDE_DIRS}
-    )
-endif()
+spring_enable_precompiled_headers_if_requested(unit-tests)
+target_include_directories(unit-tests PRIVATE ${spring_test_include_dirs})
+spring_apply_common_target_settings(unit-tests)
+spring_link_project_libraries(unit-tests PRIVATE)
+spring_link_windows_system_libraries(unit-tests)
+
 target_compile_definitions(
     unit-tests
     PRIVATE
@@ -1307,31 +1317,15 @@ add_executable(
     ${integration_test_sources}
     ${core_source_files}
 )
-if(SPRING_ENABLE_PRECOMPILED_HEADERS)
-    target_precompile_headers(integration-tests PRIVATE ${source_dir}/pch.h)
-endif()
+spring_enable_precompiled_headers_if_requested(integration-tests)
 target_include_directories(
     integration-tests
-    PRIVATE
-        ${include_dir}
-        ${vendor_dir}
-        ${CMAKE_SOURCE_DIR}/tests/support
-        ${spring_src_include_dirs}
+    PRIVATE ${spring_test_include_dirs}
 )
-if(WIN32)
-    target_compile_definitions(integration-tests PRIVATE LIBARCHIVE_STATIC)
-endif()
-target_link_libraries(integration-tests PRIVATE ${spring_libs})
-if(OpenMP_CXX_FOUND)
-    target_link_libraries(integration-tests PRIVATE OpenMP::OpenMP_CXX)
-endif()
-if(SPRING_OPENMP_INCLUDE_DIRS)
-    target_include_directories(
-        integration-tests
-        SYSTEM
-        PRIVATE ${SPRING_OPENMP_INCLUDE_DIRS}
-    )
-endif()
+spring_apply_common_target_settings(integration-tests)
+spring_link_project_libraries(integration-tests PRIVATE)
+spring_link_windows_system_libraries(integration-tests)
+
 target_compile_definitions(
     integration-tests
     PRIVATE
@@ -1350,25 +1344,11 @@ set(smoke_test_sources
 )
 add_executable(smoke-tests ${smoke_test_sources})
 add_dependencies(smoke-tests spring2)
-target_include_directories(
-    smoke-tests
-    PRIVATE
-        ${include_dir}
-        ${vendor_dir}
-        ${CMAKE_SOURCE_DIR}/tests/support
-        ${spring_src_include_dirs}
-)
-target_link_libraries(smoke-tests PRIVATE ${spring_libs})
-if(TARGET OpenMP::OpenMP_CXX)
-    target_link_libraries(smoke-tests PRIVATE OpenMP::OpenMP_CXX)
-endif()
-if(SPRING_OPENMP_INCLUDE_DIRS)
-    target_include_directories(
-        smoke-tests
-        SYSTEM
-        PRIVATE ${SPRING_OPENMP_INCLUDE_DIRS}
-    )
-endif()
+target_include_directories(smoke-tests PRIVATE ${spring_test_include_dirs})
+spring_apply_common_target_settings(smoke-tests)
+spring_link_project_libraries(smoke-tests PRIVATE)
+spring_link_windows_system_libraries(smoke-tests)
+
 target_compile_definitions(
     smoke-tests
     PRIVATE
@@ -1377,9 +1357,3 @@ target_compile_definitions(
         SMOKE_TEST_OUTPUT_ROOT="${CMAKE_SOURCE_DIR}/out/tests/smoke"
 )
 add_test(NAME smoke_tests COMMAND smoke-tests)
-
-if(WIN32)
-    target_link_libraries(unit-tests PRIVATE ws2_32 psapi)
-    target_link_libraries(integration-tests PRIVATE ws2_32 psapi)
-    target_link_libraries(smoke-tests PRIVATE ws2_32 psapi)
-endif()
