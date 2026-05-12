@@ -1244,12 +1244,12 @@ set(unit_test_sources
     tests/unit/archive_metadata_version_unit_tests.cpp
     tests/unit/gzip_preprocess_progress_unit_tests.cpp
 )
-add_executable(spring2-tests ${unit_test_sources} ${core_source_files})
+add_executable(unit-tests ${unit_test_sources} ${core_source_files})
 if(SPRING_ENABLE_PRECOMPILED_HEADERS)
-    target_precompile_headers(spring2-tests PRIVATE ${source_dir}/pch.h)
+    target_precompile_headers(unit-tests PRIVATE ${source_dir}/pch.h)
 endif()
 target_include_directories(
-    spring2-tests
+    unit-tests
     PRIVATE
         ${include_dir}
         ${vendor_dir}
@@ -1257,24 +1257,24 @@ target_include_directories(
         ${spring_src_include_dirs}
 )
 if(WIN32)
-    target_compile_definitions(spring2-tests PRIVATE LIBARCHIVE_STATIC)
+    target_compile_definitions(unit-tests PRIVATE LIBARCHIVE_STATIC)
 endif()
-target_link_libraries(spring2-tests PRIVATE ${spring_libs})
+target_link_libraries(unit-tests PRIVATE ${spring_libs})
 if(TARGET OpenMP::OpenMP_CXX)
-    target_link_libraries(spring2-tests PRIVATE OpenMP::OpenMP_CXX)
+    target_link_libraries(unit-tests PRIVATE OpenMP::OpenMP_CXX)
 endif()
 if(SPRING_OPENMP_INCLUDE_DIRS)
     target_include_directories(
-        spring2-tests
+        unit-tests
         SYSTEM
         PRIVATE ${SPRING_OPENMP_INCLUDE_DIRS}
     )
 endif()
 target_compile_definitions(
-    spring2-tests
+    unit-tests
     PRIVATE UNIT_TEST_ASSET_DIR="${CMAKE_SOURCE_DIR}/data/samples"
 )
-add_test(NAME unit_tests COMMAND spring2-tests)
+add_test(NAME unit_tests COMMAND unit-tests)
 
 set(integration_test_sources
     tests/integration/integration_tests.cpp
@@ -1363,7 +1363,7 @@ target_compile_definitions(
 add_test(NAME smoke_tests COMMAND smoke-tests)
 
 if(WIN32)
-    target_link_libraries(spring2-tests PRIVATE ws2_32 psapi)
+    target_link_libraries(unit-tests PRIVATE ws2_32 psapi)
     target_link_libraries(integration-tests PRIVATE ws2_32 psapi)
     target_link_libraries(smoke-tests PRIVATE ws2_32 psapi)
 endif()

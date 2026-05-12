@@ -200,14 +200,14 @@ We use the **doctest** framework for both granular unit testing and high-level i
 
 ```bash
 cmake -S . -B out/build
-cmake --build out/build --parallel --target spring2-tests integration-tests
+cmake --build out/build --parallel --target unit-tests integration-tests smoke-tests
 ctest --test-dir out/build --output-on-failure
 ```
 
 If you already built only the main executable, rebuild the test targets before invoking `ctest`:
 
 ```bash
-cmake --build out/build --parallel --target spring2-tests integration-tests
+cmake --build out/build --parallel --target unit-tests integration-tests smoke-tests
 ```
 
 That same `out/build` tree is also the default source for `out/clangd/compile_commands.json` and the smoke/bench helper defaults.
