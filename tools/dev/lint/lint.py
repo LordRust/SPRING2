@@ -25,9 +25,11 @@ DEFAULT_CPP_ROOTS = (ROOT_DIR / "src", ROOT_DIR / "vendor")
 SUMMARY_LINE_PATTERN = re.compile(
     r"^[0-9]+ warnings? generated\.$|^[0-9]+ warnings? and [0-9]+ errors? generated\.$"
 )
+PROCESSING_LINE_PATTERN = re.compile(r"^\[\d+/\d+\] \(\d+/\d+\) Processing file .+\.")
 
 MSYSTEM = os.environ.get("MSYSTEM", "")
-UNAME = os.uname().sysname if hasattr(os, "uname") else ""
+OS_UNAME = getattr(os, "uname", None)
+UNAME = OS_UNAME().sysname if OS_UNAME is not None else ""
 IS_MSYS_WINDOWS = bool(MSYSTEM) or UNAME.startswith(("MSYS_", "MINGW", "CYGWIN"))
 IS_MACOS = sys.platform == "darwin"
 IS_WINDOWS = os.name == "nt" or IS_MSYS_WINDOWS
@@ -253,7 +255,7 @@ def normalize_compile_db_path(path: pathlib.Path | str) -> str:
 
 
 def is_cpp_source(path: pathlib.Path) -> bool:
-    """Return whether a path is a supported C or C++ source file."""
+    """Return whether a path is a supported native C or C++ source file."""
 
     return path.suffix.lower() in {".c", ".cc", ".cpp", ".cxx"}
 
@@ -508,7 +510,6 @@ def build_clang_tidy_common_args() -> list[str]:
         args.extend(
             [
                 "--extra-arg-before=--target=x86_64-w64-windows-gnu",
-                "--extra-arg-before=--driver-mode=g++",
                 f"--extra-arg=-I{LINT_INCLUDE_DIR}",
                 "--extra-arg=-fopenmp",
                 "--extra-arg=-w",
@@ -641,26 +642,41 @@ def run_command(command: list[str], label: str) -> CommandResult:
     filtered_output = [
         line
         for line in combined_output
-        if line and not SUMMARY_LINE_PATTERN.match(line)
+        if line
+        and not SUMMARY_LINE_PATTERN.match(line)
+        and not PROCESSING_LINE_PATTERN.match(line)
     ]
     return CommandResult(
         label=label, exit_code=process.returncode, output=filtered_output
     )
 
 
+def format_progress(processed_count: int, total_count: int) -> str:
+    """Return a compact cppcheck-style progress line."""
+
+    percent_done = 100 if total_count == 0 else (processed_count * 100) // total_count
+    return f"{processed_count}/{total_count} files checked {percent_done}% done"
+
+
 def run_parallel_jobs(work_items: list[tuple[str, list[str]]], job_count: int) -> int:
-    """Run lint jobs in batches while preserving grouped output."""
+    """Run lint jobs in batches and report compact progress."""
 
     overall_status = 0
     if not work_items:
         return overall_status
 
+    total_count = len(work_items)
+    processed_count = 0
+
     if job_count < 2 or len(work_items) < 2:
         for label, command in work_items:
             result = run_command(command, label)
-            print(result.label)
-            for line in result.output:
-                print(line)
+            processed_count += 1
+            print(format_progress(processed_count, total_count))
+            if result.output:
+                print(f"Diagnostics for {result.label}:")
+                for line in result.output:
+                    print(line)
             if result.exit_code != 0:
                 overall_status = 1
         return overall_status
@@ -674,9 +690,12 @@ def run_parallel_jobs(work_items: list[tuple[str, list[str]]], job_count: int) -
             results = [future.result() for future in futures]
 
         for result in results:
-            print(result.label)
-            for line in result.output:
-                print(line)
+            processed_count += 1
+            print(format_progress(processed_count, total_count))
+            if result.output:
+                print(f"Diagnostics for {result.label}:")
+                for line in result.output:
+                    print(line)
             if result.exit_code != 0:
                 overall_status = 1
 
@@ -694,7 +713,6 @@ def main() -> int:
         ("python3", "python"), "python"
     )
     lint_jobs = resolve_parallel_job_count()
-    print(f"Using up to {lint_jobs} parallel lint jobs.")
 
     lint_targets = (
         sys.argv[1:]
@@ -720,7 +738,6 @@ def main() -> int:
         tidy_compile_commands = sanitize_compile_commands(
             compile_commands_path, tidy_db_dir / "compile_commands.json"
         )
-        print("Sanitizing compilation database for clang-tidy...")
         compile_commands_file_set = load_compile_commands_file_set(
             tidy_compile_commands
         )
@@ -765,7 +782,7 @@ def main() -> int:
         include_args.extend(f"-I{include_dir}" for include_dir in EXTRA_INCLUDES)
         driver_args = ["--driver-mode=g++", "-std=c++20", "-x", "c++"]
         if file_path.suffix.lower() == ".c":
-            driver_args = ["-std=gnu11", "-x", "c"]
+            driver_args = ["--driver-mode=gcc", "-std=gnu11", "-x", "c"]
         standalone_work.append(
             (
                 f"Linting standalone file {file_path}.",

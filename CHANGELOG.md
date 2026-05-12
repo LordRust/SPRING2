@@ -22,6 +22,8 @@
 - Replaced the Python-based embedded-reference generator with a native C++ codegen helper under `tools/codegen`, backed by `libdeflate`, so the build no longer depends on a Python interpreter to produce `reference_data.cpp`.
 - Replaced the Bash and PowerShell helper wrappers for linting, cppcheck, smoke/valgrind runs, and benchmark workflows with cross-platform Python tooling, and aligned the test helper naming around `unit-tests` and `smoke-tests`.
 - Reorganized the repository layout so developer tooling now lives under `tools/dev`, release packaging assets under `tools/release`, assay reference assets under `tools/assay-reference`, checked-in test fixtures under `tests/data`, and default installed binaries under `out/bin` instead of `dist/bin`.
+- Filtered clang-tidy’s internal “Processing file” chatter and replaced the per-file banner spam with a single cppcheck-style progress line per completed file.
+- Updated `mkdocs-material` and `pymdown-extensions` to the latest versions.
 
 ### Fixed
 
