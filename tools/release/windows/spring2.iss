@@ -73,7 +73,7 @@ VersionInfoProductName={#AppName}
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "addtopath"; Description: "Add SPRING2 to the system PATH"; Flags: unchecked
+Name: "addtopath"; Description: "Add SPRING2 to the system PATH"
 Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
 
 [Files]
@@ -105,8 +105,28 @@ begin
 end;
 
 function SplitPathEntries(const PathValue: string): TArrayOfString;
+var
+  Remaining: string;
+  SeparatorPos: Integer;
+  EntryCount: Integer;
 begin
-  Result := SplitString(PathValue, ';');
+  Remaining := PathValue;
+  EntryCount := 0;
+  SetArrayLength(Result, 0);
+
+  while True do begin
+    SeparatorPos := Pos(';', Remaining);
+    if SeparatorPos = 0 then begin
+      SetArrayLength(Result, EntryCount + 1);
+      Result[EntryCount] := Remaining;
+      break;
+    end;
+
+    SetArrayLength(Result, EntryCount + 1);
+    Result[EntryCount] := Copy(Remaining, 1, SeparatorPos - 1);
+    Remaining := Copy(Remaining, SeparatorPos + 1, MaxInt);
+    EntryCount := EntryCount + 1;
+  end;
 end;
 
 function JoinPathEntries(const Entries: TArrayOfString): string;
@@ -178,8 +198,8 @@ procedure BroadcastEnvironmentChange;
 var
   MessageResult: Integer;
 begin
-  SendMessageTimeout(HWND_BROADCAST, WM_SETTINGCHANGE, 0, 'Environment',
-    SMTO_ABORTIFHUNG, 5000, MessageResult);
+  SendMessageTimeout($FFFF, $001A, 0, 'Environment', $0002, 5000,
+    MessageResult);
 end;
 
 procedure UpdateSystemPath(const AddEntry: Boolean);
