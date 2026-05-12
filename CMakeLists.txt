@@ -7,6 +7,15 @@ set(CMAKE_MESSAGE_LOG_LEVEL NOTICE)
 
 project(SPRING2)
 
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX
+        "${CMAKE_SOURCE_DIR}/out"
+        CACHE PATH
+        "Install path prefix, prepended onto install directories."
+        FORCE
+    )
+endif()
+
 set(SPRING_VERSION_HEADER "${CMAKE_SOURCE_DIR}/src/common/version.h")
 file(
     STRINGS "${SPRING_VERSION_HEADER}"
@@ -878,11 +887,11 @@ add_custom_command(
     OUTPUT ${REFERENCE_GENERATED}
     COMMAND
         $<TARGET_FILE:embed-reference>
-        ${CMAKE_SOURCE_DIR}/data/reference/ref_hg38_gencode49.fa
+        ${CMAKE_SOURCE_DIR}/tools/assay-reference/ref_hg38_gencode49.fa
         ${REFERENCE_GENERATED}
     DEPENDS
         embed-reference
-        ${CMAKE_SOURCE_DIR}/data/reference/ref_hg38_gencode49.fa
+        ${CMAKE_SOURCE_DIR}/tools/assay-reference/ref_hg38_gencode49.fa
         ${CMAKE_SOURCE_DIR}/tools/codegen/embed_reference.cpp
     COMMENT "Embedding reference data into binary"
 )
@@ -1232,14 +1241,6 @@ if(WIN32 AND NOT SPRING_STATIC_RUNTIMES)
     endforeach()
 endif()
 
-add_dev_script_target(dev-lint scripts/lint/lint.sh)
-add_dev_script_target(dev-cppcheck scripts/lint/cppcheck.sh)
-add_dev_script_target(dev-cbindgen-check scripts/lint/cbindgen-check.sh)
-add_dev_script_target(dev-valgrind-smoke scripts/smoke/valgrind-smoke.sh)
-
-add_dependencies(dev-lint spring2)
-add_dependencies(dev-valgrind-smoke spring2)
-
 # Unit testing integration using doctest.
 enable_testing()
 set(unit_test_sources
@@ -1279,7 +1280,9 @@ if(SPRING_OPENMP_INCLUDE_DIRS)
 endif()
 target_compile_definitions(
     unit-tests
-    PRIVATE UNIT_TEST_ASSET_DIR="${CMAKE_SOURCE_DIR}/data/samples"
+    PRIVATE
+        UNIT_TEST_ASSET_DIR="${CMAKE_SOURCE_DIR}/tests/data"
+        UNIT_TEST_REFERENCE_DIR="${CMAKE_SOURCE_DIR}/tools/assay-reference"
 )
 add_test(NAME unit_tests COMMAND unit-tests)
 
@@ -1327,7 +1330,7 @@ target_compile_definitions(
     integration-tests
     PRIVATE
         SPRING2_EXECUTABLE=\"$<TARGET_FILE:spring2>\"
-        INTEGRATION_TEST_ASSET_DIR=\"${CMAKE_SOURCE_DIR}/data/samples\"
+        INTEGRATION_TEST_ASSET_DIR=\"${CMAKE_SOURCE_DIR}/tests/data\"
 )
 add_test(NAME integration_tests COMMAND integration-tests)
 
@@ -1364,7 +1367,7 @@ target_compile_definitions(
     smoke-tests
     PRIVATE
         SPRING2_EXECUTABLE="$<TARGET_FILE:spring2>"
-        SMOKE_TEST_ASSET_DIR="${CMAKE_SOURCE_DIR}/data/samples"
+        SMOKE_TEST_ASSET_DIR="${CMAKE_SOURCE_DIR}/tests/data"
         SMOKE_TEST_OUTPUT_ROOT="${CMAKE_SOURCE_DIR}/out/tests/smoke"
 )
 add_test(NAME smoke_tests COMMAND smoke-tests)

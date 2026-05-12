@@ -36,7 +36,6 @@ jobs:
               run: |
                   chmod +x tools/host/ninja/linux/ninja tools/host/ninja/linux-aarch64/ninja tools/host/ninja/mac/ninja
                   chmod +x tools/host/nasm/linux/nasm tools/host/nasm/macosx/nasm
-                  chmod +x scripts/common/common.sh scripts/lint/lint.sh scripts/lint/cppcheck.sh scripts/smoke/valgrind-smoke.sh
 
             - name: Install Linux dependencies
               if: runner.os == 'Linux'
@@ -186,7 +185,7 @@ jobs:
               if: runner.os != 'Windows'
               run: |
                   cmake --build out/build --parallel
-                  cmake --install out/build --prefix dist
+                  cmake --install out/build --prefix out
 
             - name: Build on Windows
               if: runner.os == 'Windows'
@@ -198,7 +197,7 @@ jobs:
                   $env:CC="gcc"
                   $env:CXX="g++"
                   cmake --build out/build --parallel
-                  cmake --install out/build --prefix dist
+                  cmake --install out/build --prefix out
 
             - name: Run all tests (Unit + Smoke) on Linux and macOS
               if: runner.os != 'Windows'
@@ -229,27 +228,32 @@ jobs:
 
             - name: Run lint on Linux
               if: runner.os == 'Linux'
-              run: ./scripts/lint/lint.sh
+              run: python3 tools/dev/lint/lint.py
 
             - name: Run lint on macOS
               if: runner.os == 'macOS'
               shell: bash
               run: |
                   export PATH="$HOMEBREW_LLVM_BIN:$PATH"
-                  ./scripts/lint/lint.sh
+                  python3 tools/dev/lint/lint.py
 
             - name: Run lint on Windows
               if: runner.os == 'Windows'
               shell: powershell
-              run: .\scripts\lint\lint.ps1
+              run: py -3 .\tools\dev\lint\lint.py
 
             - name: Run cppcheck on Linux and macOS
               if: runner.os != 'Windows'
-              run: ./scripts/lint/cppcheck.sh
+              run: python3 tools/dev/lint/cppcheck.py
+
+            - name: Run cppcheck on Windows
+              if: runner.os == 'Windows'
+              shell: powershell
+              run: py -3 .\tools\dev\lint\cppcheck.py
 
             - name: Run valgrind smoke test
               if: runner.os == 'Linux'
-              run: ./scripts/smoke/valgrind-smoke.sh
+              run: python3 tools/dev/smoke/valgrind_smoke.py
 
             - name: Skip valgrind on macOS
               if: runner.os == 'macOS'

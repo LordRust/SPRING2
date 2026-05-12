@@ -2,7 +2,7 @@ services:
   spring2-build-windows:
     build:
       context: ../../../
-      dockerfile: scripts/docker/windows/Dockerfile
+      dockerfile: tools/dev/docker/windows/Dockerfile
     image: spring2-windows:latest
     container_name: spring2-windows-dev
     volumes:

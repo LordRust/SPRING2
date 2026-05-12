@@ -43,10 +43,10 @@ If you want a plain extracted layout instead of AppImage packaging:
 
 ```bash
 tar -xzf spring2-linux-x86_64.tar.gz
-./dist/bin/spring2 --version
+./bin/spring2 --version
 ```
 
-You can then copy `dist/bin/spring2` to a directory on your `PATH`.
+You can then copy `bin/spring2` to a directory on your `PATH`.
 
 ## macOS
 

@@ -51,7 +51,7 @@ DefaultGroupName={#AppName}
 DisableDirPage=no
 DisableProgramGroupPage=yes
 LicenseFile={#RepositoryRoot}\LICENSE
-InfoAfterFile={#RepositoryRoot}\packaging\windows\README.txt
+InfoAfterFile={#RepositoryRoot}\tools\release\windows\README.txt
 OutputDir={#OutputDir}
 OutputBaseFilename=spring2-windows-{#BuildArch}-setup
 SetupIconFile={#RepositoryRoot}\docs\assets\icons\logo.ico
@@ -79,7 +79,7 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
 [Files]
 Source: "{#BinarySourceDir}\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepositoryRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#RepositoryRoot}\packaging\windows\README.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#RepositoryRoot}\tools\release\windows\README.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\SPRING2"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"

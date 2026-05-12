@@ -2,7 +2,7 @@ services:
   spring2-build-linux:
     build:
       context: ../../../
-      dockerfile: scripts/docker/linux/Dockerfile
+      dockerfile: tools/dev/docker/linux/Dockerfile
     image: spring2-linux:latest
     container_name: spring2-dev
     volumes:

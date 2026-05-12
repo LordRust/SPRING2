@@ -47,8 +47,8 @@ machines. For a machine-specific build, switch those flags:
 
 ## Output Layout
 
-- Build artifacts go under `out/`.
-- Installed binaries go under `dist/` unless you provide a custom prefix.
+- Build artifacts go under `out/build/`.
+- Installed binaries go under `out/bin/` by default unless you provide a custom prefix.
 - On supported hosts, vendored Ninja and NASM under `tools/host/` are used
   automatically when available.
 

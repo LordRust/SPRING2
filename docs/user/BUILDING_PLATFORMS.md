@@ -29,7 +29,7 @@ Configure, build, and install:
 ```bash
 cmake -S . -B out/build -G Ninja
 cmake --build out/build --parallel
-cmake --install out/build --prefix dist
+cmake --install out/build --prefix out
 ```
 
 ## macOS
@@ -61,7 +61,7 @@ Build with Apple Clang and Homebrew OpenMP:
 ```bash
 CC=clang CXX=clang++ cmake -S . -B out/build -G Ninja
 cmake --build out/build --parallel
-cmake --install out/build --prefix dist
+cmake --install out/build --prefix out
 ```
 
 ## Windows (native MinGW-w64)
@@ -86,10 +86,10 @@ Configure, build, and install:
 ```powershell
 cmake -S . -B out/build -G Ninja
 cmake --build out/build --parallel
-cmake --install out/build --prefix dist
+cmake --install out/build --prefix out
 ```
 
-The installed binary and runtime DLLs land in `dist/bin/`.
+The installed binary and runtime DLLs land in `out/bin/`.
 
 ## Windows (Visual Studio / MSVC)
 
@@ -98,7 +98,7 @@ Configure with the Visual Studio generator:
 ```powershell
 cmake -S . -B out/build-msvc -G "Visual Studio 18 2026" -A x64
 cmake --build out/build-msvc --config Release --parallel
-cmake --install out/build-msvc --config Release --prefix dist/msvc
+cmake --install out/build-msvc --config Release --prefix out
 ```
 
 ## Windows (ClangCL)
@@ -108,7 +108,7 @@ Configure ClangCL on top of the Visual Studio generator:
 ```powershell
 cmake -S . -B out/build-clangcl -G "Visual Studio 18 2026" -A x64 -T ClangCL
 cmake --build out/build-clangcl --config Release --parallel
-cmake --install out/build-clangcl --config Release --prefix dist/clangcl
+cmake --install out/build-clangcl --config Release --prefix out
 ```
 
 ## Linux (IntelLLVM)
@@ -119,7 +119,7 @@ When oneAPI is installed and activated:
 source /opt/intel/oneapi/setvars.sh
 CC=icx CXX=icpx cmake -S . -B out/build-intel -G Ninja
 cmake --build out/build-intel --parallel
-cmake --install out/build-intel --prefix dist/intel
+cmake --install out/build-intel --prefix out
 ```
 
 ## Notes

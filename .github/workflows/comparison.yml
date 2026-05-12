@@ -63,7 +63,7 @@ jobs:
             - name: Build and install
               run: |
                   cmake --build out/build --parallel
-                  cmake --install out/build --prefix dist
+                                    cmake --install out/build --prefix out
 
             - name: Install mamba
               uses: conda-incubator/setup-miniconda@v4

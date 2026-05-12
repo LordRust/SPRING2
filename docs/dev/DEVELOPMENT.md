@@ -7,9 +7,12 @@ This guide is for developers who want to contribute to SPRING2 or maintain the b
 - `src/`: Core C++20 source files and headers.
 - `vendor/`: Bundled third-party dependencies as `.tar.xz` archives.
 - `docs/user/`, `docs/dev/`, `docs/assays/`: User, developer, and assay-specific documentation.
-- `scripts/`: Helper scripts for linting, smoke checks, shared utilities, and Docker workflows.
+- `tools/dev/`: Developer workflow entrypoints for linting, smoke checks, and Docker environments.
+- `tools/release/`: Release-packaging assets for installers, AppImage metadata, signing hooks, and DMG helpers.
+- `tools/assay-reference/`: Checked-in assay-detection reference assets consumed by code generation and real-data tests.
+- `tools/codegen/`: Native build-time generators and other source-producing helpers.
 - `tools/host/`: Vendored host tools such as Ninja and NASM.
-- `data/`: Checked-in sample inputs, reference data, and UI assets.
+- `tests/data/`: Checked-in sample inputs and archive fixtures used by unit, integration, smoke, and benchmark coverage.
 - `tests/`: Unit tests, integration tests, smoke tests, benchmarks, fixtures, and test support headers.
 
 ## Build System Architecture
@@ -26,11 +29,11 @@ SPRING2 provides pre-configured Docker environments that replicate the CI build 
 
 ### Available Environments
 
-Three Docker environments are available in `scripts/docker/`:
+Three Docker environments are available in `tools/dev/docker/`:
 
-- **Linux** (`scripts/docker/linux/`) - Ubuntu-based build environment with GCC
-- **macOS** (`scripts/docker/macos/`) - Clang-based environment approximating macOS toolchain (Linux-based)
-- **Windows** (`scripts/docker/windows/`) - Native Windows Server Core container with MinGW-w64 toolchain
+- **Linux** (`tools/dev/docker/linux/`) - Ubuntu-based build environment with GCC
+- **macOS** (`tools/dev/docker/macos/`) - Clang-based environment approximating macOS toolchain (Linux-based)
+- **Windows** (`tools/dev/docker/windows/`) - Native Windows Server Core container with MinGW-w64 toolchain
 
 All environments include:
 
@@ -48,28 +51,28 @@ Each Docker environment bind-mounts your host repository into the container at `
 **Build an image (Compose, recommended):**
 
 ```bash
-docker compose -f scripts/docker/linux/docker-compose.yml build
+docker compose -f tools/dev/docker/linux/docker-compose.yml build
 # or:
-docker compose -f scripts/docker/macos/docker-compose.yml build
-docker compose -f scripts/docker/windows/docker-compose.yml build
+docker compose -f tools/dev/docker/macos/docker-compose.yml build
+docker compose -f tools/dev/docker/windows/docker-compose.yml build
 ```
 
 **Build an image (plain Docker):**
 
 ```bash
-docker build -f scripts/docker/linux/Dockerfile -t spring2:linux .
+docker build -f tools/dev/docker/linux/Dockerfile -t spring2:linux .
 # or:
-docker build -f scripts/docker/macos/Dockerfile -t spring2:macos .
-docker build -f scripts/docker/windows/Dockerfile -t spring2:windows .
+docker build -f tools/dev/docker/macos/Dockerfile -t spring2:macos .
+docker build -f tools/dev/docker/windows/Dockerfile -t spring2:windows .
 ```
 
 **Run interactively:**
 
 ```bash
-docker compose -f scripts/docker/linux/docker-compose.yml run --rm spring2-build-linux
+docker compose -f tools/dev/docker/linux/docker-compose.yml run --rm spring2-build-linux
 # or:
-docker compose -f scripts/docker/macos/docker-compose.yml run --rm spring2-build-macos
-docker compose -f scripts/docker/windows/docker-compose.yml run --rm spring2-build-windows
+docker compose -f tools/dev/docker/macos/docker-compose.yml run --rm spring2-build-macos
+docker compose -f tools/dev/docker/windows/docker-compose.yml run --rm spring2-build-windows
 ```
 
 **Build SPRING2 inside the container:**
@@ -78,20 +81,20 @@ docker compose -f scripts/docker/windows/docker-compose.yml run --rm spring2-bui
 # Linux container
 cmake -S /spring2 -B /spring2/out/build-linux -G Ninja
 cmake --build /spring2/out/build-linux --parallel
-cmake --install /spring2/out/build-linux --prefix /spring2/dist/linux
+cmake --install /spring2/out/build-linux --prefix /spring2/out
 
 # macOS container
 cmake -S /spring2 -B /spring2/out/build-macos -G Ninja
 cmake --build /spring2/out/build-macos --parallel
-cmake --install /spring2/out/build-macos --prefix /spring2/dist/macos
+cmake --install /spring2/out/build-macos --prefix /spring2/out
 
 # Windows container
 cmake -S C:/spring2 -B C:/spring2/out/build-windows -G Ninja
 cmake --build C:/spring2/out/build-windows --parallel
-cmake --install C:/spring2/out/build-windows --prefix C:/spring2/dist/windows
+cmake --install C:/spring2/out/build-windows --prefix C:/spring2/out
 ```
 
-The same convention applies outside Docker: configure into `out/build*`, keep editor tooling pointed at `out/clangd/compile_commands.json`, and install into `dist/`.
+The same convention applies outside Docker: configure into `out/build*`, keep editor tooling pointed at `out/clangd/compile_commands.json`, and install into `out/`.
 
 Source changes on the host are visible immediately inside the container; rebuild the image only when you change Docker dependencies/tooling.
 
@@ -119,10 +122,22 @@ Windows containers require:
 
 ### Linting
 
-We use `clang-format` and several custom lint scripts. You can run the convenience wrapper:
+We use `clang-format` and several custom lint scripts. The cross-platform lint entrypoint is:
 
 ```bash
-./scripts/lint/lint.sh
+python tools/dev/lint/lint.py
+```
+
+The cross-platform cppcheck entrypoint follows the same pattern:
+
+```bash
+python tools/dev/lint/cppcheck.py
+```
+
+For Linux-only leak checking, the valgrind smoke entrypoint is:
+
+```bash
+python tools/dev/smoke/valgrind_smoke.py
 ```
 
 Run at least one build before linting so `out/clangd/compile_commands.json` exists, or copy it from the active build tree if you configured without building.
@@ -231,9 +246,10 @@ Coverage for this behavior lives in `tests/unit/archive_metadata_version_unit_te
 
 The `tests/` directory also includes benchmark and comparison scripts used for manual performance checks:
 
-- `tests/bench/big_bench.sh` and `tests/bench/big_bench.ps1`: End-to-end paired-end benchmark on the larger SRR2990433 dataset. Pass `--no_debug` to suppress SPRING's `-v debug` output during the run.
-- `tests/bench/small_bench.sh` and `tests/bench/small_bench.ps1`: Faster benchmark variants for quick local performance checks.
-- `tests/bench/comparison_bench.sh`: Compares SPRING2 against SPRING1.
+- `tests/bench/big_bench.py`: End-to-end paired-end benchmark on the larger SRR2990433 dataset. Pass `--no_debug` to suppress SPRING's `-v debug` output during the run.
+- `tests/bench/small_bench.py`: Faster benchmark variant for quick local performance checks and assay-specific benchmark coverage.
+- `tests/bench/comparison_bench.py`: Compares SPRING2 against SPRING1 and Python gzip baselines.
+- `tests/bench/big_thread_test.py`: Debug-oriented thread-count stress benchmark for CRC/integrity investigations.
 - `tests/smoke/*.cpp`: Lightweight CLI sanity checks split into themed smoke test units.
 - `tests/integration/*.cpp`: Archive round-trip and API-level integration coverage split into smaller themed units.
 - `tests/unit/*.cpp`: Focused tests for low-level helpers and assay detection behavior.
@@ -276,7 +292,7 @@ To prepare the certificate payload on Windows PowerShell:
 [Convert]::ToBase64String([IO.File]::ReadAllBytes('C:\path\to\certificate.pfx'))
 ```
 
-The release workflow reads those secrets, uses `packaging/windows/sign-artifact.ps1`, signs both the raw `spring2.exe` binaries and the final setup executables, and skips signing entirely when `WINDOWS_SIGNING_CERT_BASE64` is absent.
+The release workflow reads those secrets, uses `tools/release/windows/sign-artifact.ps1`, signs both the raw `spring2.exe` binaries and the final setup executables, and skips signing entirely when `WINDOWS_SIGNING_CERT_BASE64` is absent.
 
 ### Windows Installer Tasks
 

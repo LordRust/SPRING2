@@ -93,10 +93,14 @@ jobs:
                       -DLIBRAPIDARCHIVE_WITH_ISAL=OFF \
                       \$CMAKE_EXTRA_FLAGS && \
                     cmake --build out/build --parallel && \
-                    cmake --install out/build --prefix dist && \
-                    tar -czf spring2-linux-${{ matrix.arch }}.tar.gz dist && \
-                    file dist/bin/spring2 && \
-                    ldd dist/bin/spring2 && \
+                    cmake --install out/build --prefix out && \
+                    if [ -d out/lib ]; then \
+                      tar -czf spring2-linux-${{ matrix.arch }}.tar.gz -C out bin lib; \
+                    else \
+                      tar -czf spring2-linux-${{ matrix.arch }}.tar.gz -C out bin; \
+                    fi && \
+                    file out/bin/spring2 && \
+                    ldd out/bin/spring2 && \
                     export LINUXDEPLOY_DEBUG=1 && \
                     URL='https://github.com/linuxdeploy/linuxdeploy/' && \
                     URL=\"\${URL}releases/download/continuous/\" && \
@@ -106,14 +110,14 @@ jobs:
                     export EXTRA_QT_PLUGINS= && \
                     mkdir -p AppDir/usr/share/metainfo && \
                     mkdir -p AppDir/usr/share/icons/hicolor/512x512/apps && \
-                    cp packaging/linux/spring2.appdata.xml \
+                    cp tools/release/linux/spring2.appdata.xml \
                       AppDir/usr/share/metainfo/spring2.appdata.xml && \
                     cp docs/assets/icons/logo.png \
                       AppDir/usr/share/icons/hicolor/512x512/apps/spring2.png && \
                     ./linuxdeploy --appimage-extract-and-run \
                       --appdir AppDir \
-                      --executable dist/bin/spring2 \
-                      --desktop-file packaging/linux/spring2.desktop \
+                      --executable out/bin/spring2 \
+                      --desktop-file tools/release/linux/spring2.desktop \
                       --icon-file \
                         AppDir/usr/share/icons/hicolor/512x512/apps/spring2.png \
                       --output appimage \
@@ -267,8 +271,8 @@ jobs:
               if: matrix.name == 'macos'
               run: |
                   cmake --build out/build --parallel
-                  cmake --install out/build --prefix dist
-                  strip dist/bin/spring2
+                  cmake --install out/build --prefix out
+                  strip out/bin/spring2
 
             - name: Prepare Artifacts (Linux/macOS)
               if: matrix.name != 'windows'
@@ -278,7 +282,7 @@ jobs:
                     cp spring2-linux-${{ matrix.arch }}.AppImage release/
                     cp spring2-linux-${{ matrix.arch }}.tar.gz release/
                   else
-                    cp dist/bin/spring2 "release/${{ matrix.artifact_name }}"
+                    cp out/bin/spring2 "release/${{ matrix.artifact_name }}"
                   fi
 
             - name: Configure (Windows)
@@ -341,8 +345,8 @@ jobs:
                   $env:CC="gcc"
                   $env:CXX="g++"
                   cmake --build out/build --parallel
-                  cmake --install out/build --prefix dist
-                  strip dist/bin/spring2.exe
+                  cmake --install out/build --prefix out
+                  strip out/bin/spring2.exe
 
             - name: Build (Windows arm64)
               if: matrix.name == 'windows' && matrix.arch == 'arm64'
@@ -357,7 +361,7 @@ jobs:
                     Write-Host "ImageMagick not available; skipping icon generation"
                   }
                   $vsDevCmd = $env:SPRING_VSDEVCMD
-                  $buildCommand = "call `"$vsDevCmd`" -no_logo -arch=arm64 -host_arch=arm64 && cmake --build out/build --parallel && cmake --install out/build --prefix dist"
+                  $buildCommand = "call `"$vsDevCmd`" -no_logo -arch=arm64 -host_arch=arm64 && cmake --build out/build --parallel && cmake --install out/build --prefix out"
                   cmd /c $buildCommand
                   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -368,7 +372,7 @@ jobs:
                   if (!(Test-Path release)) {
                     New-Item -ItemType Directory -Path release
                   }
-                  Copy-Item dist/bin/spring2.exe "release/${{ matrix.artifact_name }}"
+                  Copy-Item out/bin/spring2.exe "release/${{ matrix.artifact_name }}"
 
             - name: Upload binary for universalizing
               if: matrix.name == 'macos'
@@ -376,7 +380,7 @@ jobs:
               with:
                   name: ${{ matrix.artifact_name }}
                   path: |
-                      dist/bin/spring2
+                      out/bin/spring2
                   retention-days: 1
 
             - name: Upload Windows binary for installer packaging
@@ -385,7 +389,7 @@ jobs:
               with:
                   name: spring2-windows-${{ matrix.arch }}-binary
                   path: |
-                      dist/bin/spring2.exe
+                      out/bin/spring2.exe
                   retention-days: 1
 
             - name: Upload Artifact to Release
@@ -455,7 +459,7 @@ jobs:
                   WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
                   WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
               run: |
-                  .\packaging\windows\sign-artifact.ps1 `
+                  .\tools\release\windows\sign-artifact.ps1 `
                     -FilePath @(
                       "$env:GITHUB_WORKSPACE\windows-bin\x86_64\spring2.exe",
                       "$env:GITHUB_WORKSPACE\windows-bin\arm64\spring2.exe"
@@ -475,7 +479,7 @@ jobs:
                     "/DBuildArch=x86_64" `
                     "/DArchitecturesAllowed=x64compatible" `
                     "/DArchitecturesInstallIn64BitMode=x64compatible" `
-                    "$env:GITHUB_WORKSPACE\packaging\windows\spring2.iss"
+                    "$env:GITHUB_WORKSPACE\tools\release\windows\spring2.iss"
                   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
             - name: Build arm64 installer
@@ -491,7 +495,7 @@ jobs:
                     "/DBuildArch=arm64" `
                     "/DArchitecturesAllowed=arm64" `
                     "/DArchitecturesInstallIn64BitMode=arm64" `
-                    "$env:GITHUB_WORKSPACE\packaging\windows\spring2.iss"
+                    "$env:GITHUB_WORKSPACE\tools\release\windows\spring2.iss"
                   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
             - name: Optionally sign Windows installers
@@ -500,7 +504,7 @@ jobs:
                   WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
                   WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
               run: |
-                  .\packaging\windows\sign-artifact.ps1 `
+                  .\tools\release\windows\sign-artifact.ps1 `
                     -FilePath @(
                       "$env:GITHUB_WORKSPACE\release\spring2-windows-x86_64-setup.exe",
                       "$env:GITHUB_WORKSPACE\release\spring2-windows-arm64-setup.exe"
@@ -587,8 +591,8 @@ jobs:
                   brew install create-dmg
                   mkdir -p dmg-root
                   cp universal-bin/spring2 dmg-root/
-                  cp packaging/macos/README.txt dmg-root/
-                  cp packaging/macos/install-spring2.command dmg-root/
+                  cp tools/release/macos/README.txt dmg-root/
+                  cp tools/release/macos/install-spring2.command dmg-root/
                   chmod +x dmg-root/spring2 dmg-root/install-spring2.command
 
                   create-dmg \

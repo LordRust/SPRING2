@@ -11,15 +11,20 @@ namespace {
 TEST_CASE("Testing AssayDetector with Real Data") {
   AssayDetector detector;
 
-  std::string base_path = ".";
-  if (!std::filesystem::exists("data/samples") ||
-      !std::filesystem::exists("data/reference")) {
-    base_path = "..";
-  }
+#ifdef UNIT_TEST_ASSET_DIR
+  const std::string data_dir =
+      (std::filesystem::path(UNIT_TEST_ASSET_DIR)).generic_string() + "/";
+#else
+  const std::string data_dir = "tests/data/";
+#endif
 
-  const std::string data_dir = base_path + "/data/samples/";
+#ifdef UNIT_TEST_REFERENCE_DIR
   const std::string ref_path =
-      base_path + "/data/reference/ref_hg38_gencode49.fa";
+      (std::filesystem::path(UNIT_TEST_REFERENCE_DIR) / "ref_hg38_gencode49.fa")
+          .generic_string();
+#else
+  const std::string ref_path = "tools/assay-reference/ref_hg38_gencode49.fa";
+#endif
 
   if (!std::filesystem::exists(ref_path)) {
     return;
