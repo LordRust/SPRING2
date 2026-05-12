@@ -287,6 +287,14 @@ if(SPRING_ENABLE_FAST_LINKER)
 endif()
 
 option(SPRING_ENABLE_IPO "Enable Interprocedural Optimization if supported" ON)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM" AND SPRING_ENABLE_IPO)
+    message(
+        NOTICE
+        "Disabling Interprocedural Optimization for IntelLLVM to avoid compiler hangs during full builds."
+    )
+    set(SPRING_ENABLE_IPO OFF)
+endif()
+
 if(
     NOT WIN32
     AND SPRING_ENABLE_IPO
@@ -944,24 +952,6 @@ set(core_source_files
     # Generated
     ${REFERENCE_GENERATED}
 )
-
-if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
-    # IntelLLVM can spend an excessive amount of time in isolated hot
-    # translation units during CI builds, so keep the workaround targeted to
-    # the file that is currently observed to stall.
-    set(_spring_intelllvm_slow_compile_sources
-        ${source_dir}/encode/compression_dispatch_encoder.cpp
-    )
-    set_source_files_properties(
-        ${_spring_intelllvm_slow_compile_sources}
-        PROPERTIES SKIP_PRECOMPILE_HEADERS ON
-    )
-    set_property(
-        SOURCE ${_spring_intelllvm_slow_compile_sources}
-        APPEND
-        PROPERTY COMPILE_OPTIONS -O1
-    )
-endif()
 
 set(spring_src_include_dirs
     ${source_dir}
