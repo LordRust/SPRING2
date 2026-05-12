@@ -31,6 +31,19 @@ decompress_archive_bsc_member(const decompression_archive_artifact &artifact,
                               const std::string &member_name,
                               bool allow_raw_fallback = false);
 
+std::vector<char> decompress_legacy_archive_bsc_member(
+    const decompression_archive_artifact &artifact,
+    const std::string &member_name);
+
+void decompress_legacy_archive_bsc_str_array_member(
+    const decompression_archive_artifact &artifact,
+    const std::string &member_name, std::string *string_array,
+    uint32_t num_strings, uint32_t *string_lengths);
+
+void decompress_legacy_archive_id_member(
+    const decompression_archive_artifact &artifact,
+    const std::string &member_name, std::string *id_array, uint32_t num_ids);
+
 class memory_cursor {
 public:
   explicit memory_cursor(const std::vector<char> &bytes) : bytes_(bytes) {}

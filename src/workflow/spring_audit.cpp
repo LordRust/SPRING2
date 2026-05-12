@@ -4,7 +4,6 @@
 #include "workflow_internal.h"
 
 #include <iostream>
-#include <sstream>
 
 namespace spring {
 
@@ -16,16 +15,11 @@ void perform_audit_standard_artifact(
   SPRING_LOG_DEBUG("Audit (standard) started for archive: " + archive_label +
                    " (in-memory)");
 
-  std::istringstream compression_params_input(artifact.require("cp.bin"),
-                                              std::ios::binary);
-
   compression_params cp{};
-  read_compression_params(compression_params_input, cp);
-  if (!compression_params_input.good()) {
-    throw std::runtime_error("Can't read parameter file in audit.");
-  }
+  read_archive_compression_params(artifact, cp);
   const archive_decompression_plan decompression_plan =
       build_archive_decompression_plan(cp);
+  ensure_archive_decompression_plan_supported(decompression_plan);
 
   NullDecompressionSink sink;
   execute_archive_decompression_plan(artifact, sink, cp, cp.encoding.num_thr,

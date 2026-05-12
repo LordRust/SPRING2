@@ -13,6 +13,26 @@ using namespace integration_test_support;
 
 namespace {
 
+std::string sample_asset_path(const std::string &name) {
+#ifdef INTEGRATION_TEST_ASSET_DIR
+  return (fs::path(INTEGRATION_TEST_ASSET_DIR) / name).generic_string();
+#else
+  return (fs::path("..") / ".." / "data" / "samples" / name).generic_string();
+#endif
+}
+
+std::string normalize_newlines(std::string text) {
+  std::erase(text, '\r');
+  return text;
+}
+
+std::string normalize_record_id(std::string text) {
+  if (!text.empty() && (text.front() == '@' || text.front() == '>')) {
+    text.erase(text.begin());
+  }
+  return text;
+}
+
 TEST_CASE("SpringReader Integration Test") {
   std::string test_dir = "reader_test_tmp";
   fs::create_directories(test_dir);
@@ -90,6 +110,54 @@ TEST_CASE("SpringReader streams grouped archives via primary read member") {
   CHECK(count == 120);
 
   fs::remove_all(test_dir);
+}
+
+TEST_CASE("SpringReader streams legacy Spring paired archives") {
+  const std::string archive_path = sample_asset_path("test_3.spring_v1");
+  const std::string reference_r1 = normalize_newlines(
+      read_gzip_file_binary(sample_asset_path("test_3_R1.fastq.gz")));
+  const std::string reference_r2 = normalize_newlines(
+      read_gzip_file_binary(sample_asset_path("test_3_R2.fastq.gz")));
+  REQUIRE(fs::exists(archive_path));
+
+  auto next_fastq_record = [](std::istringstream &stream, ReadRecord &record) {
+    std::string id_line;
+    std::string plus_line;
+    if (!std::getline(stream, id_line)) {
+      return false;
+    }
+    REQUIRE(std::getline(stream, record.sequence));
+    REQUIRE(std::getline(stream, plus_line));
+    REQUIRE(std::getline(stream, record.quality));
+    REQUIRE_FALSE(id_line.empty());
+    record.id = id_line.substr(1);
+    return true;
+  };
+
+  std::istringstream r1_stream(reference_r1);
+  std::istringstream r2_stream(reference_r2);
+  SpringReader reader(archive_path, 1);
+
+  ReadRecord actual_r1;
+  ReadRecord actual_r2;
+  ReadRecord expected_r1;
+  ReadRecord expected_r2;
+  int count = 0;
+  while (reader.next(actual_r1, actual_r2)) {
+    REQUIRE(next_fastq_record(r1_stream, expected_r1));
+    REQUIRE(next_fastq_record(r2_stream, expected_r2));
+    CHECK(normalize_record_id(actual_r1.id) ==
+          normalize_record_id(expected_r1.id));
+    CHECK(actual_r1.sequence == expected_r1.sequence);
+    CHECK(actual_r1.quality == expected_r1.quality);
+    CHECK(normalize_record_id(actual_r2.id) ==
+          normalize_record_id(expected_r2.id));
+    CHECK(actual_r2.sequence == expected_r2.sequence);
+    CHECK(actual_r2.quality == expected_r2.quality);
+    ++count;
+  }
+
+  CHECK(count == 10000);
 }
 
 } // namespace

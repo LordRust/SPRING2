@@ -335,6 +335,13 @@ validated_archive_entry_destination(const std::filesystem::path &target_root,
   return destination;
 }
 
+std::string normalize_archive_entry_name(std::string entry_name) {
+  while (entry_name.starts_with("./")) {
+    entry_name.erase(0, 2);
+  }
+  return entry_name;
+}
+
 std::unordered_map<std::string, std::string>
 read_files_from_tar_impl(struct archive *archive_reader,
                          const std::vector<std::string> *target_filenames) {
@@ -363,7 +370,11 @@ read_files_from_tar_impl(struct archive *archive_reader,
       throw std::runtime_error("Archive contains an entry with no path.");
     }
 
-    const std::string entry_name(pathname);
+    const std::string entry_name = normalize_archive_entry_name(pathname);
+    if (entry_name.empty()) {
+      archive_read_data_skip(archive_reader);
+      continue;
+    }
     validate_archive_entry_name(entry_name);
     if (!read_all && !targets.contains(entry_name)) {
       archive_read_data_skip(archive_reader);

@@ -2,15 +2,44 @@
 
 #include "common/fs_utils.h"
 #include "decompress/archive_stream_reader.h"
+#include "workflow/archive_preview.h"
+#include "workflow/workflow_api.h"
 
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 
 namespace fs = std::filesystem;
 using namespace spring;
 using namespace integration_test_support;
 
 namespace {
+
+std::string native_path_string(const std::string &path) {
+  fs::path native_path(path);
+  native_path.make_preferred();
+  return native_path.string();
+}
+
+std::string sample_asset_path(const std::string &name) {
+#ifdef INTEGRATION_TEST_ASSET_DIR
+  return (fs::path(INTEGRATION_TEST_ASSET_DIR) / name).generic_string();
+#else
+  return (fs::path("..") / ".." / "data" / "samples" / name).generic_string();
+#endif
+}
+
+std::string normalize_newlines(std::string text) {
+  std::erase(text, '\r');
+  return text;
+}
+
+std::string normalize_record_id(std::string text) {
+  if (!text.empty() && (text.front() == '@' || text.front() == '>')) {
+    text.erase(text.begin());
+  }
+  return text;
+}
 
 TEST_CASE("Archive Integrity Verification Test") {
   std::string test_dir = "integrity_test_tmp";
@@ -167,6 +196,99 @@ TEST_CASE("Preview and SpringReader reject truncated metadata") {
   CHECK_THROWS_AS(SpringReader(corrupted_archive, 1), std::runtime_error);
 
   fs::remove_all(test_dir);
+}
+
+TEST_CASE("Preview identifies legacy Spring archives") {
+  const std::string test_dir = "legacy_spring_preview_test_tmp";
+  fs::create_directories(test_dir);
+
+  const std::string archive_path = sample_asset_path("test_1_fastq.spring_v1");
+  REQUIRE(fs::exists(archive_path));
+
+  std::ostringstream preview_output;
+  auto *original_buffer = std::cout.rdbuf(preview_output.rdbuf());
+  preview(archive_path, false);
+  std::cout.rdbuf(original_buffer);
+
+  const std::string output = preview_output.str();
+  CHECK(output.find("Archive Version:   legacy spring") != std::string::npos);
+  CHECK(
+      output.find("Original Inputs:   Unavailable in legacy spring archives") !=
+      std::string::npos);
+
+  fs::remove_all(test_dir);
+}
+
+TEST_CASE("Decompression restores legacy Spring long-read archives") {
+  const std::string test_dir = "legacy_spring_decompress_test_tmp";
+  fs::create_directories(test_dir);
+
+  const std::string archive_path = sample_asset_path("test_1_fastq.spring_v1");
+  const std::string output_fastq = test_dir + "/restored.fastq";
+  const std::string reference_fastq = sample_asset_path("test_1.fastq");
+  REQUIRE(fs::exists(archive_path));
+  REQUIRE(fs::exists(reference_fastq));
+
+  CHECK_NOTHROW(decompress({archive_path}, {output_fastq}, 1, 6));
+
+  CHECK(normalize_newlines(read_file_binary(output_fastq)) ==
+        normalize_newlines(read_file_binary(reference_fastq)));
+
+  fs::remove_all(test_dir);
+}
+
+TEST_CASE("Decompression restores legacy Spring short-read archives") {
+  const std::string test_dir = "legacy_spring_short_decompress_test_tmp";
+  fs::create_directories(test_dir);
+
+  const std::string fasta_archive = sample_asset_path("test_1_fasta.spring_v1");
+  const std::string paired_archive = sample_asset_path("test_3.spring_v1");
+  const std::string output_fasta = test_dir + "/restored.fasta";
+  const std::string output_r1 = test_dir + "/restored_R1.fastq";
+  const std::string output_r2 = test_dir + "/restored_R2.fastq";
+  const std::string reference_fasta = sample_asset_path("test_1.fasta");
+  const std::string reference_r1 = sample_asset_path("test_3_R1.fastq.gz");
+  const std::string reference_r2 = sample_asset_path("test_3_R2.fastq.gz");
+  REQUIRE(fs::exists(fasta_archive));
+  REQUIRE(fs::exists(paired_archive));
+  REQUIRE(fs::exists(reference_fasta));
+  REQUIRE(fs::exists(reference_r1));
+  REQUIRE(fs::exists(reference_r2));
+
+  CHECK_NOTHROW(decompress({fasta_archive}, {output_fasta}, 1, 6));
+  CHECK_NOTHROW(decompress({paired_archive}, {output_r1, output_r2}, 1, 6));
+
+  CHECK(normalize_newlines(read_file_binary(output_fasta)) ==
+        normalize_newlines(read_file_binary(reference_fasta)));
+  CHECK(read_file_binary(output_r1) == read_gzip_file_binary(reference_r1));
+  CHECK(read_file_binary(output_r2) == read_gzip_file_binary(reference_r2));
+
+  fs::remove_all(test_dir);
+}
+
+TEST_CASE("SpringReader streams legacy Spring archives") {
+  const std::string archive_path = sample_asset_path("test_1_fastq.spring_v1");
+  REQUIRE(fs::exists(archive_path));
+
+  SpringReader reader(archive_path, 1);
+
+  ReadRecord record;
+  int record_count = 0;
+  std::string first_id;
+  while (reader.next(record)) {
+    const std::string normalized_id = normalize_record_id(record.id);
+    if (normalized_id.empty() || record.sequence.empty()) {
+      continue;
+    }
+    CHECK(record.quality.size() == record.sequence.size());
+    if (record_count == 0) {
+      first_id = normalized_id;
+    }
+    ++record_count;
+  }
+
+  CHECK(record_count >= 98);
+  CHECK(first_id == "SRR554369.1 1/1");
 }
 
 TEST_CASE("Decompression rejects colliding output paths") {

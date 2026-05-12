@@ -22,6 +22,8 @@ namespace spring {
 namespace {
 
 constexpr char kRc1ArchiveVersion[] = "1.0.0-rc.1";
+constexpr char kLegacySpringVersion[] = "legacy spring";
+constexpr size_t kLegacySpringCompressionParamsSize = 64;
 
 constexpr uint64_t kPeakIntermediateMultiplier = 4;
 constexpr uint64_t kSafetyMarginDivisor = 2;
@@ -107,8 +109,102 @@ bool is_supported_archive_decompression_version(
   return version.valid && version.major == 1 && version.minor == 0;
 }
 
+bool looks_like_legacy_spring_archive(
+    const decompression_archive_artifact &artifact) {
+  return artifact.contains("read_1.0") ||
+         artifact.contains("read_seq.bin.0.bsc") ||
+         artifact.contains("read_seq.bin.0.tail");
+}
+
+uint8_t read_legacy_bool_byte(const std::string &bytes, size_t offset,
+                              const char *label) {
+  if (offset >= bytes.size()) {
+    throw std::runtime_error(
+        std::string("Legacy SPRING metadata is truncated while reading ") +
+        label + ".");
+  }
+  return static_cast<uint8_t>(bytes[offset]);
+}
+
+template <typename T>
+T read_legacy_trivial(const std::string &bytes, size_t offset,
+                      const char *label) {
+  if (offset + sizeof(T) > bytes.size()) {
+    throw std::runtime_error(
+        std::string("Legacy SPRING metadata is truncated while reading ") +
+        label + ".");
+  }
+  T value{};
+  std::memcpy(&value, bytes.data() + offset, sizeof(T));
+  return value;
+}
+
+bool try_read_legacy_spring_compression_params(const std::string &cp_bytes,
+                                               compression_params &cp) {
+  if (cp_bytes.size() != kLegacySpringCompressionParamsSize) {
+    return false;
+  }
+
+  compression_params parsed{};
+  parsed.encoding.paired_end =
+      read_legacy_bool_byte(cp_bytes, 0, "paired_end") != 0;
+  parsed.encoding.preserve_order =
+      read_legacy_bool_byte(cp_bytes, 1, "preserve_order") != 0;
+  parsed.encoding.preserve_quality =
+      read_legacy_bool_byte(cp_bytes, 2, "preserve_quality") != 0;
+  parsed.encoding.preserve_id =
+      read_legacy_bool_byte(cp_bytes, 3, "preserve_id") != 0;
+  parsed.encoding.long_flag =
+      read_legacy_bool_byte(cp_bytes, 4, "long_flag") != 0;
+  parsed.quality.qvz_flag = read_legacy_bool_byte(cp_bytes, 5, "qvz_flag") != 0;
+  parsed.quality.ill_bin_flag =
+      read_legacy_bool_byte(cp_bytes, 6, "ill_bin_flag") != 0;
+  parsed.quality.bin_thr_flag =
+      read_legacy_bool_byte(cp_bytes, 7, "bin_thr_flag") != 0;
+  parsed.quality.qvz_ratio =
+      read_legacy_trivial<double>(cp_bytes, 8, "qvz_ratio");
+  parsed.quality.bin_thr_thr =
+      read_legacy_trivial<unsigned int>(cp_bytes, 16, "bin_thr_thr");
+  parsed.quality.bin_thr_high =
+      read_legacy_trivial<unsigned int>(cp_bytes, 20, "bin_thr_high");
+  parsed.quality.bin_thr_low =
+      read_legacy_trivial<unsigned int>(cp_bytes, 24, "bin_thr_low");
+  parsed.read_info.num_reads =
+      read_legacy_trivial<uint32_t>(cp_bytes, 28, "num_reads");
+  parsed.read_info.num_reads_clean[0] =
+      read_legacy_trivial<uint32_t>(cp_bytes, 32, "num_reads_clean[0]");
+  parsed.read_info.num_reads_clean[1] =
+      read_legacy_trivial<uint32_t>(cp_bytes, 36, "num_reads_clean[1]");
+  parsed.read_info.max_readlen =
+      read_legacy_trivial<uint32_t>(cp_bytes, 40, "max_readlen");
+  parsed.read_info.paired_id_code =
+      read_legacy_trivial<uint8_t>(cp_bytes, 44, "paired_id_code");
+  parsed.read_info.paired_id_match =
+      read_legacy_bool_byte(cp_bytes, 45, "paired_id_match") != 0;
+  parsed.encoding.num_reads_per_block =
+      read_legacy_trivial<int>(cp_bytes, 48, "num_reads_per_block");
+  parsed.encoding.num_reads_per_block_long =
+      read_legacy_trivial<int>(cp_bytes, 52, "num_reads_per_block_long");
+  parsed.encoding.num_thr = read_legacy_trivial<int>(cp_bytes, 56, "num_thr");
+
+  parsed.encoding.compression_level = DEFAULT_COMPRESSION_LEVEL;
+  parsed.encoding.fasta_mode = !parsed.encoding.preserve_quality;
+  parsed.read_info.assay = "auto";
+  parsed.read_info.assay_confidence = "N/A";
+  parsed.read_info.compressor_version = kLegacySpringVersion;
+  parsed.read_info.archive_format_version = LEGACY_ARCHIVE_FORMAT_VERSION;
+  parsed.read_info.legacy_spring = true;
+
+  cp = std::move(parsed);
+  return true;
+}
+
 void validate_supported_archive_decompression_version(
     const compression_params &cp, const archive_semantic_version &version) {
+  if (cp.read_info.legacy_spring) {
+    return;
+  }
+
   if (cp.read_info.archive_format_version == LEGACY_ARCHIVE_FORMAT_VERSION) {
     return;
   }
@@ -128,6 +224,43 @@ void validate_supported_archive_decompression_version(
 }
 
 } // namespace
+
+void read_archive_compression_params(
+    const decompression_archive_artifact &artifact, compression_params &cp) {
+  const std::string &cp_bytes = artifact.require("cp.bin");
+
+  try {
+    compression_params parsed{};
+    std::istringstream input(cp_bytes, std::ios::binary);
+    read_compression_params(input, parsed);
+    if (!input.good()) {
+      throw std::runtime_error("Can't read compression parameters.");
+    }
+    cp = std::move(parsed);
+    return;
+  } catch (const std::exception &) {
+    compression_params legacy_cp{};
+    if (looks_like_legacy_spring_archive(artifact) &&
+        try_read_legacy_spring_compression_params(cp_bytes, legacy_cp)) {
+      cp = std::move(legacy_cp);
+      return;
+    }
+    throw;
+  }
+}
+
+void ensure_archive_decompression_plan_supported(
+    const archive_decompression_plan &decompression_plan) {
+  if (decompression_plan.is_legacy_spring || decompression_plan.is_v1_0_0_rc1 ||
+      is_supported_archive_decompression_version(
+          decompression_plan.archive_version)) {
+    return;
+  }
+
+  throw std::runtime_error(
+      "Unsupported archive decompression route: " +
+      archive_decompression_route_name(decompression_plan));
+}
 
 std::string default_archive_name_from_input(const std::string &input_path) {
   std::filesystem::path p = std::filesystem::path(input_path).filename();
@@ -216,9 +349,12 @@ assay_from_archive_metadata_bytes(const std::string &archive_bytes,
   }
 
   compression_params cp{};
-  std::istringstream input(contents["cp.bin"], std::ios::binary);
-  read_compression_params(input, cp);
-  if (!input.good()) {
+  decompression_archive_artifact artifact;
+  artifact.files = std::move(contents);
+  artifact.scratch_dir.clear();
+  try {
+    read_archive_compression_params(artifact, cp);
+  } catch (const std::exception &) {
     throw std::runtime_error("Could not parse cp.bin in archive: " +
                              archive_label);
   }
@@ -234,9 +370,12 @@ std::string assay_from_archive_metadata_path(const std::string &archive_path,
   }
 
   compression_params cp{};
-  std::istringstream input(contents["cp.bin"], std::ios::binary);
-  read_compression_params(input, cp);
-  if (!input.good()) {
+  decompression_archive_artifact artifact;
+  artifact.files = std::move(contents);
+  artifact.scratch_dir.clear();
+  try {
+    read_archive_compression_params(artifact, cp);
+  } catch (const std::exception &) {
     throw std::runtime_error("Could not parse cp.bin in archive: " +
                              archive_label);
   }
@@ -703,20 +842,26 @@ build_archive_decompression_plan(const compression_params &cp) {
   plan.compressor_version = cp.read_info.compressor_version;
   plan.archive_version =
       parse_archive_semantic_version(plan.compressor_version);
-  plan.is_legacy_unversioned =
-      cp.read_info.archive_format_version == LEGACY_ARCHIVE_FORMAT_VERSION;
+  plan.is_legacy_spring = cp.read_info.legacy_spring;
+  plan.is_v1_0_0_rc1 =
+      cp.read_info.archive_format_version == LEGACY_ARCHIVE_FORMAT_VERSION &&
+      !cp.read_info.legacy_spring;
   validate_supported_archive_decompression_version(cp, plan.archive_version);
   return plan;
 }
 
 std::string archive_decompression_route_name(
     const archive_decompression_plan &decompression_plan) {
-  if (decompression_plan.is_legacy_unversioned) {
-    return "legacy-unversioned";
+  if (decompression_plan.is_legacy_spring) {
+    return kLegacySpringVersion;
   }
 
   if (!decompression_plan.compressor_version.empty()) {
     return decompression_plan.compressor_version;
+  }
+
+  if (decompression_plan.is_v1_0_0_rc1) {
+    return kRc1ArchiveVersion;
   }
 
   return kRc1ArchiveVersion;
@@ -726,7 +871,9 @@ void execute_archive_decompression_plan(
     const decompression_archive_artifact &artifact, DecompressionSink &sink,
     compression_params &cp, const int decoding_num_thr,
     const archive_decompression_plan &decompression_plan) {
-  if (decompression_plan.is_legacy_unversioned ||
+  ensure_archive_decompression_plan_supported(decompression_plan);
+
+  if (decompression_plan.is_legacy_spring || decompression_plan.is_v1_0_0_rc1 ||
       is_supported_archive_decompression_version(
           decompression_plan.archive_version)) {
     if (cp.encoding.long_flag) {

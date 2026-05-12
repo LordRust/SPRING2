@@ -8,17 +8,31 @@ set(CMAKE_MESSAGE_LOG_LEVEL NOTICE)
 project(SPRING2)
 
 set(SPRING_VERSION_HEADER "${CMAKE_SOURCE_DIR}/src/common/version.h")
-file(STRINGS "${SPRING_VERSION_HEADER}" SPRING_VERSION_DECLARATION
-    REGEX "constexpr char VERSION\\[\\] = \"[^\"]+\";")
+file(
+    STRINGS "${SPRING_VERSION_HEADER}"
+    SPRING_VERSION_DECLARATION
+    REGEX "constexpr char VERSION\\[\\] = \"[^\"]+\";"
+)
 if(NOT SPRING_VERSION_DECLARATION)
-    message(FATAL_ERROR "Unable to extract the SPRING2 version string from ${SPRING_VERSION_HEADER}")
+    message(
+        FATAL_ERROR
+        "Unable to extract the SPRING2 version string from ${SPRING_VERSION_HEADER}"
+    )
 endif()
 
-string(REGEX REPLACE ".*\"([^\"]+)\".*" "\\1" SPRING_VERSION_STRING
-    "${SPRING_VERSION_DECLARATION}")
+string(
+    REGEX REPLACE ".*\"([^\"]+)\".*"
+    "\\1"
+    SPRING_VERSION_STRING
+    "${SPRING_VERSION_DECLARATION}"
+)
 
 set(SPRING_VERSION_PRERELEASE 0)
-if(SPRING_VERSION_STRING MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)-rc\\.([0-9]+)$")
+if(
+    SPRING_VERSION_STRING
+        MATCHES
+        "^([0-9]+)\\.([0-9]+)\\.([0-9]+)-rc\\.([0-9]+)$"
+)
     set(SPRING_VERSION_MAJOR "${CMAKE_MATCH_1}")
     set(SPRING_VERSION_MINOR "${CMAKE_MATCH_2}")
     set(SPRING_VERSION_PATCH "${CMAKE_MATCH_3}")
@@ -28,11 +42,15 @@ elseif(SPRING_VERSION_STRING MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)$")
     set(SPRING_VERSION_MINOR "${CMAKE_MATCH_2}")
     set(SPRING_VERSION_PATCH "${CMAKE_MATCH_3}")
 else()
-    message(FATAL_ERROR "Unsupported SPRING2 version format: ${SPRING_VERSION_STRING}")
+    message(
+        FATAL_ERROR
+        "Unsupported SPRING2 version format: ${SPRING_VERSION_STRING}"
+    )
 endif()
 
 set(SPRING_WINDOWS_FILE_VERSION
-    "${SPRING_VERSION_MAJOR},${SPRING_VERSION_MINOR},${SPRING_VERSION_PATCH},${SPRING_VERSION_PRERELEASE}")
+    "${SPRING_VERSION_MAJOR},${SPRING_VERSION_MINOR},${SPRING_VERSION_PATCH},${SPRING_VERSION_PRERELEASE}"
+)
 set(SPRING_WINDOWS_PRODUCT_VERSION "${SPRING_WINDOWS_FILE_VERSION}")
 set(SPRING_WINDOWS_PUBLISHER "SPRING2 contributors")
 set(SPRING_WINDOWS_PRODUCT_NAME "SPRING2")
@@ -43,22 +61,33 @@ set(SPRING_WINDOWS_PROJECT_URL "https://github.com/thisisamirv/SPRING2")
 
 if(WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/docs/assets/icons/logo.ico")
     file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated")
-    file(TO_NATIVE_PATH "${CMAKE_SOURCE_DIR}/docs/assets/icons/logo.ico"
-        SPRING_WINDOWS_ICON_NATIVE_PATH)
-    string(REPLACE "\\" "\\\\" SPRING_WINDOWS_ICON_RESOURCE_PATH
-        "${SPRING_WINDOWS_ICON_NATIVE_PATH}")
-    configure_file("${CMAKE_SOURCE_DIR}/src/spring2.rc"
-        "${CMAKE_CURRENT_BINARY_DIR}/generated/spring2.rc" @ONLY)
-endif()
-
-if(WIN32)
-    add_compile_definitions(
-        _CRT_SECURE_NO_WARNINGS
-        _CRT_NONSTDC_NO_WARNINGS
+    file(
+        TO_NATIVE_PATH
+        "${CMAKE_SOURCE_DIR}/docs/assets/icons/logo.ico"
+        SPRING_WINDOWS_ICON_NATIVE_PATH
+    )
+    string(
+        REPLACE "\\"
+        "\\\\"
+        SPRING_WINDOWS_ICON_RESOURCE_PATH
+        "${SPRING_WINDOWS_ICON_NATIVE_PATH}"
+    )
+    configure_file(
+        "${CMAKE_SOURCE_DIR}/src/spring2.rc"
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/spring2.rc"
+        @ONLY
     )
 endif()
 
-option(SPRING_ENABLE_COMPILER_CACHE "Use sccache/ccache as compiler launcher when available" ON)
+if(WIN32)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS)
+endif()
+
+option(
+    SPRING_ENABLE_COMPILER_CACHE
+    "Use sccache/ccache as compiler launcher when available"
+    ON
+)
 if(SPRING_ENABLE_COMPILER_CACHE)
     if(WIN32)
         find_program(SPRING_COMPILER_CACHE_PROGRAM NAMES sccache)
@@ -67,11 +96,27 @@ if(SPRING_ENABLE_COMPILER_CACHE)
     endif()
 
     if(SPRING_COMPILER_CACHE_PROGRAM)
-        message(NOTICE "Using compiler cache launcher: ${SPRING_COMPILER_CACHE_PROGRAM}")
-        set(CMAKE_C_COMPILER_LAUNCHER "${SPRING_COMPILER_CACHE_PROGRAM}" CACHE STRING "C compiler launcher" FORCE)
-        set(CMAKE_CXX_COMPILER_LAUNCHER "${SPRING_COMPILER_CACHE_PROGRAM}" CACHE STRING "CXX compiler launcher" FORCE)
+        message(
+            NOTICE
+            "Using compiler cache launcher: ${SPRING_COMPILER_CACHE_PROGRAM}"
+        )
+        set(CMAKE_C_COMPILER_LAUNCHER
+            "${SPRING_COMPILER_CACHE_PROGRAM}"
+            CACHE STRING
+            "C compiler launcher"
+            FORCE
+        )
+        set(CMAKE_CXX_COMPILER_LAUNCHER
+            "${SPRING_COMPILER_CACHE_PROGRAM}"
+            CACHE STRING
+            "CXX compiler launcher"
+            FORCE
+        )
     else()
-        message(NOTICE "Compiler cache requested, but no sccache/ccache executable was found on PATH.")
+        message(
+            NOTICE
+            "Compiler cache requested, but no sccache/ccache executable was found on PATH."
+        )
     endif()
 endif()
 
@@ -79,8 +124,16 @@ endif()
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     message(NOTICE "Setting build type to 'Release' as none was specified.")
-    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build." FORCE)
-    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
+    set(CMAKE_BUILD_TYPE
+        "Release"
+        CACHE STRING
+        "Choose the type of build."
+        FORCE
+    )
+    set_property(
+        CACHE CMAKE_BUILD_TYPE
+        PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo"
+    )
 endif()
 
 option(LIBRAPIDARCHIVE_WITH_ISAL "Build rapidgzip with Intel ISA-L support" ON)
@@ -109,9 +162,17 @@ function(replace_in_file_if_needed file_path old_text new_text)
         return()
     endif()
 
-    string(REPLACE "${old_text}" "${new_text}" updated_contents "${file_contents}")
+    string(
+        REPLACE "${old_text}"
+        "${new_text}"
+        updated_contents
+        "${file_contents}"
+    )
     if(file_contents STREQUAL updated_contents)
-        message(FATAL_ERROR "Expected text not found while patching ${file_path}")
+        message(
+            FATAL_ERROR
+            "Expected text not found while patching ${file_path}"
+        )
     endif()
 
     file(WRITE "${file_path}" "${updated_contents}")
@@ -124,12 +185,19 @@ function(run_command_checked working_directory description)
         RESULT_VARIABLE command_result
     )
     if(NOT command_result EQUAL 0)
-        message(FATAL_ERROR "${description} failed with exit code ${command_result}")
+        message(
+            FATAL_ERROR
+            "${description} failed with exit code ${command_result}"
+        )
     endif()
 endfunction()
 
 set(SPRING_MSVC_FRONTEND FALSE)
-if(MSVC OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC" OR CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC")
+if(
+    MSVC
+    OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
+    OR CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC"
+)
     set(SPRING_MSVC_FRONTEND TRUE)
 endif()
 
@@ -139,7 +207,10 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     set(SPRING_COMPILER_SUPPORTS_GNU_STYLE_FLAGS TRUE)
 elseif("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
     if(SPRING_MSVC_FRONTEND)
-        message(NOTICE "Detected compiler: LLVM Clang with an MSVC-compatible frontend")
+        message(
+            NOTICE
+            "Detected compiler: LLVM Clang with an MSVC-compatible frontend"
+        )
     else()
         message(NOTICE "Detected compiler: LLVM Clang or Apple Clang")
         set(SPRING_COMPILER_SUPPORTS_GNU_STYLE_FLAGS TRUE)
@@ -148,16 +219,26 @@ elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
     message(NOTICE "Detected compiler: Microsoft Visual C++")
 elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "IntelLLVM")
     if(SPRING_MSVC_FRONTEND)
-        message(NOTICE "Detected compiler: IntelLLVM with an MSVC-compatible frontend")
+        message(
+            NOTICE
+            "Detected compiler: IntelLLVM with an MSVC-compatible frontend"
+        )
     else()
         message(NOTICE "Detected compiler: IntelLLVM")
         set(SPRING_COMPILER_SUPPORTS_GNU_STYLE_FLAGS TRUE)
     endif()
 else()
-    message(FATAL_ERROR "Compiler currently not supported by CMake build: ${CMAKE_CXX_COMPILER_ID}")
+    message(
+        FATAL_ERROR
+        "Compiler currently not supported by CMake build: ${CMAKE_CXX_COMPILER_ID}"
+    )
 endif()
 
-option(SPRING_ENABLE_FAST_LINKER "Use a faster linker when supported (mold/lld)" ON)
+option(
+    SPRING_ENABLE_FAST_LINKER
+    "Use a faster linker when supported (mold/lld)"
+    ON
+)
 if(SPRING_ENABLE_FAST_LINKER)
     set(SPRING_FAST_LINKER_FLAG "")
 
@@ -168,7 +249,11 @@ if(SPRING_ENABLE_FAST_LINKER)
         endif()
     endif()
 
-    if(SPRING_COMPILER_SUPPORTS_GNU_STYLE_FLAGS AND NOT APPLE AND NOT SPRING_FAST_LINKER_FLAG)
+    if(
+        SPRING_COMPILER_SUPPORTS_GNU_STYLE_FLAGS
+        AND NOT APPLE
+        AND NOT SPRING_FAST_LINKER_FLAG
+    )
         check_linker_flag(CXX "-fuse-ld=lld" SPRING_LINKER_SUPPORTS_LLD)
         if(SPRING_LINKER_SUPPORTS_LLD)
             set(SPRING_FAST_LINKER_FLAG "-fuse-ld=lld")
@@ -179,12 +264,19 @@ if(SPRING_ENABLE_FAST_LINKER)
         message(NOTICE "Using faster linker flag: ${SPRING_FAST_LINKER_FLAG}")
         add_link_options("${SPRING_FAST_LINKER_FLAG}")
     else()
-        message(NOTICE "Fast linker requested, but no supported linker flag was detected.")
+        message(
+            NOTICE
+            "Fast linker requested, but no supported linker flag was detected."
+        )
     endif()
 endif()
 
 option(SPRING_ENABLE_IPO "Enable Interprocedural Optimization if supported" ON)
-if(NOT WIN32 AND SPRING_ENABLE_IPO AND NOT DEFINED CMAKE_INTERPROCEDURAL_OPTIMIZATION)
+if(
+    NOT WIN32
+    AND SPRING_ENABLE_IPO
+    AND NOT DEFINED CMAKE_INTERPROCEDURAL_OPTIMIZATION
+)
     check_ipo_supported(RESULT result)
     if(result)
         message(NOTICE "Support for Interprocedural Optimization detected.")
@@ -195,7 +287,11 @@ endif()
 # Native tuning is the default; portability mode restricts x86-family code
 # generation to SSE4.1-compatible instructions.
 option(spring_optimize_for_native "Build with -march=native" OFF)
-option(spring_optimize_for_portability "Build with -msse4.1 (Maximum portability)" ON)
+option(
+    spring_optimize_for_portability
+    "Build with -msse4.1 (Maximum portability)"
+    ON
+)
 
 set(SPRING_X86_FAMILY FALSE)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|i[3-6]86)$")
@@ -206,23 +302,35 @@ message(NOTICE "Setting compiler flags")
 if(SPRING_COMPILER_SUPPORTS_GNU_STYLE_FLAGS)
     set(FLAGS "${FLAGS} -O3")
 else()
-    message(NOTICE "Skipping GNU-style optimization flags for the current compiler frontend")
+    message(
+        NOTICE
+        "Skipping GNU-style optimization flags for the current compiler frontend"
+    )
 endif()
 if(spring_optimize_for_portability)
     if(SPRING_X86_FAMILY)
         if(SPRING_COMPILER_SUPPORTS_GNU_STYLE_FLAGS)
             set(FLAGS "${FLAGS} -msse4.1")
         else()
-            message(NOTICE "spring_optimize_for_portability is already satisfied by the MSVC-compatible frontend defaults; skipping explicit SSE4.1 flag")
+            message(
+                NOTICE
+                "spring_optimize_for_portability is already satisfied by the MSVC-compatible frontend defaults; skipping explicit SSE4.1 flag"
+            )
         endif()
     else()
-        message(NOTICE "spring_optimize_for_portability requested on non-x86 target ${CMAKE_SYSTEM_PROCESSOR}; skipping -msse4.1")
+        message(
+            NOTICE
+            "spring_optimize_for_portability requested on non-x86 target ${CMAKE_SYSTEM_PROCESSOR}; skipping -msse4.1"
+        )
     endif()
 elseif(spring_optimize_for_native)
     if(SPRING_COMPILER_SUPPORTS_GNU_STYLE_FLAGS)
         set(FLAGS "${FLAGS} -march=native")
     else()
-        message(NOTICE "spring_optimize_for_native is not currently mapped for the MSVC-compatible frontend; leaving architecture selection to the generator/toolchain")
+        message(
+            NOTICE
+            "spring_optimize_for_native is not currently mapped for the MSVC-compatible frontend; leaving architecture selection to the generator/toolchain"
+        )
     endif()
 endif()
 if(SPRING_COMPILER_SUPPORTS_GNU_STYLE_FLAGS)
@@ -242,37 +350,78 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${FLAGS}")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${FLAGS}")
 
 # OpenMP is required across Spring and several bundled compression components.
-if(WIN32 AND (CMAKE_C_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
+if(
+    WIN32
+    AND (
+        CMAKE_C_COMPILER_ID STREQUAL "Clang"
+        OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
+    )
+)
     if(MSVC)
-        message(NOTICE "Configuring OpenMP manually for ClangCL using LLVM runtime")
+        message(
+            NOTICE
+            "Configuring OpenMP manually for ClangCL using LLVM runtime"
+        )
         set(SPRING_CONFIGURE_OPENMP_MANUALLY ON)
         set(SPRING_OPENMP_MANUAL_COMPILE_FLAG "/openmp:llvm")
         # Find LLVM's libomp.lib
-        get_filename_component(CLANGCL_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
-        get_filename_component(LLVM_INSTALL_PREFIX "${CLANGCL_BIN_DIR}" DIRECTORY)
-        find_library(SPRING_OPENMP_MANUAL_LIBRARY
+        get_filename_component(
+            CLANGCL_BIN_DIR
+            "${CMAKE_CXX_COMPILER}"
+            DIRECTORY
+        )
+        get_filename_component(
+            LLVM_INSTALL_PREFIX
+            "${CLANGCL_BIN_DIR}"
+            DIRECTORY
+        )
+        find_library(
+            SPRING_OPENMP_MANUAL_LIBRARY
             NAMES omp libomp
             HINTS "${LLVM_INSTALL_PREFIX}/lib" "${CLANGCL_BIN_DIR}/../lib"
-            PATH_SUFFIXES x64)
+            PATH_SUFFIXES x64
+        )
         if(NOT SPRING_OPENMP_MANUAL_LIBRARY)
-            message(FATAL_ERROR "Unable to locate LLVM libomp for ClangCL under ${LLVM_INSTALL_PREFIX}/lib")
+            message(
+                FATAL_ERROR
+                "Unable to locate LLVM libomp for ClangCL under ${LLVM_INSTALL_PREFIX}/lib"
+            )
         endif()
         unset(SPRING_OPENMP_COMPONENTS)
     else()
-        message(NOTICE "Configuring OpenMP manually for Windows Clang using -fopenmp")
+        message(
+            NOTICE
+            "Configuring OpenMP manually for Windows Clang using -fopenmp"
+        )
         set(SPRING_CONFIGURE_OPENMP_MANUALLY ON)
         set(SPRING_OPENMP_MANUAL_COMPILE_FLAG "-fopenmp")
-        get_filename_component(SPRING_CLANG_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
-        get_filename_component(SPRING_CLANG_PREFIX "${SPRING_CLANG_BIN_DIR}" DIRECTORY)
-        find_library(SPRING_OPENMP_MANUAL_LIBRARY
+        get_filename_component(
+            SPRING_CLANG_BIN_DIR
+            "${CMAKE_CXX_COMPILER}"
+            DIRECTORY
+        )
+        get_filename_component(
+            SPRING_CLANG_PREFIX
+            "${SPRING_CLANG_BIN_DIR}"
+            DIRECTORY
+        )
+        find_library(
+            SPRING_OPENMP_MANUAL_LIBRARY
             NAMES omp libomp.dll.a libomp
-            HINTS "${SPRING_CLANG_PREFIX}/lib")
+            HINTS "${SPRING_CLANG_PREFIX}/lib"
+        )
         if(NOT SPRING_OPENMP_MANUAL_LIBRARY)
-            message(FATAL_ERROR "Unable to locate libomp for Windows Clang under ${SPRING_CLANG_PREFIX}/lib")
+            message(
+                FATAL_ERROR
+                "Unable to locate libomp for Windows Clang under ${SPRING_CLANG_PREFIX}/lib"
+            )
         endif()
         unset(SPRING_OPENMP_COMPONENTS)
     endif()
-elseif(CMAKE_C_COMPILER_ID STREQUAL "MSVC" OR CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+elseif(
+    CMAKE_C_COMPILER_ID STREQUAL "MSVC"
+    OR CMAKE_CXX_COMPILER_ID STREQUAL "MSVC"
+)
     # MSVC ARM64 has internal compiler errors with OpenMP in libbsc/libsais.c
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|aarch64)$")
         message(NOTICE "Disabling OpenMP on MSVC ARM64 due to compiler bug")
@@ -297,13 +446,40 @@ if(APPLE)
         endif()
 
         if(BREW_LIBOMP_DIR)
-            message(NOTICE "Found Homebrew libomp at ${BREW_LIBOMP_DIR}, configuring OpenMP automatically")
-            set(OpenMP_ROOT "${BREW_LIBOMP_DIR}" CACHE PATH "Path to OpenMP root")
-            set(OpenMP_C_FLAGS "-Xpreprocessor -fopenmp" CACHE STRING "C flags for OpenMP")
-            set(OpenMP_CXX_FLAGS "-Xpreprocessor -fopenmp" CACHE STRING "CXX flags for OpenMP")
-            set(OpenMP_C_LIB_NAMES "omp" CACHE STRING "C library names for OpenMP")
-            set(OpenMP_CXX_LIB_NAMES "omp" CACHE STRING "CXX library names for OpenMP")
-            set(OpenMP_omp_LIBRARY "${BREW_LIBOMP_DIR}/lib/libomp.dylib" CACHE FILEPATH "Path to omp library")
+            message(
+                NOTICE
+                "Found Homebrew libomp at ${BREW_LIBOMP_DIR}, configuring OpenMP automatically"
+            )
+            set(OpenMP_ROOT
+                "${BREW_LIBOMP_DIR}"
+                CACHE PATH
+                "Path to OpenMP root"
+            )
+            set(OpenMP_C_FLAGS
+                "-Xpreprocessor -fopenmp"
+                CACHE STRING
+                "C flags for OpenMP"
+            )
+            set(OpenMP_CXX_FLAGS
+                "-Xpreprocessor -fopenmp"
+                CACHE STRING
+                "CXX flags for OpenMP"
+            )
+            set(OpenMP_C_LIB_NAMES
+                "omp"
+                CACHE STRING
+                "C library names for OpenMP"
+            )
+            set(OpenMP_CXX_LIB_NAMES
+                "omp"
+                CACHE STRING
+                "CXX library names for OpenMP"
+            )
+            set(OpenMP_omp_LIBRARY
+                "${BREW_LIBOMP_DIR}/lib/libomp.dylib"
+                CACHE FILEPATH
+                "Path to omp library"
+            )
         endif()
     endif()
 endif()
@@ -313,14 +489,22 @@ if(NOT SPRING_DISABLE_OPENMP)
         set(OpenMP_FOUND TRUE)
         set(OpenMP_CXX_FOUND TRUE)
         set(OpenMP_CXX_FLAGS "${SPRING_OPENMP_MANUAL_COMPILE_FLAG}")
-        get_filename_component(SPRING_OPENMP_MANUAL_LIBRARY_NAME "${SPRING_OPENMP_MANUAL_LIBRARY}" NAME_WE)
+        get_filename_component(
+            SPRING_OPENMP_MANUAL_LIBRARY_NAME
+            "${SPRING_OPENMP_MANUAL_LIBRARY}"
+            NAME_WE
+        )
         set(OpenMP_CXX_LIB_NAMES "${SPRING_OPENMP_MANUAL_LIBRARY_NAME}")
         set(OpenMP_CXX_LIBRARIES "${SPRING_OPENMP_MANUAL_LIBRARY}")
         if(NOT TARGET OpenMP::OpenMP_CXX)
             add_library(OpenMP::OpenMP_CXX INTERFACE IMPORTED)
-            set_target_properties(OpenMP::OpenMP_CXX PROPERTIES
-                INTERFACE_COMPILE_OPTIONS "${SPRING_OPENMP_MANUAL_COMPILE_FLAG}"
-                INTERFACE_LINK_LIBRARIES "${SPRING_OPENMP_MANUAL_LIBRARY}")
+            set_target_properties(
+                OpenMP::OpenMP_CXX
+                PROPERTIES
+                    INTERFACE_COMPILE_OPTIONS
+                        "${SPRING_OPENMP_MANUAL_COMPILE_FLAG}"
+                    INTERFACE_LINK_LIBRARIES "${SPRING_OPENMP_MANUAL_LIBRARY}"
+            )
         endif()
     else()
         find_package(OpenMP REQUIRED COMPONENTS ${SPRING_OPENMP_COMPONENTS})
@@ -336,8 +520,12 @@ if(NOT SPRING_DISABLE_OPENMP)
 
     message(NOTICE "OPENMP FOUND")
     set(OpenMP_DEFINITIONS "-DLIBBSC_OPENMP_SUPPORT -DLIBSAIS_OPENMP")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} ${OpenMP_DEFINITIONS}")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} ${OpenMP_DEFINITIONS}")
+    set(CMAKE_CXX_FLAGS
+        "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} ${OpenMP_DEFINITIONS}"
+    )
+    set(CMAKE_C_FLAGS
+        "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} ${OpenMP_DEFINITIONS}"
+    )
 
     set(SPRING_OPENMP_INCLUDE_DIRS)
     if(OpenMP_C_INCLUDE_DIRS)
@@ -349,7 +537,10 @@ if(NOT SPRING_DISABLE_OPENMP)
     if(NOT SPRING_OPENMP_INCLUDE_DIRS AND DEFINED OpenMP_ROOT)
         set(SPRING_OPENMP_ROOT_INCLUDE_DIR "${OpenMP_ROOT}/include")
         if(EXISTS "${SPRING_OPENMP_ROOT_INCLUDE_DIR}/omp.h")
-            list(APPEND SPRING_OPENMP_INCLUDE_DIRS "${SPRING_OPENMP_ROOT_INCLUDE_DIR}")
+            list(
+                APPEND SPRING_OPENMP_INCLUDE_DIRS
+                "${SPRING_OPENMP_ROOT_INCLUDE_DIR}"
+            )
         endif()
     endif()
     list(REMOVE_DUPLICATES SPRING_OPENMP_INCLUDE_DIRS)
@@ -368,89 +559,184 @@ if(CMAKE_GENERATOR MATCHES "^Ninja")
     set(SPRING_VENDORED_NINJA_EXECUTABLE "")
     if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
         if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(ARM64|aarch64)$")
-            set(SPRING_VENDORED_NINJA_EXECUTABLE "${tools_host_dir}/ninja/winarm64/ninja.exe")
+            set(SPRING_VENDORED_NINJA_EXECUTABLE
+                "${tools_host_dir}/ninja/winarm64/ninja.exe"
+            )
         else()
-            set(SPRING_VENDORED_NINJA_EXECUTABLE "${tools_host_dir}/ninja/win/ninja.exe")
+            set(SPRING_VENDORED_NINJA_EXECUTABLE
+                "${tools_host_dir}/ninja/win/ninja.exe"
+            )
         endif()
     elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
-        set(SPRING_VENDORED_NINJA_EXECUTABLE "${tools_host_dir}/ninja/mac/ninja")
+        set(SPRING_VENDORED_NINJA_EXECUTABLE
+            "${tools_host_dir}/ninja/mac/ninja"
+        )
     elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
         if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(ARM64|aarch64)$")
-            set(SPRING_VENDORED_NINJA_EXECUTABLE "${tools_host_dir}/ninja/linux-aarch64/ninja")
+            set(SPRING_VENDORED_NINJA_EXECUTABLE
+                "${tools_host_dir}/ninja/linux-aarch64/ninja"
+            )
         else()
-            set(SPRING_VENDORED_NINJA_EXECUTABLE "${tools_host_dir}/ninja/linux/ninja")
+            set(SPRING_VENDORED_NINJA_EXECUTABLE
+                "${tools_host_dir}/ninja/linux/ninja"
+            )
         endif()
     endif()
 
     if(CMAKE_MAKE_PROGRAM)
-        file(REAL_PATH "${CMAKE_MAKE_PROGRAM}" SPRING_CONFIGURED_NINJA_EXECUTABLE_REAL)
-        set(CMAKE_MAKE_PROGRAM "${SPRING_CONFIGURED_NINJA_EXECUTABLE_REAL}" CACHE FILEPATH "Ninja executable used by CMake" FORCE)
+        file(
+            REAL_PATH "${CMAKE_MAKE_PROGRAM}"
+            SPRING_CONFIGURED_NINJA_EXECUTABLE_REAL
+        )
+        set(CMAKE_MAKE_PROGRAM
+            "${SPRING_CONFIGURED_NINJA_EXECUTABLE_REAL}"
+            CACHE FILEPATH
+            "Ninja executable used by CMake"
+            FORCE
+        )
         message(NOTICE "Using configured Ninja: ${CMAKE_MAKE_PROGRAM}")
-    elseif(SPRING_VENDORED_NINJA_EXECUTABLE AND EXISTS "${SPRING_VENDORED_NINJA_EXECUTABLE}")
-        file(REAL_PATH "${SPRING_VENDORED_NINJA_EXECUTABLE}" SPRING_NINJA_EXECUTABLE_REAL)
-        set(CMAKE_MAKE_PROGRAM "${SPRING_NINJA_EXECUTABLE_REAL}" CACHE FILEPATH "Ninja executable used by CMake" FORCE)
+    elseif(
+        SPRING_VENDORED_NINJA_EXECUTABLE
+        AND EXISTS "${SPRING_VENDORED_NINJA_EXECUTABLE}"
+    )
+        file(
+            REAL_PATH "${SPRING_VENDORED_NINJA_EXECUTABLE}"
+            SPRING_NINJA_EXECUTABLE_REAL
+        )
+        set(CMAKE_MAKE_PROGRAM
+            "${SPRING_NINJA_EXECUTABLE_REAL}"
+            CACHE FILEPATH
+            "Ninja executable used by CMake"
+            FORCE
+        )
         message(NOTICE "Using vendored Ninja: ${CMAKE_MAKE_PROGRAM}")
     endif()
 endif()
 
-set(SPRING_HAVE_NASM OFF CACHE BOOL "Whether a NASM assembler is available for ISA-L" FORCE)
+set(SPRING_HAVE_NASM
+    OFF
+    CACHE BOOL
+    "Whether a NASM assembler is available for ISA-L"
+    FORCE
+)
 
 if(DEFINED SPRING_NASM_EXECUTABLE AND SPRING_NASM_EXECUTABLE)
     if(NOT EXISTS "${SPRING_NASM_EXECUTABLE}")
-        message(FATAL_ERROR "Configured SPRING_NASM_EXECUTABLE does not exist: ${SPRING_NASM_EXECUTABLE}")
+        message(
+            FATAL_ERROR
+            "Configured SPRING_NASM_EXECUTABLE does not exist: ${SPRING_NASM_EXECUTABLE}"
+        )
     endif()
     file(REAL_PATH "${SPRING_NASM_EXECUTABLE}" SPRING_NASM_EXECUTABLE_REAL)
-    set(SPRING_HAVE_NASM ON CACHE BOOL "Whether a NASM assembler is available for ISA-L" FORCE)
-    set(SPRING_NASM_EXECUTABLE "${SPRING_NASM_EXECUTABLE_REAL}" CACHE FILEPATH "Path to the NASM assembler used for ISA-L" FORCE)
+    set(SPRING_HAVE_NASM
+        ON
+        CACHE BOOL
+        "Whether a NASM assembler is available for ISA-L"
+        FORCE
+    )
+    set(SPRING_NASM_EXECUTABLE
+        "${SPRING_NASM_EXECUTABLE_REAL}"
+        CACHE FILEPATH
+        "Path to the NASM assembler used for ISA-L"
+        FORCE
+    )
     message(NOTICE "Using configured NASM: ${SPRING_NASM_EXECUTABLE}")
 else()
-    set(SPRING_NASM_EXECUTABLE "" CACHE FILEPATH "Path to the NASM assembler used for ISA-L" FORCE)
+    set(SPRING_NASM_EXECUTABLE
+        ""
+        CACHE FILEPATH
+        "Path to the NASM assembler used for ISA-L"
+        FORCE
+    )
     set(SPRING_VENDORED_NASM_EXECUTABLE "")
     if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
         if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(AMD64|x86_64)$")
-            set(SPRING_VENDORED_NASM_EXECUTABLE "${tools_host_dir}/nasm/win64/nasm.exe")
+            set(SPRING_VENDORED_NASM_EXECUTABLE
+                "${tools_host_dir}/nasm/win64/nasm.exe"
+            )
         elseif(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(x86|i[3-6]86)$")
-            set(SPRING_VENDORED_NASM_EXECUTABLE "${tools_host_dir}/nasm/win32/nasm.exe")
+            set(SPRING_VENDORED_NASM_EXECUTABLE
+                "${tools_host_dir}/nasm/win32/nasm.exe"
+            )
         endif()
     elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
-        set(SPRING_VENDORED_NASM_EXECUTABLE "${tools_host_dir}/nasm/macosx/nasm")
+        set(SPRING_VENDORED_NASM_EXECUTABLE
+            "${tools_host_dir}/nasm/macosx/nasm"
+        )
     elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
         set(SPRING_VENDORED_NASM_EXECUTABLE "${tools_host_dir}/nasm/linux/nasm")
     endif()
 
-    if(SPRING_VENDORED_NASM_EXECUTABLE AND EXISTS "${SPRING_VENDORED_NASM_EXECUTABLE}")
-        file(REAL_PATH "${SPRING_VENDORED_NASM_EXECUTABLE}" SPRING_NASM_EXECUTABLE_REAL)
-        set(SPRING_HAVE_NASM ON CACHE BOOL "Whether a NASM assembler is available for ISA-L" FORCE)
-        set(SPRING_NASM_EXECUTABLE "${SPRING_NASM_EXECUTABLE_REAL}" CACHE FILEPATH "Path to the NASM assembler used for ISA-L" FORCE)
+    if(
+        SPRING_VENDORED_NASM_EXECUTABLE
+        AND EXISTS "${SPRING_VENDORED_NASM_EXECUTABLE}"
+    )
+        file(
+            REAL_PATH "${SPRING_VENDORED_NASM_EXECUTABLE}"
+            SPRING_NASM_EXECUTABLE_REAL
+        )
+        set(SPRING_HAVE_NASM
+            ON
+            CACHE BOOL
+            "Whether a NASM assembler is available for ISA-L"
+            FORCE
+        )
+        set(SPRING_NASM_EXECUTABLE
+            "${SPRING_NASM_EXECUTABLE_REAL}"
+            CACHE FILEPATH
+            "Path to the NASM assembler used for ISA-L"
+            FORCE
+        )
         message(NOTICE "Using vendored NASM: ${SPRING_NASM_EXECUTABLE}")
     else()
         find_program(SPRING_SYSTEM_NASM_EXECUTABLE NAMES nasm)
         if(SPRING_SYSTEM_NASM_EXECUTABLE)
-            set(SPRING_HAVE_NASM ON CACHE BOOL "Whether a NASM assembler is available for ISA-L" FORCE)
-            set(SPRING_NASM_EXECUTABLE "${SPRING_SYSTEM_NASM_EXECUTABLE}" CACHE FILEPATH "Path to the NASM assembler used for ISA-L" FORCE)
+            set(SPRING_HAVE_NASM
+                ON
+                CACHE BOOL
+                "Whether a NASM assembler is available for ISA-L"
+                FORCE
+            )
+            set(SPRING_NASM_EXECUTABLE
+                "${SPRING_SYSTEM_NASM_EXECUTABLE}"
+                CACHE FILEPATH
+                "Path to the NASM assembler used for ISA-L"
+                FORCE
+            )
             message(NOTICE "Using system NASM: ${SPRING_NASM_EXECUTABLE}")
         else()
-            message(NOTICE "NASM was not found; ISA-L will use non-NASM fallback sources where available.")
+            message(
+                NOTICE
+                "NASM was not found; ISA-L will use non-NASM fallback sources where available."
+            )
         endif()
     endif()
 endif()
 
 # Emit a matching clangd configuration so editor diagnostics see the same
 # compiler include path and OpenMP flags as the CMake build.
-set(SPRING_CLANGD_FLAGS "\"-fopenmp\", \"-I${include_dir}\", \"-I${source_dir}/assays\", \"-I${source_dir}/common\", \"-I${source_dir}/decompress\", \"-I${source_dir}/encode\", \"-I${source_dir}/preprocess\", \"-I${source_dir}/reorder\", \"-I${source_dir}/workflow\", \"-I${vendor_dir}\", \"-I${vendor_dir}/zstd\", \"-I${build_vendor_dir}/cloudflare_zlib\", \"-I${build_vendor_dir}/libarchive\"")
+set(SPRING_CLANGD_FLAGS
+    "\"-fopenmp\", \"-I${include_dir}\", \"-I${source_dir}/assays\", \"-I${source_dir}/common\", \"-I${source_dir}/decompress\", \"-I${source_dir}/encode\", \"-I${source_dir}/preprocess\", \"-I${source_dir}/reorder\", \"-I${source_dir}/workflow\", \"-I${vendor_dir}\", \"-I${vendor_dir}/zstd\", \"-I${build_vendor_dir}/cloudflare_zlib\", \"-I${build_vendor_dir}/libarchive\""
+)
 string(APPEND SPRING_CLANGD_FLAGS ", \"-I${build_vendor_dir}/pthash\"")
 string(APPEND SPRING_CLANGD_FLAGS ", \"-I${build_vendor_dir}/qvz\"")
 string(APPEND SPRING_CLANGD_FLAGS ", \"-I${build_vendor_dir}/libbsc\"")
 string(APPEND SPRING_CLANGD_FLAGS ", \"-I${build_vendor_dir}/libdeflate\"")
 string(APPEND SPRING_CLANGD_FLAGS ", \"-I${build_vendor_dir}/indexed_bzip2\"")
-string(APPEND SPRING_CLANGD_FLAGS ", \"-I${build_vendor_dir}/indexed_bzip2/isa-l/include\"")
-string(APPEND SPRING_CLANGD_FLAGS ", \"-I${build_vendor_dir}/indexed_bzip2/isa-l\"")
+string(
+    APPEND SPRING_CLANGD_FLAGS
+    ", \"-I${build_vendor_dir}/indexed_bzip2/isa-l/include\""
+)
+string(
+    APPEND SPRING_CLANGD_FLAGS
+    ", \"-I${build_vendor_dir}/indexed_bzip2/isa-l\""
+)
 foreach(openmp_include_dir IN LISTS SPRING_OPENMP_INCLUDE_DIRS)
     string(APPEND SPRING_CLANGD_FLAGS ", \"-I${openmp_include_dir}\"")
 endforeach()
-set(CLANGD_CONTENT "CompileFlags:\n  Add: [${SPRING_CLANGD_FLAGS}, \"-Wno-empty-translation-unit\"]\n  Remove: [\"-Winvalid-pch\", \"-include\", \"-include-pch\"]\n---\nIf:\n  PathMatch: ['.*\\.(hpp|cpp|cc|cxx)$', 'src/.*\\.h$']\nCompileFlags:\n  Add: [\"-std=c++20\"]\n")
-
-
+set(CLANGD_CONTENT
+    "CompileFlags:\n  Add: [${SPRING_CLANGD_FLAGS}, \"-Wno-empty-translation-unit\"]\n  Remove: [\"-Winvalid-pch\", \"-include\", \"-include-pch\"]\n---\nIf:\n  PathMatch: ['.*\\.(hpp|cpp|cc|cxx)$', 'src/.*\\.h$']\nCompileFlags:\n  Add: [\"-std=c++20\"]\n"
+)
 
 if(EXISTS "${CMAKE_SOURCE_DIR}/.clangd")
     file(READ "${CMAKE_SOURCE_DIR}/.clangd" EXISTING_CLANGD_CONTENT)
@@ -460,14 +746,26 @@ if(NOT CLANGD_CONTENT STREQUAL EXISTING_CLANGD_CONTENT)
 endif()
 # Keep a workspace-stable compile_commands.json copy under out/clangd.
 # This avoids symlink permission/portability issues across platforms.
-if(CMAKE_GENERATOR MATCHES "^(Ninja|Unix Makefiles|MinGW Makefiles|MSYS Makefiles)$")
+if(
+    CMAKE_GENERATOR
+        MATCHES
+        "^(Ninja|Unix Makefiles|MinGW Makefiles|MSYS Makefiles)$"
+)
     file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/out/clangd")
-    add_custom_target(copy_compile_commands ALL
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_BINARY_DIR}/compile_commands.json" "${CMAKE_SOURCE_DIR}/out/clangd/compile_commands.json"
+    add_custom_target(
+        copy_compile_commands
+        ALL
+        COMMAND
+            ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_BINARY_DIR}/compile_commands.json"
+            "${CMAKE_SOURCE_DIR}/out/clangd/compile_commands.json"
         COMMENT "Copying compile_commands.json into out/clangd"
     )
 else()
-    message(NOTICE "Skipping compile_commands.json out/clangd copy for generator: ${CMAKE_GENERATOR}")
+    message(
+        NOTICE
+        "Skipping compile_commands.json out/clangd copy for generator: ${CMAKE_GENERATOR}"
+    )
 endif()
 
 # message(NOTICE "** CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
@@ -479,16 +777,34 @@ set(_spring_static_runtimes_default OFF)
 if(WIN32)
     set(_spring_static_runtimes_default ON)
 endif()
-option(SPRING_STATIC_RUNTIMES "Statically link libgcc/libstdc++/libgomp on supported toolchains" ${_spring_static_runtimes_default})
+option(
+    SPRING_STATIC_RUNTIMES
+    "Statically link libgcc/libstdc++/libgomp on supported toolchains"
+    ${_spring_static_runtimes_default}
+)
 unset(_spring_static_runtimes_default)
 
 macro(add_vendor_subdirectory_no_install source_dir binary_dir)
-    set(_spring_prev_suppress_vendor_install "${SPRING_SUPPRESS_VENDOR_INSTALL}")
+    set(_spring_prev_suppress_vendor_install
+        "${SPRING_SUPPRESS_VENDOR_INSTALL}"
+    )
     set(SPRING_SUPPRESS_VENDOR_INSTALL TRUE)
-    set(SPRING_SUPPRESS_VENDOR_INSTALL TRUE CACHE INTERNAL "Suppress install rules for vendored dependencies" FORCE)
+    set(SPRING_SUPPRESS_VENDOR_INSTALL
+        TRUE
+        CACHE INTERNAL
+        "Suppress install rules for vendored dependencies"
+        FORCE
+    )
     add_subdirectory("${source_dir}" "${binary_dir}" ${ARGN})
-    set(SPRING_SUPPRESS_VENDOR_INSTALL "${_spring_prev_suppress_vendor_install}")
-    set(SPRING_SUPPRESS_VENDOR_INSTALL "${_spring_prev_suppress_vendor_install}" CACHE INTERNAL "Suppress install rules for vendored dependencies" FORCE)
+    set(SPRING_SUPPRESS_VENDOR_INSTALL
+        "${_spring_prev_suppress_vendor_install}"
+    )
+    set(SPRING_SUPPRESS_VENDOR_INSTALL
+        "${_spring_prev_suppress_vendor_install}"
+        CACHE INTERNAL
+        "Suppress install rules for vendored dependencies"
+        FORCE
+    )
 endmacro()
 
 set(PTHASH_DIR "${build_vendor_dir}/pthash")
@@ -512,7 +828,11 @@ add_compile_definitions(ZSTD_NO_TRACE)
 add_vendor_subdirectory_no_install("${ZSTD_DIR}" "${CMAKE_BINARY_DIR}/zstd-build")
 add_vendor_subdirectory_no_install("${LIBBSC_DIR}" "${CMAKE_BINARY_DIR}/libbsc-build")
 if(TARGET libbsc AND SPRING_OPENMP_INCLUDE_DIRS)
-    target_include_directories(libbsc SYSTEM PRIVATE ${SPRING_OPENMP_INCLUDE_DIRS})
+    target_include_directories(
+        libbsc
+        SYSTEM
+        PRIVATE ${SPRING_OPENMP_INCLUDE_DIRS}
+    )
 endif()
 add_vendor_subdirectory_no_install("${QVZ_DIR}" "${CMAKE_BINARY_DIR}/qvz-build")
 if(TARGET qvz AND SPRING_OPENMP_INCLUDE_DIRS)
@@ -522,7 +842,10 @@ endif()
 check_symbol_exists(wcrtomb wchar.h HAVE_WCRTOMB)
 if(HAVE_WCRTOMB)
     set(HAVE_WCRTOMB 1 CACHE INTERNAL "Have wcrtomb" FORCE)
-    message(NOTICE "Detected wcrtomb; enabling libarchive's preferred wide-character conversion path.")
+    message(
+        NOTICE
+        "Detected wcrtomb; enabling libarchive's preferred wide-character conversion path."
+    )
 endif()
 
 set(LIBDEFLATE_BUILD_STATIC_LIB ON CACHE BOOL "" FORCE)
@@ -547,13 +870,13 @@ file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/generated)
 set(REFERENCE_GENERATED ${CMAKE_BINARY_DIR}/generated/reference_data.cpp)
 add_custom_command(
     OUTPUT ${REFERENCE_GENERATED}
-    COMMAND ${Python3_EXECUTABLE}
-    ${CMAKE_SOURCE_DIR}/cmake/embed_reference.py
-    ${CMAKE_SOURCE_DIR}/data/reference/ref_hg38_gencode49.fa
-    ${REFERENCE_GENERATED}
+    COMMAND
+        ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/cmake/embed_reference.py
+        ${CMAKE_SOURCE_DIR}/data/reference/ref_hg38_gencode49.fa
+        ${REFERENCE_GENERATED}
     DEPENDS
-    ${CMAKE_SOURCE_DIR}/data/reference/ref_hg38_gencode49.fa
-    ${CMAKE_SOURCE_DIR}/cmake/embed_reference.py
+        ${CMAKE_SOURCE_DIR}/data/reference/ref_hg38_gencode49.fa
+        ${CMAKE_SOURCE_DIR}/cmake/embed_reference.py
     COMMENT "Embedding reference data into binary"
 )
 
@@ -564,6 +887,7 @@ set(core_source_files
     ${source_dir}/common/dna_utils.cpp
     ${source_dir}/common/fs_utils.cpp
     ${source_dir}/common/io_utils.cpp
+    ${source_dir}/common/legacy_id_codec.cpp
     ${source_dir}/common/bitset_dictionary.cpp
     ${source_dir}/assays/assay_rna.cpp
     ${source_dir}/assays/assay_atac.cpp
@@ -602,16 +926,13 @@ set(spring_src_include_dirs
     ${source_dir}/workflow
 )
 
-set(spring_vendor_src_include_dirs
-    ${source_dir}
-    ${source_dir}/common
-)
-
+set(spring_vendor_src_include_dirs ${source_dir} ${source_dir}/common)
 
 # Convenience targets for repository development checks.
 function(add_dev_script_target target_name script_path)
     if(EXISTS "${CMAKE_SOURCE_DIR}/${script_path}")
-        add_custom_target(${target_name}
+        add_custom_target(
+            ${target_name}
             COMMAND ${CMAKE_SOURCE_DIR}/${script_path}
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             USES_TERMINAL
@@ -624,14 +945,26 @@ if(WIN32)
     if(EXISTS "${CMAKE_SOURCE_DIR}/docs/assets/icons/logo.ico")
         set(win_resources "${CMAKE_CURRENT_BINARY_DIR}/generated/spring2.rc")
     else()
-        message(NOTICE "logo.ico not found in docs/assets/icons, skipping Windows icon resource")
+        message(
+            NOTICE
+            "logo.ico not found in docs/assets/icons, skipping Windows icon resource"
+        )
     endif()
 endif()
 
-add_executable(spring2 ${source_dir}/main.cpp ${core_source_files} ${win_resources})
+add_executable(
+    spring2
+    ${source_dir}/main.cpp
+    ${core_source_files}
+    ${win_resources}
+)
 
 # Configure precompiled headers for faster incremental builds
-option(SPRING_ENABLE_PRECOMPILED_HEADERS "Use precompiled headers to speed up compilation" ON)
+option(
+    SPRING_ENABLE_PRECOMPILED_HEADERS
+    "Use precompiled headers to speed up compilation"
+    ON
+)
 if(SPRING_ENABLE_PRECOMPILED_HEADERS)
     target_precompile_headers(spring2 PRIVATE ${source_dir}/pch.h)
     message(NOTICE "Precompiled headers enabled for faster rebuilds")
@@ -639,14 +972,21 @@ endif()
 
 # Spring headers live in src/, while vendor/ exposes bundled libraries such
 # as BBHash, libbsc, id_compression, qvz, and the vendored libdeflate sources.
-target_include_directories(spring2 PRIVATE ${include_dir} ${spring_src_include_dirs})
+target_include_directories(
+    spring2
+    PRIVATE ${include_dir} ${spring_src_include_dirs}
+)
 
 if(WIN32)
     target_compile_definitions(spring2 PRIVATE LIBARCHIVE_STATIC)
 endif()
 
 if(SPRING_OPENMP_INCLUDE_DIRS)
-    target_include_directories(spring2 SYSTEM PRIVATE ${SPRING_OPENMP_INCLUDE_DIRS})
+    target_include_directories(
+        spring2
+        SYSTEM
+        PRIVATE ${SPRING_OPENMP_INCLUDE_DIRS}
+    )
 endif()
 
 target_include_directories(spring2 SYSTEM PRIVATE ${LIBARCHIVE_DIR}/libarchive)
@@ -672,7 +1012,10 @@ if(WIN32)
 endif()
 
 if(WIN32)
-    target_compile_definitions(spring2 PRIVATE IDOFILE_PATH_ROOT=\".spring-idtmp/idoFile.\")
+    target_compile_definitions(
+        spring2
+        PRIVATE IDOFILE_PATH_ROOT=\".spring-idtmp/idoFile.\"
+    )
 endif()
 
 # On Windows with GNU toolchain: support static linking of GCC runtimes
@@ -699,7 +1042,11 @@ if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             OUTPUT_STRIP_TRAILING_WHITESPACE
             ERROR_QUIET
         )
-        if(_print_path AND NOT _print_path STREQUAL dll_name AND EXISTS "${_print_path}")
+        if(
+            _print_path
+            AND NOT _print_path STREQUAL dll_name
+            AND EXISTS "${_print_path}"
+        )
             set(${out_path} "${_print_path}" PARENT_SCOPE)
             return()
         endif()
@@ -758,26 +1105,35 @@ if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         if(COMMAND target_link_options)
             target_link_options(spring2 PRIVATE -static)
         else()
-            set_property(TARGET spring2 APPEND_STRING PROPERTY LINK_FLAGS " -static")
+            set_property(
+                TARGET spring2
+                APPEND_STRING
+                PROPERTY LINK_FLAGS " -static"
+            )
         endif()
     else()
         # Convenience target to copy commonly required GCC runtime DLLs for
         # all distributed Windows binaries.
-        add_custom_target(copy_runtime_dlls ALL
+        add_custom_target(
+            copy_runtime_dlls
+            ALL
             COMMENT "Copying GCC runtime DLLs next to spring2 executable"
         )
         add_dependencies(copy_runtime_dlls spring2)
         foreach(_src IN LISTS SPRING_RUNTIME_DLL_PATHS)
             get_filename_component(_dll "${_src}" NAME)
             if(EXISTS "${_src}")
-                add_custom_command(TARGET copy_runtime_dlls POST_BUILD
-                    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_src}" "$<TARGET_FILE_DIR:spring2>/${_dll}"
+                add_custom_command(
+                    TARGET copy_runtime_dlls
+                    POST_BUILD
+                    COMMAND
+                        ${CMAKE_COMMAND} -E copy_if_different "${_src}"
+                        "$<TARGET_FILE_DIR:spring2>/${_dll}"
                 )
             endif()
         endforeach()
     endif()
 endif()
-
 
 # Installation logic for a clean release footprint
 if(APPLE)
@@ -788,9 +1144,11 @@ endif()
 
 if(DEFINED SPRING_INSTALL_RPATH)
     foreach(_target IN ITEMS spring2)
-        set_target_properties(${_target} PROPERTIES
-            BUILD_WITH_INSTALL_RPATH OFF
-            INSTALL_RPATH "${SPRING_INSTALL_RPATH}"
+        set_target_properties(
+            ${_target}
+            PROPERTIES
+                BUILD_WITH_INSTALL_RPATH OFF
+                INSTALL_RPATH "${SPRING_INSTALL_RPATH}"
         )
     endforeach()
 endif()
@@ -803,7 +1161,11 @@ function(resolve_unix_runtime_library out_path)
             OUTPUT_STRIP_TRAILING_WHITESPACE
             ERROR_QUIET
         )
-        if(_resolved AND NOT _resolved STREQUAL _candidate AND EXISTS "${_resolved}")
+        if(
+            _resolved
+            AND NOT _resolved STREQUAL _candidate
+            AND EXISTS "${_resolved}"
+        )
             set(${out_path} "${_resolved}" PARENT_SCOPE)
             return()
         endif()
@@ -820,7 +1182,8 @@ if(APPLE)
         foreach(_omp_name IN LISTS OpenMP_CXX_LIB_NAMES)
             resolve_unix_runtime_library(_resolved_omp_dylib
                 "lib${_omp_name}.dylib"
-                "${_omp_name}.dylib")
+                "${_omp_name}.dylib"
+            )
             if(_resolved_omp_dylib)
                 set(SPRING_OPENMP_RUNTIME_LIB "${_resolved_omp_dylib}")
                 break()
@@ -833,11 +1196,13 @@ elseif(UNIX)
         "libgomp.so.1"
         "libgomp.so"
         "libomp.so.1"
-        "libomp.so")
+        "libomp.so"
+    )
 endif()
 
 set(INSTALL_TARGETS spring2)
-install(TARGETS ${INSTALL_TARGETS}
+install(
+    TARGETS ${INSTALL_TARGETS}
     RUNTIME DESTINATION bin
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
@@ -846,7 +1211,10 @@ install(TARGETS ${INSTALL_TARGETS}
 if((APPLE OR (UNIX AND NOT WIN32)) AND SPRING_OPENMP_RUNTIME_LIB)
     install(FILES "${SPRING_OPENMP_RUNTIME_LIB}" DESTINATION lib)
 elseif(APPLE OR (UNIX AND NOT WIN32))
-    message(NOTICE "SPRING: OpenMP runtime library not found for install bundling")
+    message(
+        NOTICE
+        "SPRING: OpenMP runtime library not found for install bundling"
+    )
 endif()
 
 if(WIN32 AND NOT SPRING_STATIC_RUNTIMES)
@@ -880,7 +1248,14 @@ add_executable(spring2-tests ${unit_test_sources} ${core_source_files})
 if(SPRING_ENABLE_PRECOMPILED_HEADERS)
     target_precompile_headers(spring2-tests PRIVATE ${source_dir}/pch.h)
 endif()
-target_include_directories(spring2-tests PRIVATE ${include_dir} ${vendor_dir} ${CMAKE_SOURCE_DIR}/tests/support ${spring_src_include_dirs})
+target_include_directories(
+    spring2-tests
+    PRIVATE
+        ${include_dir}
+        ${vendor_dir}
+        ${CMAKE_SOURCE_DIR}/tests/support
+        ${spring_src_include_dirs}
+)
 if(WIN32)
     target_compile_definitions(spring2-tests PRIVATE LIBARCHIVE_STATIC)
 endif()
@@ -889,10 +1264,15 @@ if(TARGET OpenMP::OpenMP_CXX)
     target_link_libraries(spring2-tests PRIVATE OpenMP::OpenMP_CXX)
 endif()
 if(SPRING_OPENMP_INCLUDE_DIRS)
-    target_include_directories(spring2-tests SYSTEM PRIVATE ${SPRING_OPENMP_INCLUDE_DIRS})
+    target_include_directories(
+        spring2-tests
+        SYSTEM
+        PRIVATE ${SPRING_OPENMP_INCLUDE_DIRS}
+    )
 endif()
-target_compile_definitions(spring2-tests PRIVATE
-    UNIT_TEST_ASSET_DIR="${CMAKE_SOURCE_DIR}/data/samples"
+target_compile_definitions(
+    spring2-tests
+    PRIVATE UNIT_TEST_ASSET_DIR="${CMAKE_SOURCE_DIR}/data/samples"
 )
 add_test(NAME unit_tests COMMAND spring2-tests)
 
@@ -906,11 +1286,22 @@ set(integration_test_sources
     tests/integration/assay_integration_tests.cpp
     tests/integration/grouped_archive_integration_tests.cpp
 )
-add_executable(integration-tests ${integration_test_sources} ${core_source_files})
+add_executable(
+    integration-tests
+    ${integration_test_sources}
+    ${core_source_files}
+)
 if(SPRING_ENABLE_PRECOMPILED_HEADERS)
     target_precompile_headers(integration-tests PRIVATE ${source_dir}/pch.h)
 endif()
-target_include_directories(integration-tests PRIVATE ${include_dir} ${vendor_dir} ${CMAKE_SOURCE_DIR}/tests/support ${spring_src_include_dirs})
+target_include_directories(
+    integration-tests
+    PRIVATE
+        ${include_dir}
+        ${vendor_dir}
+        ${CMAKE_SOURCE_DIR}/tests/support
+        ${spring_src_include_dirs}
+)
 if(WIN32)
     target_compile_definitions(integration-tests PRIVATE LIBARCHIVE_STATIC)
 endif()
@@ -919,11 +1310,17 @@ if(OpenMP_CXX_FOUND)
     target_link_libraries(integration-tests PRIVATE OpenMP::OpenMP_CXX)
 endif()
 if(SPRING_OPENMP_INCLUDE_DIRS)
-    target_include_directories(integration-tests SYSTEM PRIVATE ${SPRING_OPENMP_INCLUDE_DIRS})
+    target_include_directories(
+        integration-tests
+        SYSTEM
+        PRIVATE ${SPRING_OPENMP_INCLUDE_DIRS}
+    )
 endif()
-target_compile_definitions(integration-tests PRIVATE
-    SPRING2_EXECUTABLE=\"$<TARGET_FILE:spring2>\"
-    INTEGRATION_TEST_ASSET_DIR=\"${CMAKE_SOURCE_DIR}/data/samples\"
+target_compile_definitions(
+    integration-tests
+    PRIVATE
+        SPRING2_EXECUTABLE=\"$<TARGET_FILE:spring2>\"
+        INTEGRATION_TEST_ASSET_DIR=\"${CMAKE_SOURCE_DIR}/data/samples\"
 )
 add_test(NAME integration_tests COMMAND integration-tests)
 
@@ -937,18 +1334,31 @@ set(smoke_test_sources
 )
 add_executable(smoke-tests ${smoke_test_sources})
 add_dependencies(smoke-tests spring2)
-target_include_directories(smoke-tests PRIVATE ${include_dir} ${vendor_dir} ${CMAKE_SOURCE_DIR}/tests/support ${spring_src_include_dirs})
+target_include_directories(
+    smoke-tests
+    PRIVATE
+        ${include_dir}
+        ${vendor_dir}
+        ${CMAKE_SOURCE_DIR}/tests/support
+        ${spring_src_include_dirs}
+)
 target_link_libraries(smoke-tests PRIVATE ${spring_libs})
 if(TARGET OpenMP::OpenMP_CXX)
     target_link_libraries(smoke-tests PRIVATE OpenMP::OpenMP_CXX)
 endif()
 if(SPRING_OPENMP_INCLUDE_DIRS)
-    target_include_directories(smoke-tests SYSTEM PRIVATE ${SPRING_OPENMP_INCLUDE_DIRS})
+    target_include_directories(
+        smoke-tests
+        SYSTEM
+        PRIVATE ${SPRING_OPENMP_INCLUDE_DIRS}
+    )
 endif()
-target_compile_definitions(smoke-tests PRIVATE
-    SPRING2_EXECUTABLE="$<TARGET_FILE:spring2>"
-    SMOKE_TEST_ASSET_DIR="${CMAKE_SOURCE_DIR}/data/samples"
-    SMOKE_TEST_OUTPUT_ROOT="${CMAKE_SOURCE_DIR}/out/tests/smoke"
+target_compile_definitions(
+    smoke-tests
+    PRIVATE
+        SPRING2_EXECUTABLE="$<TARGET_FILE:spring2>"
+        SMOKE_TEST_ASSET_DIR="${CMAKE_SOURCE_DIR}/data/samples"
+        SMOKE_TEST_OUTPUT_ROOT="${CMAKE_SOURCE_DIR}/out/tests/smoke"
 )
 add_test(NAME smoke_tests COMMAND smoke-tests)
 

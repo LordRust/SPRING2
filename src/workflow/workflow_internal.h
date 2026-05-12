@@ -64,8 +64,14 @@ struct archive_decompression_plan {
   uint32_t archive_format_version = LEGACY_ARCHIVE_FORMAT_VERSION;
   std::string compressor_version;
   archive_semantic_version archive_version;
-  bool is_legacy_unversioned = true;
+  bool is_legacy_spring = false;
+  bool is_v1_0_0_rc1 = true;
 };
+
+void read_archive_compression_params(
+    const decompression_archive_artifact &artifact, compression_params &cp);
+void ensure_archive_decompression_plan_supported(
+    const archive_decompression_plan &decompression_plan);
 
 std::string default_archive_name_from_input(const std::string &input_path);
 bool paths_refer_to_same_file(const std::string &left,

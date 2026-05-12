@@ -7,7 +7,6 @@
 
 #include <iostream>
 #include <omp.h>
-#include <sstream>
 
 namespace spring {
 
@@ -23,13 +22,10 @@ void decompress_archive_artifact(const decompression_archive_artifact &artifact,
   auto &progress = progress_ptr ? *progress_ptr : dummy_progress;
   compression_params cp{};
 
-  std::istringstream compression_params_input(artifact.require("cp.bin"),
-                                              std::ios::binary);
-  read_compression_params(compression_params_input, cp);
-  if (!compression_params_input.good())
-    throw std::runtime_error("Can't read compression parameters.");
+  read_archive_compression_params(artifact, cp);
   const archive_decompression_plan decompression_plan =
       build_archive_decompression_plan(cp);
+  ensure_archive_decompression_plan_supported(decompression_plan);
   const int decoding_num_thr = (num_thr > 0) ? num_thr : cp.encoding.num_thr;
 
   const bool paired_end = cp.encoding.paired_end;
@@ -182,14 +178,10 @@ void materialize_aliased_group_output_from_memory(
   artifact.scratch_dir.clear();
 
   compression_params cp{};
-  std::istringstream compression_params_input(artifact.require("cp.bin"),
-                                              std::ios::binary);
-  read_compression_params(compression_params_input, cp);
-  if (!compression_params_input.good()) {
-    throw std::runtime_error("Can't read compression parameters.");
-  }
+  read_archive_compression_params(artifact, cp);
   const archive_decompression_plan decompression_plan =
       build_archive_decompression_plan(cp);
+  ensure_archive_decompression_plan_supported(decompression_plan);
 
   const int decoding_num_thr = (num_thr > 0) ? num_thr : cp.encoding.num_thr;
   const int selected_stream = (alias_source == "R2") ? 1 : 0;

@@ -7,7 +7,6 @@
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
-#include <sstream>
 #include <string>
 
 #include "archive_record_reconstruction.h"
@@ -21,6 +20,10 @@ namespace spring {
 namespace {
 
 std::string preview_archive_version(const compression_params &cp) {
+  if (cp.read_info.legacy_spring) {
+    return "legacy spring";
+  }
+
   return cp.read_info.compressor_version.empty()
              ? "1.0.0-rc.1"
              : cp.read_info.compressor_version;
@@ -95,17 +98,20 @@ void preview_single(const std::string &archive_path, bool audit_only) {
 
   // Fast path: Read metadata directly from the tar archive into memory without
   // extraction
-  auto contents =
-      read_files_from_tar_memory(archive_path, {kBundleManifestName, "cp.bin"});
+  auto contents = read_all_files_from_tar_memory(archive_path);
 
   if (!contents.contains("cp.bin")) {
     throw std::runtime_error("Could not find cp.bin in the archive.");
   }
 
+  decompression_archive_artifact artifact;
+  artifact.files = std::move(contents);
+  artifact.scratch_dir.clear();
+
   compression_params cp{};
-  std::istringstream in(contents["cp.bin"], std::ios::binary);
-  read_compression_params(in, cp);
-  if (!in.good()) {
+  try {
+    read_archive_compression_params(artifact, cp);
+  } catch (const std::exception &) {
     throw std::runtime_error("Could not parse cp.bin from the archive.");
   }
   const archive_decompression_plan decompression_plan =
@@ -115,9 +121,14 @@ void preview_single(const std::string &archive_path, bool audit_only) {
   std::cout << "--------------------------------\n";
   (void)decompression_plan;
   std::cout << "Archive Version:   " << preview_archive_version(cp) << "\n";
-  std::cout << "Original Input 1:  " << cp.read_info.input_filename_1 << "\n";
-  if (cp.encoding.paired_end) {
-    std::cout << "Original Input 2:  " << cp.read_info.input_filename_2 << "\n";
+  if (cp.read_info.legacy_spring) {
+    std::cout << "Original Inputs:   Unavailable in legacy spring archives\n";
+  } else {
+    std::cout << "Original Input 1:  " << cp.read_info.input_filename_1 << "\n";
+    if (cp.encoding.paired_end) {
+      std::cout << "Original Input 2:  " << cp.read_info.input_filename_2
+                << "\n";
+    }
   }
   uint64_t archive_size = std::filesystem::file_size(archive_path);
   if (!cp.read_info.note.empty()) {
@@ -267,15 +278,18 @@ void preview(const std::string &archive_path, bool audit_only) {
     };
 
     // Read metadata from the main reads archive
-    auto read_contents = read_files_from_tar_bytes(
-        require_group_member(manifest.read_archive_name), {"cp.bin"});
+    auto read_contents = read_all_files_from_tar_bytes(
+        require_group_member(manifest.read_archive_name));
     if (!read_contents.contains("cp.bin")) {
       throw std::runtime_error("Could not find cp.bin in reads archive.");
     }
+    decompression_archive_artifact reads_artifact;
+    reads_artifact.files = std::move(read_contents);
+    reads_artifact.scratch_dir.clear();
     compression_params cp_reads{};
-    std::istringstream in_reads(read_contents["cp.bin"], std::ios::binary);
-    read_compression_params(in_reads, cp_reads);
-    if (!in_reads.good()) {
+    try {
+      read_archive_compression_params(reads_artifact, cp_reads);
+    } catch (const std::exception &) {
       throw std::runtime_error("Could not parse cp.bin in reads archive.");
     }
     const archive_decompression_plan reads_plan =
@@ -284,12 +298,15 @@ void preview(const std::string &archive_path, bool audit_only) {
     // Read metadata from R3 archive if present
     compression_params cp_r3{};
     if (manifest.has_r3 && manifest.read3_alias_source.empty()) {
-      auto r3_contents = read_files_from_tar_bytes(
-          require_group_member(manifest.read3_archive_name), {"cp.bin"});
+      auto r3_contents = read_all_files_from_tar_bytes(
+          require_group_member(manifest.read3_archive_name));
       if (r3_contents.contains("cp.bin")) {
-        std::istringstream in_r3(r3_contents["cp.bin"], std::ios::binary);
-        read_compression_params(in_r3, cp_r3);
-        if (!in_r3.good()) {
+        decompression_archive_artifact r3_artifact;
+        r3_artifact.files = std::move(r3_contents);
+        r3_artifact.scratch_dir.clear();
+        try {
+          read_archive_compression_params(r3_artifact, cp_r3);
+        } catch (const std::exception &) {
           throw std::runtime_error("Could not parse cp.bin in read3 archive.");
         }
       }
@@ -298,12 +315,15 @@ void preview(const std::string &archive_path, bool audit_only) {
     // Read metadata from index archive if present
     compression_params cp_index{};
     if (manifest.has_index) {
-      auto index_contents = read_files_from_tar_bytes(
-          require_group_member(manifest.index_archive_name), {"cp.bin"});
+      auto index_contents = read_all_files_from_tar_bytes(
+          require_group_member(manifest.index_archive_name));
       if (index_contents.contains("cp.bin")) {
-        std::istringstream in_index(index_contents["cp.bin"], std::ios::binary);
-        read_compression_params(in_index, cp_index);
-        if (!in_index.good()) {
+        decompression_archive_artifact index_artifact;
+        index_artifact.files = std::move(index_contents);
+        index_artifact.scratch_dir.clear();
+        try {
+          read_archive_compression_params(index_artifact, cp_index);
+        } catch (const std::exception &) {
           throw std::runtime_error("Could not parse cp.bin in index archive.");
         }
       }

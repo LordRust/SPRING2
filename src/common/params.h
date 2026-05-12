@@ -140,6 +140,8 @@ struct compression_params {
     std::string assay_confidence;
     std::string compressor_version; // SPRING2 version that created this archive
     uint32_t archive_format_version = CURRENT_ARCHIVE_FORMAT_VERSION;
+    bool legacy_spring = false; // Runtime-only flag for original SPRING
+                                // archives.
     uint32_t sequence_crc[2];
     uint32_t quality_crc[2];
     uint32_t id_crc[2];

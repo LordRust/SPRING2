@@ -12,7 +12,6 @@
 #include <condition_variable>
 #include <mutex>
 #include <queue>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -191,19 +190,20 @@ public:
       artifact_.files = read_all_files_from_tar_memory(archive_path_);
     }
 
-    std::istringstream cp_in(artifact_.require("cp.bin"), std::ios::binary);
-    if (!cp_in) {
+    if (!artifact_.contains("cp.bin")) {
       SPRING_LOG_DEBUG("block_id=spring-reader:metadata, SpringReader metadata "
                        "open failure: path=cp.bin, expected_bytes=1, "
                        "actual_bytes=0, index=0");
       throw std::runtime_error("Failed to read archive metadata.");
     }
-    read_compression_params(cp_in, params_);
-    if (!cp_in.good()) {
+    try {
+      read_archive_compression_params(artifact_, params_);
+    } catch (const std::exception &) {
       throw std::runtime_error("Failed to parse archive metadata.");
     }
     const archive_decompression_plan decompression_plan =
         build_archive_decompression_plan(params_);
+    ensure_archive_decompression_plan_supported(decompression_plan);
 
     decode_num_thr_ =
         (user_num_thr_ > 0) ? user_num_thr_ : params_.encoding.num_thr;
@@ -276,68 +276,73 @@ public:
   }
 
   bool next(ReadRecord &mate1, ReadRecord *mate2) {
-    if (!current_step_cache_.first.empty() &&
-        cache_pos_ < current_step_cache_.first.size()) {
-      mate1 = std::move(current_step_cache_.first[cache_pos_]);
-      if (mate2)
-        *mate2 = std::move(current_step_cache_.second[cache_pos_]);
-      cache_pos_++;
-      return true;
+    for (;;) {
+      if (!current_step_cache_.first.empty() &&
+          cache_pos_ < current_step_cache_.first.size()) {
+        mate1 = std::move(current_step_cache_.first[cache_pos_]);
+        if (mate2)
+          *mate2 = std::move(current_step_cache_.second[cache_pos_]);
+        cache_pos_++;
+
+        const bool empty_mate1 = mate1.id.empty() && mate1.sequence.empty();
+        const bool empty_mate2 =
+            !mate2 || (mate2->id.empty() && mate2->sequence.empty());
+        if (empty_mate1 && empty_mate2) {
+          continue;
+        }
+
+        return true;
+      }
+
+      // Try to get next batch
+      std::unique_lock<std::mutex> lock(mutex_);
+      const bool queue_was_empty = queue_.empty() && !worker_done_;
+      const auto wait_start = std::chrono::steady_clock::now();
+      cv_.wait(lock, [this] { return !queue_.empty() || worker_done_; });
+      if (queue_was_empty) {
+        consumer_wait_events_++;
+        consumer_wait_ns_total_ += static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - wait_start)
+                .count());
+      }
+
+      if (worker_exception_) {
+        SPRING_LOG_DEBUG(
+            "block_id=spring-reader:consumer, SpringReader consumer rethrow: "
+            "archive=" +
+            archive_path_ +
+            ", popped_batches=" + std::to_string(queue_batches_popped_) +
+            ", popped_records=" + std::to_string(queue_records_popped_) +
+            ", queued_batches=" + std::to_string(queue_.size()));
+        std::rethrow_exception(worker_exception_);
+      }
+
+      if (queue_.empty() && worker_done_)
+        return false;
+
+      current_step_cache_ = std::move(queue_.front());
+      queue_.pop();
+      queue_batches_popped_++;
+      queue_records_popped_ += current_step_cache_.first.size();
+      lock.unlock();
+      cv_.notify_all(); // Notify worker that space is available
+
+      if ((queue_batches_popped_ > 0) && (queue_batches_popped_ % 128 == 0)) {
+        SPRING_LOG_DEBUG(
+            "block_id=spring-reader:consumer, SpringReader consumer progress: "
+            "popped_batches=" +
+            std::to_string(queue_batches_popped_) +
+            ", popped_records=" + std::to_string(queue_records_popped_) +
+            ", wait_events=" + std::to_string(consumer_wait_events_) +
+            ", wait_ms=" +
+            std::to_string(consumer_wait_ns_total_ / 1000000ULL));
+      }
+
+      cache_pos_ = 0;
+      if (current_step_cache_.first.empty())
+        return false;
     }
-
-    // Try to get next batch
-    std::unique_lock<std::mutex> lock(mutex_);
-    const bool queue_was_empty = queue_.empty() && !worker_done_;
-    const auto wait_start = std::chrono::steady_clock::now();
-    cv_.wait(lock, [this] { return !queue_.empty() || worker_done_; });
-    if (queue_was_empty) {
-      consumer_wait_events_++;
-      consumer_wait_ns_total_ += static_cast<uint64_t>(
-          std::chrono::duration_cast<std::chrono::nanoseconds>(
-              std::chrono::steady_clock::now() - wait_start)
-              .count());
-    }
-
-    if (worker_exception_) {
-      SPRING_LOG_DEBUG(
-          "block_id=spring-reader:consumer, SpringReader consumer rethrow: "
-          "archive=" +
-          archive_path_ +
-          ", popped_batches=" + std::to_string(queue_batches_popped_) +
-          ", popped_records=" + std::to_string(queue_records_popped_) +
-          ", queued_batches=" + std::to_string(queue_.size()));
-      std::rethrow_exception(worker_exception_);
-    }
-
-    if (queue_.empty() && worker_done_)
-      return false;
-
-    current_step_cache_ = std::move(queue_.front());
-    queue_.pop();
-    queue_batches_popped_++;
-    queue_records_popped_ += current_step_cache_.first.size();
-    lock.unlock();
-    cv_.notify_all(); // Notify worker that space is available
-
-    if ((queue_batches_popped_ > 0) && (queue_batches_popped_ % 128 == 0)) {
-      SPRING_LOG_DEBUG(
-          "block_id=spring-reader:consumer, SpringReader consumer progress: "
-          "popped_batches=" +
-          std::to_string(queue_batches_popped_) +
-          ", popped_records=" + std::to_string(queue_records_popped_) +
-          ", wait_events=" + std::to_string(consumer_wait_events_) +
-          ", wait_ms=" + std::to_string(consumer_wait_ns_total_ / 1000000ULL));
-    }
-
-    cache_pos_ = 0;
-    if (current_step_cache_.first.empty())
-      return false;
-
-    mate1 = std::move(current_step_cache_.first[cache_pos_]);
-    if (mate2)
-      *mate2 = std::move(current_step_cache_.second[cache_pos_]);
-    cache_pos_++;
-    return true;
   }
 
   [[nodiscard]] const compression_params &params() const { return params_; }

@@ -284,30 +284,63 @@ void decompress_short(const decompression_archive_artifact &artifact,
 
             if (stream_index == 0) {
               const std::vector<char> flag_bytes =
-                  decompress_archive_bsc_member(
-                      artifact,
-                      compressed_block_file_path(file_flag, block_num));
+                  cp.read_info.legacy_spring
+                      ? decompress_legacy_archive_bsc_member(
+                            artifact,
+                            compressed_block_file_path(file_flag, block_num))
+                      : decompress_archive_bsc_member(
+                            artifact,
+                            compressed_block_file_path(file_flag, block_num));
               const std::vector<char> noise_bytes =
-                  decompress_archive_bsc_member(
-                      artifact,
-                      compressed_block_file_path(file_noise, block_num));
+                  cp.read_info.legacy_spring
+                      ? decompress_legacy_archive_bsc_member(
+                            artifact,
+                            compressed_block_file_path(file_noise, block_num))
+                      : decompress_archive_bsc_member(
+                            artifact,
+                            compressed_block_file_path(file_noise, block_num));
               const std::vector<char> noisepos_bytes =
-                  decompress_archive_bsc_member(
-                      artifact,
-                      compressed_block_file_path(file_noisepos, block_num));
-              const std::vector<char> pos_bytes = decompress_archive_bsc_member(
-                  artifact, compressed_block_file_path(file_pos, block_num));
-              const std::vector<char> rc_bytes = decompress_archive_bsc_member(
-                  artifact, compressed_block_file_path(file_rc, block_num));
+                  cp.read_info.legacy_spring
+                      ? decompress_legacy_archive_bsc_member(
+                            artifact, compressed_block_file_path(file_noisepos,
+                                                                 block_num))
+                      : decompress_archive_bsc_member(
+                            artifact, compressed_block_file_path(file_noisepos,
+                                                                 block_num));
+              const std::vector<char> pos_bytes =
+                  cp.read_info.legacy_spring
+                      ? decompress_legacy_archive_bsc_member(
+                            artifact,
+                            compressed_block_file_path(file_pos, block_num))
+                      : decompress_archive_bsc_member(
+                            artifact,
+                            compressed_block_file_path(file_pos, block_num));
+              const std::vector<char> rc_bytes =
+                  cp.read_info.legacy_spring
+                      ? decompress_legacy_archive_bsc_member(
+                            artifact,
+                            compressed_block_file_path(file_rc, block_num))
+                      : decompress_archive_bsc_member(
+                            artifact,
+                            compressed_block_file_path(file_rc, block_num));
               const std::vector<char> unaligned_bytes =
-                  decompress_archive_bsc_member(
-                      artifact,
-                      compressed_block_file_path(file_unaligned, block_num),
-                      true);
+                  cp.read_info.legacy_spring
+                      ? decompress_legacy_archive_bsc_member(
+                            artifact, compressed_block_file_path(file_unaligned,
+                                                                 block_num))
+                      : decompress_archive_bsc_member(
+                            artifact,
+                            compressed_block_file_path(file_unaligned,
+                                                       block_num),
+                            true);
               const std::vector<char> readlength_bytes =
-                  decompress_archive_bsc_member(
-                      artifact,
-                      compressed_block_file_path(file_readlength, block_num));
+                  cp.read_info.legacy_spring
+                      ? decompress_legacy_archive_bsc_member(
+                            artifact, compressed_block_file_path(
+                                          file_readlength, block_num))
+                      : decompress_archive_bsc_member(
+                            artifact, compressed_block_file_path(
+                                          file_readlength, block_num));
               memory_cursor flag_cursor(flag_bytes);
               memory_cursor noise_cursor(noise_bytes);
               memory_cursor noisepos_cursor(noisepos_bytes);
@@ -320,12 +353,21 @@ void decompress_short(const decompression_archive_artifact &artifact,
               std::optional<std::vector<char>> pos_pair_bytes;
               std::optional<std::vector<char>> rc_pair_bytes;
               if (paired_end) {
-                pos_pair_bytes.emplace(decompress_archive_bsc_member(
-                    artifact,
-                    compressed_block_file_path(file_pos_pair, block_num)));
-                rc_pair_bytes.emplace(decompress_archive_bsc_member(
-                    artifact,
-                    compressed_block_file_path(file_rc_pair, block_num)));
+                if (cp.read_info.legacy_spring) {
+                  pos_pair_bytes.emplace(decompress_legacy_archive_bsc_member(
+                      artifact,
+                      compressed_block_file_path(file_pos_pair, block_num)));
+                  rc_pair_bytes.emplace(decompress_legacy_archive_bsc_member(
+                      artifact,
+                      compressed_block_file_path(file_rc_pair, block_num)));
+                } else {
+                  pos_pair_bytes.emplace(decompress_archive_bsc_member(
+                      artifact,
+                      compressed_block_file_path(file_pos_pair, block_num)));
+                  rc_pair_bytes.emplace(decompress_archive_bsc_member(
+                      artifact,
+                      compressed_block_file_path(file_rc_pair, block_num)));
+                }
                 pos_pair_cursor.emplace(*pos_pair_bytes);
                 rc_pair_cursor.emplace(*rc_pair_bytes);
               }
@@ -460,7 +502,19 @@ void decompress_short(const decompression_archive_artifact &artifact,
               const std::string quality_member =
                   input_quality_paths[stream_index] + "." +
                   std::to_string(block_num);
-              if (stream_index == 0) {
+              if (cp.read_info.legacy_spring) {
+                if (stream_index == 0) {
+                  decompress_legacy_archive_bsc_str_array_member(
+                      artifact, quality_member,
+                      quality_buffer.data() + buffer_offset, thread_read_count,
+                      read_lengths_buffer_1.data() + buffer_offset);
+                } else {
+                  decompress_legacy_archive_bsc_str_array_member(
+                      artifact, quality_member,
+                      quality_buffer.data() + buffer_offset, thread_read_count,
+                      read_lengths_buffer_2.data() + buffer_offset);
+                }
+              } else if (stream_index == 0) {
                 safe_bsc_str_array_decompress_bytes(
                     artifact.require(quality_member), quality_member,
                     quality_buffer.data() + buffer_offset, thread_read_count,
@@ -492,15 +546,21 @@ void decompress_short(const decompression_archive_artifact &artifact,
             } else {
               const std::string id_member = input_id_paths[stream_index] + "." +
                                             std::to_string(block_num);
-              std::string_view id_bytes;
-              if (monolithic_id[stream_index]) {
-                id_bytes = monolithic_id_blocks[stream_index][block_num];
+              if (cp.read_info.legacy_spring) {
+                decompress_legacy_archive_id_member(
+                    artifact, id_member, id_buffer.data() + buffer_offset,
+                    thread_read_count);
               } else {
-                id_bytes = artifact.require(id_member);
+                std::string_view id_bytes;
+                if (monolithic_id[stream_index]) {
+                  id_bytes = monolithic_id_blocks[stream_index][block_num];
+                } else {
+                  id_bytes = artifact.require(id_member);
+                }
+                decompress_id_block_bytes(id_bytes, id_member,
+                                          id_buffer.data() + buffer_offset,
+                                          thread_read_count, false);
               }
-              decompress_id_block_bytes(id_bytes, id_member,
-                                        id_buffer.data() + buffer_offset,
-                                        thread_read_count, false);
             }
           }
         } catch (...) {
@@ -698,11 +758,16 @@ void decompress_long(const decompression_archive_artifact &artifact,
                 num_blocks_done + static_cast<uint32_t>(thread_id);
 
             const std::vector<char> read_length_bytes =
-                decompress_archive_bsc_member(
-                    artifact,
-                    compressed_block_file_path(
-                        input_read_length_paths[stream_index], block_num),
-                    true);
+                cp.read_info.legacy_spring
+                    ? decompress_legacy_archive_bsc_member(
+                          artifact,
+                          compressed_block_file_path(
+                              input_read_length_paths[stream_index], block_num))
+                    : decompress_archive_bsc_member(
+                          artifact,
+                          compressed_block_file_path(
+                              input_read_length_paths[stream_index], block_num),
+                          true);
             memory_cursor read_length_cursor(read_length_bytes);
             for (uint32_t read_index = 0; read_index < thread_read_count;
                  ++read_index) {
@@ -710,37 +775,53 @@ void decompress_long(const decompression_archive_artifact &artifact,
                   read_length_cursor.read<uint32_t>("read length block");
             }
 
-            const std::vector<char> read_bytes = decompress_archive_bsc_member(
-                artifact, compressed_block_file_path(
-                              input_read_paths[stream_index], block_num));
-            memory_cursor read_cursor(read_bytes);
-            for (uint32_t read_index = 0; read_index < thread_read_count;
-                 ++read_index) {
-              const uint32_t absolute_index =
-                  static_cast<uint32_t>(buffer_offset) + read_index;
-              read_buffer[absolute_index].resize(
-                  read_lengths_buffer[absolute_index]);
-              read_cursor.read_bytes(read_buffer[absolute_index].data(),
-                                     read_lengths_buffer[absolute_index],
-                                     "long read block");
-            }
-
-            if (preserve_quality) {
-              const std::vector<char> quality_bytes =
+            if (cp.read_info.legacy_spring) {
+              const std::string read_member =
+                  block_file_path(input_read_paths[stream_index], block_num);
+              decompress_legacy_archive_bsc_str_array_member(
+                  artifact, read_member, read_buffer.data() + buffer_offset,
+                  thread_read_count,
+                  read_lengths_buffer.data() + buffer_offset);
+            } else {
+              const std::vector<char> read_bytes =
                   decompress_archive_bsc_member(
-                      artifact,
-                      block_file_path(input_quality_paths[stream_index],
-                                      block_num));
-              memory_cursor quality_cursor(quality_bytes);
+                      artifact, compressed_block_file_path(
+                                    input_read_paths[stream_index], block_num));
+              memory_cursor read_cursor(read_bytes);
               for (uint32_t read_index = 0; read_index < thread_read_count;
                    ++read_index) {
                 const uint32_t absolute_index =
                     static_cast<uint32_t>(buffer_offset) + read_index;
-                quality_buffer[absolute_index].resize(
+                read_buffer[absolute_index].resize(
                     read_lengths_buffer[absolute_index]);
-                quality_cursor.read_bytes(quality_buffer[absolute_index].data(),
-                                          read_lengths_buffer[absolute_index],
-                                          "quality block");
+                read_cursor.read_bytes(read_buffer[absolute_index].data(),
+                                       read_lengths_buffer[absolute_index],
+                                       "long read block");
+              }
+            }
+
+            if (preserve_quality) {
+              const std::string quality_member =
+                  block_file_path(input_quality_paths[stream_index], block_num);
+              if (cp.read_info.legacy_spring) {
+                decompress_legacy_archive_bsc_str_array_member(
+                    artifact, quality_member,
+                    quality_buffer.data() + buffer_offset, thread_read_count,
+                    read_lengths_buffer.data() + buffer_offset);
+              } else {
+                const std::vector<char> quality_bytes =
+                    decompress_archive_bsc_member(artifact, quality_member);
+                memory_cursor quality_cursor(quality_bytes);
+                for (uint32_t read_index = 0; read_index < thread_read_count;
+                     ++read_index) {
+                  const uint32_t absolute_index =
+                      static_cast<uint32_t>(buffer_offset) + read_index;
+                  quality_buffer[absolute_index].resize(
+                      read_lengths_buffer[absolute_index]);
+                  quality_cursor.read_bytes(
+                      quality_buffer[absolute_index].data(),
+                      read_lengths_buffer[absolute_index], "quality block");
+                }
               }
             }
 
@@ -764,7 +845,11 @@ void decompress_long(const decompression_archive_artifact &artifact,
               const std::string raw_member =
                   block_file_path(input_id_paths[stream_index], block_num);
               const std::string compressed_member = raw_member + ".bsc";
-              if (artifact.contains(compressed_member)) {
+              if (cp.read_info.legacy_spring) {
+                decompress_legacy_archive_id_member(
+                    artifact, raw_member, id_buffer.data() + buffer_offset,
+                    thread_read_count);
+              } else if (artifact.contains(compressed_member)) {
                 decompress_id_block_bytes(
                     artifact.require(compressed_member), compressed_member,
                     id_buffer.data() + buffer_offset, thread_read_count, false);

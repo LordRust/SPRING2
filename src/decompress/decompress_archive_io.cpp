@@ -4,10 +4,15 @@
 #include "decompress_archive_io.h"
 
 #include "io_utils.h"
+#include "legacy_id_codec.h"
+#include "libbsc/bsc.h"
 #include "progress.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iterator>
 #include <omp.h>
 #include <stdexcept>
@@ -16,6 +21,8 @@
 namespace spring {
 
 namespace {
+
+std::atomic<uint64_t> g_legacy_temp_file_counter{0};
 
 struct thread_range {
   uint64_t begin;
@@ -30,6 +37,133 @@ thread_range split_thread_range(const uint64_t item_count, const int thread_id,
   if (thread_id == thread_count - 1)
     range.end = item_count;
   return range;
+}
+
+std::filesystem::path make_legacy_temp_file_path(const std::string &stem,
+                                                 const std::string &suffix) {
+  const uint64_t counter = g_legacy_temp_file_counter.fetch_add(1);
+  const std::filesystem::path temp_dir =
+      std::filesystem::temp_directory_path() / "spring2-legacy-bsc";
+  std::error_code ec;
+  std::filesystem::create_directories(temp_dir, ec);
+  if (ec) {
+    throw std::runtime_error("Failed to create legacy decode temp directory: " +
+                             ec.message());
+  }
+
+  return temp_dir / (stem + "_" + std::to_string(counter) + suffix);
+}
+
+void write_binary_temp_file(const std::filesystem::path &path,
+                            std::string_view bytes) {
+  std::ofstream output(path, std::ios::binary | std::ios::trunc);
+  if (!output.is_open()) {
+    throw std::runtime_error("Failed to create legacy decode temp file: " +
+                             path.generic_string());
+  }
+  if (!bytes.empty()) {
+    output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+  }
+  if (!output.good()) {
+    throw std::runtime_error("Failed writing legacy decode temp file: " +
+                             path.generic_string());
+  }
+}
+
+std::vector<char> read_binary_temp_file(const std::filesystem::path &path) {
+  std::ifstream input(path, std::ios::binary);
+  if (!input.is_open()) {
+    throw std::runtime_error("Failed to open legacy decode output file: " +
+                             path.generic_string());
+  }
+
+  return std::vector<char>((std::istreambuf_iterator<char>(input)),
+                           std::istreambuf_iterator<char>());
+}
+
+void cleanup_legacy_temp_files(const std::filesystem::path &input_path,
+                               const std::filesystem::path &output_path) {
+  std::error_code ec;
+  std::filesystem::remove(input_path, ec);
+  ec.clear();
+  std::filesystem::remove(output_path, ec);
+}
+
+std::string
+decode_legacy_packed_sequence_chunk_bytes(const std::vector<char> &packed_bytes,
+                                          const int encoding_thread_id) {
+  SPRING_LOG_DEBUG("decode_legacy_packed_sequence_chunk start: chunk=" +
+                   std::to_string(encoding_thread_id) +
+                   ", packed_bytes=" + std::to_string(packed_bytes.size()));
+  static const char base_lookup[4] = {'A', 'C', 'G', 'T'};
+
+  std::string decoded;
+  decoded.reserve(packed_bytes.size() * 4);
+  for (const char packed_char : packed_bytes) {
+    uint8_t byte = static_cast<uint8_t>(packed_char);
+    for (int i = 0; i < 4; ++i) {
+      decoded.push_back(base_lookup[byte & 3]);
+      byte >>= 2;
+    }
+  }
+
+  SPRING_LOG_DEBUG("decode_legacy_packed_sequence_chunk done: chunk=" +
+                   std::to_string(encoding_thread_id) +
+                   ", bases=" + std::to_string(decoded.size()));
+  return decoded;
+}
+
+std::vector<std::string> decompress_legacy_unpack_seq_chunks(
+    const decompression_archive_artifact &artifact,
+    const std::string &packed_seq_base_path, const int encoding_thread_count,
+    const int decoding_thread_count) {
+  std::vector<std::string> decoded_chunks(
+      static_cast<size_t>(encoding_thread_count));
+  std::exception_ptr omp_exception;
+
+#pragma omp parallel for num_threads(decoding_thread_count)
+  for (int encoding_thread_id = 0; encoding_thread_id < encoding_thread_count;
+       ++encoding_thread_id) {
+    try {
+      const std::string packed_member =
+          block_file_path(packed_seq_base_path, encoding_thread_id) + ".bsc";
+      const std::string tail_member =
+          block_file_path(packed_seq_base_path, encoding_thread_id) + ".tail";
+
+      if (!artifact.contains(packed_member)) {
+        if (artifact.contains(tail_member)) {
+          throw std::runtime_error(
+              "Corrupt archive: legacy sequence tail exists without packed "
+              "chunk for " +
+              tail_member);
+        }
+        continue;
+      }
+
+      std::vector<char> packed_bytes =
+          decompress_legacy_archive_bsc_member(artifact, packed_member);
+      std::string decoded = decode_legacy_packed_sequence_chunk_bytes(
+          packed_bytes, encoding_thread_id);
+      if (artifact.contains(tail_member)) {
+        decoded.append(artifact.require(tail_member));
+      }
+      decoded_chunks[static_cast<size_t>(encoding_thread_id)] =
+          std::move(decoded);
+    } catch (...) {
+#pragma omp critical
+      {
+        if (!omp_exception) {
+          omp_exception = std::current_exception();
+        }
+      }
+    }
+  }
+
+  if (omp_exception) {
+    std::rethrow_exception(omp_exception);
+  }
+
+  return decoded_chunks;
 }
 
 } // namespace
@@ -58,6 +192,55 @@ decompress_archive_bsc_member(const decompression_archive_artifact &artifact,
     }
     return compressed_bytes;
   }
+}
+
+std::vector<char> decompress_legacy_archive_bsc_member(
+    const decompression_archive_artifact &artifact,
+    const std::string &member_name) {
+  const std::filesystem::path input_path =
+      make_legacy_temp_file_path("legacy_member", ".bin");
+  const std::filesystem::path output_path =
+      make_legacy_temp_file_path("legacy_member_out", ".bin");
+
+  try {
+    write_binary_temp_file(input_path, artifact.require(member_name));
+    bsc::BSC_decompress(input_path.string().c_str(),
+                        output_path.string().c_str());
+    std::vector<char> output = read_binary_temp_file(output_path);
+    cleanup_legacy_temp_files(input_path, output_path);
+    return output;
+  } catch (...) {
+    cleanup_legacy_temp_files(input_path, output_path);
+    throw;
+  }
+}
+
+void decompress_legacy_archive_bsc_str_array_member(
+    const decompression_archive_artifact &artifact,
+    const std::string &member_name, std::string *string_array,
+    uint32_t num_strings, uint32_t *string_lengths) {
+  const std::filesystem::path input_path =
+      make_legacy_temp_file_path("legacy_str_array", ".bin");
+  const std::filesystem::path output_path =
+      make_legacy_temp_file_path("legacy_str_array_out", ".bin");
+
+  try {
+    write_binary_temp_file(input_path, artifact.require(member_name));
+    bsc::BSC_str_array_decompress(input_path.string().c_str(), string_array,
+                                  num_strings, string_lengths);
+    cleanup_legacy_temp_files(input_path, output_path);
+  } catch (...) {
+    cleanup_legacy_temp_files(input_path, output_path);
+    throw;
+  }
+}
+
+void decompress_legacy_archive_id_member(
+    const decompression_archive_artifact &artifact,
+    const std::string &member_name, std::string *id_array,
+    const uint32_t num_ids) {
+  decompress_legacy_id_block_bytes(artifact.require(member_name), member_name,
+                                   id_array, num_ids);
 }
 
 std::vector<std::string> slice_monolithic_id_blocks(
@@ -119,16 +302,25 @@ reference_sequence_store::reference_sequence_store(
     const decompression_archive_artifact &artifact,
     const std::string &packed_seq_path, const int encoding_thread_count,
     const int decode_thread_count, const compression_params &cp) {
-  std::vector<std::string> decoded_chunks = decompress_unpack_seq_chunks(
-      artifact, packed_seq_path, encoding_thread_count, decode_thread_count,
-      cp);
+  std::vector<std::string> decoded_chunks;
+  if (cp.read_info.legacy_spring) {
+    decoded_chunks = decompress_legacy_unpack_seq_chunks(
+        artifact, packed_seq_path, encoding_thread_count, decode_thread_count);
+  } else {
+    decoded_chunks = decompress_unpack_seq_chunks(artifact, packed_seq_path,
+                                                  encoding_thread_count,
+                                                  decode_thread_count, cp);
+  }
 
   chunks_.reserve(static_cast<size_t>(encoding_thread_count));
   uint64_t next_start_offset = 0;
   for (int encoding_thread_id = 0; encoding_thread_id < encoding_thread_count;
        encoding_thread_id++) {
     reference_chunk chunk;
-    chunk.size = cp.read_info.file_len_seq_thr[encoding_thread_id];
+    chunk.size =
+        cp.read_info.legacy_spring
+            ? decoded_chunks[static_cast<size_t>(encoding_thread_id)].size()
+            : cp.read_info.file_len_seq_thr[encoding_thread_id];
     chunk.start_offset = next_start_offset;
     next_start_offset += chunk.size;
     if (static_cast<size_t>(encoding_thread_id) < decoded_chunks.size()) {
