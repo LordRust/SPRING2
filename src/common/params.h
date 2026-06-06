@@ -65,17 +65,17 @@ constexpr int64_t MAX_CONTIG_GROWTH = 64 * 1024 * 1024; // 64 MB
 
 struct compression_params {
   struct EncodingConfig {
-    bool paired_end;
-    bool preserve_order;
-    bool preserve_quality;
-    bool preserve_id;
-    bool long_flag;
-    int num_thr;
-    int compression_level;
-    int num_reads_per_block;
-    int num_reads_per_block_long;
-    bool fasta_mode;
-    bool use_crlf;
+    bool paired_end = false;
+    bool preserve_order = true;
+    bool preserve_quality = true;
+    bool preserve_id = true;
+    bool long_flag = false;
+    int num_thr = 1;
+    int compression_level = DEFAULT_COMPRESSION_LEVEL;
+    int num_reads_per_block = NUM_READS_PER_BLOCK;
+    int num_reads_per_block_long = NUM_READS_PER_BLOCK_LONG;
+    bool fasta_mode = false;
+    bool use_crlf = false;
     bool use_crlf_by_stream[2] = {false, false};
     uint32_t cb_len = 16;      // CB length for extraction/display.
     bool barcode_sort = false; // Legacy field; always false in new archives.
@@ -96,43 +96,43 @@ struct compression_params {
   } encoding;
 
   struct QualityConfig {
-    bool qvz_flag;
-    double qvz_ratio;
-    bool ill_bin_flag;
-    bool bin_thr_flag;
-    unsigned int bin_thr_thr;
-    unsigned int bin_thr_high;
-    unsigned int bin_thr_low;
+    bool qvz_flag = false;
+    double qvz_ratio = 0.0;
+    bool ill_bin_flag = false;
+    bool bin_thr_flag = false;
+    unsigned int bin_thr_thr = 0;
+    unsigned int bin_thr_high = 0;
+    unsigned int bin_thr_low = 0;
   } quality;
 
   struct GzipMetadata {
     struct Stream {
-      bool was_gzipped;
-      uint8_t flg;
-      uint32_t mtime;
-      uint8_t xfl;
-      uint8_t os;
+      bool was_gzipped = false;
+      uint8_t flg = 0;
+      uint32_t mtime = 0;
+      uint8_t xfl = 0;
+      uint8_t os = 0;
       std::string name;
-      bool is_bgzf;
-      uint16_t bgzf_block_size;
-      uint64_t uncompressed_size;
-      uint64_t compressed_size;
-      uint32_t member_count;
+      bool is_bgzf = false;
+      uint16_t bgzf_block_size = 0;
+      uint64_t uncompressed_size = 0;
+      uint64_t compressed_size = 0;
+      uint32_t member_count = 0;
     } streams[2];
   } gzip;
 
   struct ReadMetadata {
-    uint32_t num_reads;
-    uint32_t num_reads_clean[2];
-    uint32_t max_readlen;
-    uint8_t paired_id_code;
-    bool paired_id_match;
+    uint32_t num_reads = 0;
+    uint32_t num_reads_clean[2] = {0, 0};
+    uint32_t max_readlen = 0;
+    uint8_t paired_id_code = 0;
+    bool paired_id_match = false;
     bool quality_header_has_id =
         false; // True if FASTQ uses "+ID" format instead of "+"
     bool quality_header_has_id_by_stream[2] = {false, false};
     static constexpr size_t kFileLenThrSize = 1024;
-    uint64_t file_len_seq_thr[kFileLenThrSize];
-    uint64_t file_len_id_thr[kFileLenThrSize];
+    uint64_t file_len_seq_thr[kFileLenThrSize] = {0};
+    uint64_t file_len_id_thr[kFileLenThrSize] = {0};
     std::string input_filename_1;
     std::string input_filename_2;
     std::string note;
@@ -142,9 +142,9 @@ struct compression_params {
     uint32_t archive_format_version = CURRENT_ARCHIVE_FORMAT_VERSION;
     bool legacy_spring = false; // Runtime-only flag for original SPRING
                                 // archives.
-    uint32_t sequence_crc[2];
-    uint32_t quality_crc[2];
-    uint32_t id_crc[2];
+    uint32_t sequence_crc[2] = {0, 0};
+    uint32_t quality_crc[2] = {0, 0};
+    uint32_t id_crc[2] = {0, 0};
   } read_info;
 };
 

@@ -290,6 +290,9 @@ struct gzFile_s {
   unsigned have;
   unsigned char *next;
   z_off64_t pos;
+#ifdef __cplusplus
+  gzFile_s() : have(0), next(nullptr), pos(0) {}
+#endif
 };
 ZEXTERN int ZEXPORT gzgetc_(gzFile file);
 #ifdef Z_PREFIX_SET
