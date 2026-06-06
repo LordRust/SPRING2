@@ -12,14 +12,12 @@ Download platform artifacts from the GitHub releases page:
 Available release artifacts currently include:
 
 - Linux AppImages for `x86_64` and `ARM64`
-- macOS universal DMG bundles
-- macOS universal `.pkg` installers
-- Windows `x86_64` and `ARM64` setup installers
-- Raw standalone binaries for platforms where they are published
+- macOS `.app` bundles packaged as zip archives for `arm64` and `x86_64`
+- Windows standalone executables for `x86_64` and `ARM64`
 
 ## Linux
 
-Linux releases provide portable AppImages and `.tar.gz` archives.
+Linux releases provide portable AppImages.
 
 ### AppImage
 
@@ -37,77 +35,39 @@ chmod +x spring2-linux-x86_64.AppImage
 If you prefer, you can keep the AppImage in a tools directory and invoke it
 from there.
 
-### Tarball
-
-If you want a plain extracted layout instead of AppImage packaging:
-
-```bash
-tar -xzf spring2-linux-x86_64.tar.gz
-./bin/spring2 --version
-```
-
-You can then copy `bin/spring2` to a directory on your `PATH`.
-
 ## macOS
 
-macOS releases provide both a DMG and a `.pkg` installer.
+macOS releases provide `.app` bundles packaged as zip archives per architecture.
 
-### PKG Installer
+- Download the zip for your architecture:
+  - `spring2-macos-arm64.app.zip`
+  - `spring2-macos-x86_64.app.zip`
+- Extract the zip file.
+- Run SPRING2 from Terminal:
 
-The `.pkg` installer is the simplest GUI path and does not require Terminal.
-It installs `spring2` into `/usr/local/bin`.
+    ```bash
+    ./SPRING2.app/Contents/MacOS/spring2 --version
+    ```
 
-1. Download `spring2-macos-universal.pkg`.
-2. Open it in the macOS Installer app.
-3. Complete the standard installation flow.
-4. Open a new Terminal window and run:
-
-```bash
-spring2 --version
-```
-
-### DMG Bundle
-
-The DMG includes:
-
-- the universal `spring2` binary
-- a small `install-spring2.command` helper
-- a README with install notes
-
-Use the DMG if you prefer to inspect the bundled files before installing.
+If you prefer, move `SPRING2.app` to `/Applications` and invoke it from there.
 
 ## Windows
 
-Windows releases provide architecture-specific setup installers and raw
-executables.
+Windows releases provide standalone executables per architecture.
 
-### Setup Installer
+1. Download the executable for your architecture:
+   - `spring2-windows-x86_64.exe`
+   - `spring2-windows-arm64.exe`
+  
+2. Rename to `spring2.exe` (optional) and place it in a folder on your `PATH`.
 
-The Windows installer is the easiest option.
+3. Open a new terminal and run:
 
-1. Download the setup executable for your architecture:
-   - `spring2-windows-x86_64-setup.exe`
-   - `spring2-windows-arm64-setup.exe`
-2. Run the installer.
-3. Optionally enable installer tasks such as:
-   - adding SPRING2 to the system `PATH`
-   - creating a desktop shortcut
-4. Launch `spring2` from the installed location or from a new terminal session
-   if you enabled the `PATH` task.
-
-The installer also creates a Start Menu shortcut by default.
-
-### Portable Executable
-
-If you prefer not to install system-wide, you can use the raw `spring2.exe`
-artifact directly from any directory.
+    ```powershell
+    spring2 --version
+    ```
 
 ## Notes on Trust and Security
 
-- Windows signing is optional in the release workflow, so some releases may be
-  unsigned.
-- macOS packages are currently provided as convenience installers, but if they
-  are not Apple-signed or notarized, Gatekeeper may still show warnings on some
-  machines.
-- Linux AppImages are portable artifacts and do not require system-wide
-  installation.
+- macOS app bundles may still trigger Gatekeeper warnings if they are not Apple-signed and notarized.
+- Linux AppImages are portable artifacts and do not require system-wide installation.

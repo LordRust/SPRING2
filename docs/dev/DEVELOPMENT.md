@@ -8,7 +8,6 @@ This guide is for developers who want to contribute to SPRING2 or maintain the b
 - `vendor/`: Bundled third-party dependencies as `.tar.xz` archives.
 - `docs/user/`, `docs/dev/`, `docs/assays/`: User, developer, and assay-specific documentation.
 - `tools/dev/`: Developer workflow entrypoints for linting, smoke checks, and Docker environments.
-- `tools/release/`: Release-packaging assets for installers, AppImage metadata, signing hooks, and DMG helpers.
 - `tools/assay-reference/`: Checked-in assay-detection reference assets consumed by code generation and real-data tests.
 - `tools/codegen/`: Native build-time generators and other source-producing helpers.
 - `tools/host/`: Vendored host tools such as Ninja and NASM.
@@ -275,30 +274,9 @@ Interpretation tips:
 
 The project uses GitHub Actions for automated multi-architecture releases.
 
-- **Runners**: Uses `ubuntu-latest` (x86_64) and `ubuntu-24.04-arm64` (native ARM silicon).
-- **Environment**: Builds are performed inside **AlmaLinux 8** Docker containers to pin the GLIBC baseline to **2.28**, ensuring maximum portability across enterprise distributions (RHEL 8+, Ubuntu 20.04+, etc.).
-- **Artifacts**: The pipeline produces portable AppImages for Linux, universal Mach-O binaries for macOS, native executables for Windows, and architecture-specific Windows installers built with Inno Setup.
-
-### Windows Signing
-
-Windows release signing is optional and is only enabled when the GitHub Actions repository secrets below are configured:
-
-- `WINDOWS_SIGNING_CERT_BASE64`: Base64-encoded `.pfx` certificate contents.
-- `WINDOWS_SIGNING_CERT_PASSWORD`: Password for the `.pfx` file. Leave unset if the certificate has no password.
-
-To prepare the certificate payload on Windows PowerShell:
-
-```powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes('C:\path\to\certificate.pfx'))
-```
-
-The release workflow reads those secrets, uses `tools/release/windows/sign-artifact.ps1`, signs both the raw `spring2.exe` binaries and the final setup executables, and skips signing entirely when `WINDOWS_SIGNING_CERT_BASE64` is absent.
-
-### Windows Installer Tasks
-
-The Windows installer currently supports these optional setup tasks:
-
-- Add the install directory to the system `PATH`.
-- Create a desktop shortcut to `spring2.exe`.
-
-It also creates a Start Menu shortcut to `spring2.exe` by default.
+- **Runners**: Uses Linux, macOS, and Windows GitHub-hosted runners for `x86_64` and `arm64` targets.
+- **Environment**: Linux builds run inside **AlmaLinux 8** Docker containers to pin the GLIBC baseline to **2.28**, ensuring portability across enterprise distributions (RHEL 8+, Ubuntu 20.04+, etc.). macOS and Windows builds run natively on their respective hosted runners.
+- **Artifacts**:
+  - Linux: AppImage per architecture (`spring2-linux-*.AppImage`)
+  - macOS: zipped `.app` bundles per architecture (`spring2-macos-*.app.zip`)
+  - Windows: standalone executable per architecture (`spring2-windows-*.exe`)

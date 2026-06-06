@@ -17,7 +17,3 @@ Start here if you want to build, run, or inspect archives created by SPRING2:
 
 - [Assay Reference](assays/ASSAY_REFERENCE.md)
 - [Development Guide](dev/DEVELOPMENT.md)
-
-## Notes
-
-This site is built with MkDocs and published through Read the Docs.

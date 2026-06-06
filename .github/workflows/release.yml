@@ -18,19 +18,19 @@ jobs:
           - os: ubuntu-latest
             name: linux
             arch: x86_64
-            artifact_name: spring2-linux-x86_64
+            artifact_name: spring2-linux-x86_64.AppImage
           - os: ubuntu-24.04-arm
             name: linux
             arch: arm64
-            artifact_name: spring2-linux-arm64
+            artifact_name: spring2-linux-arm64.AppImage
           - os: macos-latest
             name: macos
             arch: arm64
-            artifact_name: spring2-macos-arm64
+            artifact_name: spring2-macos-arm64.app.zip
           - os: macos-15-intel
             name: macos
             arch: x86_64
-            artifact_name: spring2-macos-x86_64
+            artifact_name: spring2-macos-x86_64.app.zip
           - os: windows-latest
             name: windows
             arch: x86_64
@@ -82,7 +82,8 @@ jobs:
             (dnf config-manager --set-enabled powertools || \
               dnf config-manager --set-enabled crb) && \
             dnf install -y --setopt=install_weak_deps=False gcc-toolset-12-gcc-c++ libomp-devel \
-              python39 python39-pip && \
+              patchelf python39 python39-pip wget appstream \
+              fuse-libs file && \
             source /opt/rh/gcc-toolset-12/enable && \
             python3.9 -m venv .cmake-venv && \
             . .cmake-venv/bin/activate && \
@@ -98,7 +99,56 @@ jobs:
               -DLIBRAPIDARCHIVE_WITH_ISAL=OFF \
               \$CMAKE_EXTRA_FLAGS && \
             cmake --build out/build --parallel && \
-            cmake --install out/build --prefix out
+            cmake --install out/build --prefix out && \
+            file out/bin/spring2 && \
+            ldd out/bin/spring2 && \
+            if [ -d out/lib ]; then \
+              export LD_LIBRARY_PATH="/work/out/lib"; \
+            fi && \
+            patchelf --remove-rpath out/bin/spring2 && \
+            export LINUXDEPLOY_DEBUG=1 && \
+            URL='https://github.com/linuxdeploy/linuxdeploy/' && \
+            URL=\"\${URL}releases/download/continuous/\" && \
+            URL=\"\${URL}linuxdeploy-\$ARCH_SUFFIX.AppImage\" && \
+            wget \"\$URL\" -O linuxdeploy && \
+            chmod +x linuxdeploy && \
+            export EXTRA_QT_PLUGINS= && \
+            mkdir -p AppDir/usr/share/metainfo && \
+            mkdir -p AppDir/usr/share/icons/hicolor/512x512/apps && \
+            printf '%s\n' \
+              '<?xml version="1.0" encoding="UTF-8"?>' \
+              '<component type="desktop-application">' \
+              '  <id>io.github.thisisamirv.spring2.desktop</id>' \
+              '  <name>SPRING2</name>' \
+              '  <summary>FASTQ/FASTA compression and decompression tool</summary>' \
+              '  <metadata_license>CC0-1.0</metadata_license>' \
+              '  <project_license>LicenseRef-Proprietary</project_license>' \
+              '  <description>' \
+              '    <p>SPRING2 is a cross-platform genomic read compressor for FASTQ/FASTA workflows.</p>' \
+              '  </description>' \
+              '  <launchable type="desktop-id">io.github.thisisamirv.spring2.desktop</launchable>' \
+              '</component>' \
+              > AppDir/usr/share/metainfo/io.github.thisisamirv.spring2.appdata.xml && \
+            printf '%s\n' \
+              '[Desktop Entry]' \
+              'Type=Application' \
+              'Name=SPRING2' \
+              'Exec=spring2' \
+              'Icon=spring2' \
+              'Categories=Science;Utility;' \
+              'Terminal=true' \
+              > io.github.thisisamirv.spring2.desktop && \
+            cp docs/assets/icons/logo.png \
+              AppDir/usr/share/icons/hicolor/512x512/apps/spring2.png && \
+            ./linuxdeploy --appimage-extract-and-run \
+              --appdir AppDir \
+              --executable out/bin/spring2 \
+              --desktop-file io.github.thisisamirv.spring2.desktop \
+              --icon-file \
+                AppDir/usr/share/icons/hicolor/512x512/apps/spring2.png \
+              --output appimage \
+              --verbosity=2 && \
+            mv SPRING2-*.AppImage spring2-linux-${{ matrix.arch }}.AppImage
           "
 
       - name: Install macOS dependencies
@@ -252,11 +302,58 @@ jobs:
           cmake --install out/build --prefix out
           strip out/bin/spring2
 
+      - name: Create macOS .app bundle
+        if: matrix.name == 'macos'
+        run: |
+          APP_ROOT="out/app/SPRING2.app"
+          CONTENTS_DIR="$APP_ROOT/Contents"
+          mkdir -p "$CONTENTS_DIR/MacOS" "$CONTENTS_DIR/Resources"
+
+          cp out/bin/spring2 "$CONTENTS_DIR/MacOS/spring2"
+          chmod +x "$CONTENTS_DIR/MacOS/spring2"
+
+          mkdir -p spring2.iconset
+          sips -z 16 16 docs/assets/icons/logo.png --out spring2.iconset/icon_16x16.png
+          sips -z 32 32 docs/assets/icons/logo.png --out spring2.iconset/icon_16x16@2x.png
+          sips -z 32 32 docs/assets/icons/logo.png --out spring2.iconset/icon_32x32.png
+          sips -z 64 64 docs/assets/icons/logo.png --out spring2.iconset/icon_32x32@2x.png
+          sips -z 128 128 docs/assets/icons/logo.png --out spring2.iconset/icon_128x128.png
+          sips -z 256 256 docs/assets/icons/logo.png --out spring2.iconset/icon_128x128@2x.png
+          sips -z 256 256 docs/assets/icons/logo.png --out spring2.iconset/icon_256x256.png
+          sips -z 512 512 docs/assets/icons/logo.png --out spring2.iconset/icon_256x256@2x.png
+          sips -z 512 512 docs/assets/icons/logo.png --out spring2.iconset/icon_512x512.png
+          cp docs/assets/icons/logo.png spring2.iconset/icon_512x512@2x.png
+          iconutil -c icns spring2.iconset
+          rm -rf spring2.iconset
+          mv spring2.icns "$CONTENTS_DIR/Resources/spring2.icns"
+
+          cat > "$CONTENTS_DIR/Info.plist" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleDevelopmentRegion</key><string>en</string>
+              <key>CFBundleExecutable</key><string>spring2</string>
+              <key>CFBundleIconFile</key><string>spring2.icns</string>
+              <key>CFBundleIdentifier</key><string>io.github.thisisamirv.spring2</string>
+              <key>CFBundleName</key><string>SPRING2</string>
+              <key>CFBundlePackageType</key><string>APPL</string>
+              <key>CFBundleShortVersionString</key><string>${{ github.ref_name }}</string>
+              <key>CFBundleVersion</key><string>${{ github.run_number }}</string>
+              <key>LSMinimumSystemVersion</key><string>11.0</string>
+          </dict>
+          </plist>
+          EOF
+
       - name: Prepare Artifacts (Linux/macOS)
         if: matrix.name != 'windows'
         run: |
           mkdir -p release
-          cp out/bin/spring2 "release/${{ matrix.artifact_name }}"
+          if [ "${{ matrix.name }}" = "linux" ]; then
+            cp "spring2-linux-${{ matrix.arch }}.AppImage" "release/${{ matrix.artifact_name }}"
+          else
+            ditto -c -k --sequesterRsrc --keepParent out/app/SPRING2.app "release/${{ matrix.artifact_name }}"
+          fi
 
       - name: Configure (Windows)
         if: matrix.name == 'windows' && matrix.arch == 'x86_64'
