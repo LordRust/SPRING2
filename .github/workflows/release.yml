@@ -2,660 +2,356 @@
 name: Release
 
 "on":
-    release:
-        types: [published]
-    workflow_dispatch:
+  release:
+    types: [published]
+  workflow_dispatch:
 
 permissions:
-    contents: write
+  contents: write
 
 jobs:
-    build:
-        strategy:
-            fail-fast: false
-            matrix:
-                include:
-                    - os: ubuntu-latest
-                      name: linux
-                      arch: x86_64
-                      artifact_name: spring2-linux-x86_64
-                    - os: ubuntu-24.04-arm
-                      name: linux
-                      arch: arm64
-                      artifact_name: spring2-linux-arm64
-                    - os: macos-latest
-                      name: macos
-                      arch: arm64
-                      artifact_name: spring2-macos-arm64
-                    - os: macos-15-intel
-                      name: macos
-                      arch: x86_64
-                      artifact_name: spring2-macos-x86_64
-                    - os: windows-latest
-                      name: windows
-                      arch: x86_64
-                      artifact_name: spring2-windows-x86_64.exe
-                    - os: windows-11-arm
-                      name: windows
-                      arch: arm64
-                      artifact_name: spring2-windows-arm64.exe
-        name: Build / ${{ matrix.name }} (${{ matrix.arch }})
-        runs-on: ${{ matrix.os }}
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux
+            arch: x86_64
+            artifact_name: spring2-linux-x86_64
+          - os: ubuntu-24.04-arm
+            name: linux
+            arch: arm64
+            artifact_name: spring2-linux-arm64
+          - os: macos-latest
+            name: macos
+            arch: arm64
+            artifact_name: spring2-macos-arm64
+          - os: macos-15-intel
+            name: macos
+            arch: x86_64
+            artifact_name: spring2-macos-x86_64
+          - os: windows-latest
+            name: windows
+            arch: x86_64
+            artifact_name: spring2-windows-x86_64.exe
+          - os: windows-11-arm
+            name: windows
+            arch: arm64
+            artifact_name: spring2-windows-arm64.exe
+    name: Build / ${{ matrix.name }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
 
-        steps:
-            - name: Checkout repository
-              uses: actions/checkout@v6
-              env:
-                  GIT_CONFIG_COUNT: 1
-                  GIT_CONFIG_KEY_0: init.defaultBranch
-                  GIT_CONFIG_VALUE_0: main
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        env:
+          GIT_CONFIG_COUNT: 1
+          GIT_CONFIG_KEY_0: init.defaultBranch
+          GIT_CONFIG_VALUE_0: main
 
-            - name: Ensure vendored tools are executable on Unix
-              if: matrix.name != 'windows'
-              shell: bash
-              run: |
-                  chmod +x tools/host/ninja/linux/ninja tools/host/ninja/linux-aarch64/ninja tools/host/ninja/mac/ninja
-                  chmod +x tools/host/nasm/linux/nasm tools/host/nasm/macosx/nasm
+      - name: Ensure vendored tools are executable on Unix
+        if: matrix.name != 'windows'
+        shell: bash
+        run: |
+          chmod +x tools/host/ninja/linux/ninja tools/host/ninja/linux-aarch64/ninja tools/host/ninja/mac/ninja
+          chmod +x tools/host/nasm/linux/nasm tools/host/nasm/macosx/nasm
 
-            - name: Build Linux (Docker)
-              if: matrix.name == 'linux'
-              run: |
-                  DOCKER_IMAGE="almalinux:8"
-                  DOCKER_PLATFORM="linux/amd64"
-                  ARCH_SUFFIX="x86_64"
-                  CMAKE_EXTRA_FLAGS="-DSPRING_STATIC_RUNTIMES=ON"
+      - name: Build Linux (Docker)
+        if: matrix.name == 'linux'
+        run: |
+          DOCKER_IMAGE="almalinux:8"
+          DOCKER_PLATFORM="linux/amd64"
+          ARCH_SUFFIX="x86_64"
+          CMAKE_EXTRA_FLAGS="-DSPRING_STATIC_RUNTIMES=ON"
 
-                  if [ "${{ matrix.arch }}" == "arm64" ]; then
-                    DOCKER_IMAGE="arm64v8/almalinux:8"
-                    DOCKER_PLATFORM="linux/arm64"
-                    ARCH_SUFFIX="aarch64"
-                    CMAKE_EXTRA_FLAGS="-DCMAKE_C_FLAGS='-march=armv8-a+crc' \
-                      -DCMAKE_CXX_FLAGS='-march=armv8-a+crc' -DSPRING_ENABLE_IPO=OFF"
-                  fi
+          if [ "${{ matrix.arch }}" == "arm64" ]; then
+            DOCKER_IMAGE="arm64v8/almalinux:8"
+            DOCKER_PLATFORM="linux/arm64"
+            ARCH_SUFFIX="aarch64"
+            CMAKE_EXTRA_FLAGS="-DCMAKE_C_FLAGS='-march=armv8-a+crc' \
+              -DCMAKE_CXX_FLAGS='-march=armv8-a+crc' -DSPRING_ENABLE_IPO=OFF"
+          fi
 
-                  docker run --rm --platform "$DOCKER_PLATFORM" \
-                    -e container=docker \
-                    -e ARCH_SUFFIX="$ARCH_SUFFIX" \
-                    -e CMAKE_EXTRA_FLAGS="$CMAKE_EXTRA_FLAGS" \
-                    -v "$PWD":/work -w /work "$DOCKER_IMAGE" /bin/bash -c "
-                    dnf install -y --setopt=install_weak_deps=False epel-release dnf-plugins-core && \
-                    (dnf config-manager --set-enabled powertools || \
-                      dnf config-manager --set-enabled crb) && \
-                    dnf install -y --setopt=install_weak_deps=False gcc-toolset-12-gcc-c++ libomp-devel \
-                      patchelf python39 python39-pip wget appstream \
-                      fuse-libs file && \
-                    source /opt/rh/gcc-toolset-12/enable && \
-                    python3.9 -m venv .cmake-venv && \
-                    . .cmake-venv/bin/activate && \
-                    NINJA_PATH=/work/tools/host/ninja/linux/ninja && \
-                    if [ "\$ARCH_SUFFIX" = "aarch64" ]; then \
-                      NINJA_PATH=/work/tools/host/ninja/linux-aarch64/ninja; \
-                    fi && \
-                    chmod +x \$NINJA_PATH /work/tools/host/nasm/linux/nasm && \
-                    python3.9 -m pip install --upgrade pip && \
-                    python3.9 -m pip install 'cmake==4.2.0' && \
-                    cmake -S . -B out/build -G Ninja \
-                      -DCMAKE_MAKE_PROGRAM=\$NINJA_PATH \
-                      -DLIBRAPIDARCHIVE_WITH_ISAL=OFF \
-                      \$CMAKE_EXTRA_FLAGS && \
-                    cmake --build out/build --parallel && \
-                    cmake --install out/build --prefix out && \
-                    if [ -d out/lib ]; then \
-                      tar -czf spring2-linux-${{ matrix.arch }}.tar.gz -C out bin lib; \
-                    else \
-                      tar -czf spring2-linux-${{ matrix.arch }}.tar.gz -C out bin; \
-                    fi && \
-                    file out/bin/spring2 && \
-                    ldd out/bin/spring2 && \
-                    if [ -d out/lib ]; then \
-                      export LD_LIBRARY_PATH="/work/out/lib"; \
-                    fi && \
-                    patchelf --remove-rpath out/bin/spring2 && \
-                    export LINUXDEPLOY_DEBUG=1 && \
-                    URL='https://github.com/linuxdeploy/linuxdeploy/' && \
-                    URL=\"\${URL}releases/download/continuous/\" && \
-                    URL=\"\${URL}linuxdeploy-\$ARCH_SUFFIX.AppImage\" && \
-                    wget \"\$URL\" -O linuxdeploy && \
-                    chmod +x linuxdeploy && \
-                    export EXTRA_QT_PLUGINS= && \
-                    mkdir -p AppDir/usr/share/metainfo && \
-                    mkdir -p AppDir/usr/share/icons/hicolor/512x512/apps && \
-                    cp tools/release/linux/io.github.thisisamirv.spring2.appdata.xml \
-                      AppDir/usr/share/metainfo/io.github.thisisamirv.spring2.appdata.xml && \
-                    cp docs/assets/icons/logo.png \
-                      AppDir/usr/share/icons/hicolor/512x512/apps/spring2.png && \
-                    ./linuxdeploy --appimage-extract-and-run \
-                      --appdir AppDir \
-                      --executable out/bin/spring2 \
-                      --desktop-file tools/release/linux/io.github.thisisamirv.spring2.desktop \
-                      --icon-file \
-                        AppDir/usr/share/icons/hicolor/512x512/apps/spring2.png \
-                      --output appimage \
-                      --verbosity=2 && \
-                    mv SPRING2-*.AppImage spring2-linux-${{ matrix.arch }}.AppImage
-                  "
+          docker run --rm --platform "$DOCKER_PLATFORM" \
+            -e container=docker \
+            -e ARCH_SUFFIX="$ARCH_SUFFIX" \
+            -e CMAKE_EXTRA_FLAGS="$CMAKE_EXTRA_FLAGS" \
+            -v "$PWD":/work -w /work "$DOCKER_IMAGE" /bin/bash -c "
+            dnf install -y --setopt=install_weak_deps=False epel-release dnf-plugins-core && \
+            (dnf config-manager --set-enabled powertools || \
+              dnf config-manager --set-enabled crb) && \
+            dnf install -y --setopt=install_weak_deps=False gcc-toolset-12-gcc-c++ libomp-devel \
+              python39 python39-pip && \
+            source /opt/rh/gcc-toolset-12/enable && \
+            python3.9 -m venv .cmake-venv && \
+            . .cmake-venv/bin/activate && \
+            NINJA_PATH=/work/tools/host/ninja/linux/ninja && \
+            if [ "\$ARCH_SUFFIX" = "aarch64" ]; then \
+              NINJA_PATH=/work/tools/host/ninja/linux-aarch64/ninja; \
+            fi && \
+            chmod +x \$NINJA_PATH /work/tools/host/nasm/linux/nasm && \
+            python3.9 -m pip install --no-cache-dir --upgrade pip && \
+            python3.9 -m pip install --no-cache-dir 'cmake==4.2.0' && \
+            cmake -S . -B out/build -G Ninja \
+              -DCMAKE_MAKE_PROGRAM=\$NINJA_PATH \
+              -DLIBRAPIDARCHIVE_WITH_ISAL=OFF \
+              \$CMAKE_EXTRA_FLAGS && \
+            cmake --build out/build --parallel && \
+            cmake --install out/build --prefix out
+          "
 
-            - name: Install macOS dependencies
-              if: matrix.name == 'macos'
-              run: |
-                  brew update
-                  brew install libomp
-                  echo "MACOS_LIBOMP_PREFIX=$(brew --prefix libomp)" >> "$GITHUB_ENV"
-                  CMAKE_VENV="$RUNNER_TEMP/cmake-venv"
-                  python3 -m venv "$CMAKE_VENV"
-                  "$CMAKE_VENV/bin/python" -m pip install --upgrade pip
-                  "$CMAKE_VENV/bin/python" -m pip install "cmake==4.2.0"
-                  echo "$CMAKE_VENV/bin" >> "$GITHUB_PATH"
+      - name: Install macOS dependencies
+        if: matrix.name == 'macos'
+        run: |
+          brew update
+          brew install libomp
+          echo "MACOS_LIBOMP_PREFIX=$(brew --prefix libomp)" >> "$GITHUB_ENV"
+          CMAKE_VENV="$RUNNER_TEMP/cmake-venv"
+          python3 -m venv "$CMAKE_VENV"
+          "$CMAKE_VENV/bin/python" -m pip install --no-cache-dir --upgrade pip
+          "$CMAKE_VENV/bin/python" -m pip install --no-cache-dir "cmake==4.2.0"
+          echo "$CMAKE_VENV/bin" >> "$GITHUB_PATH"
 
-            - name: Install native MinGW-w64 toolchain (winlibs) and tools
-              if: matrix.name == 'windows' && matrix.arch == 'x86_64'
-              shell: powershell
-              run: |
-                  $wingetFlags = @(
-                    "--source", "winget",
-                    "--exact",
-                    "--accept-source-agreements",
-                    "--accept-package-agreements",
-                    "--disable-interactivity"
-                  )
+      - name: Install native MinGW-w64 toolchain (winlibs) and tools
+        if: matrix.name == 'windows' && matrix.arch == 'x86_64'
+        shell: powershell
+        run: |
+          $wingetFlags = @(
+            "--source", "winget",
+            "--exact",
+            "--accept-source-agreements",
+            "--accept-package-agreements",
+            "--disable-interactivity"
+          )
 
-                  winget install --id BrechtSanders.WinLibs.MCF.UCRT @wingetFlags
-                  winget install --id Git.Git @wingetFlags
+          winget install --id BrechtSanders.WinLibs.MCF.UCRT @wingetFlags
+          winget install --id Git.Git @wingetFlags
 
-                  Write-Host 'Configuring PATH for WinLibs GCC toolchain'
-                  $searchRoots = @(
-                    "$env:LOCALAPPDATA\Microsoft\WinGet\Packages",
-                    "$env:LOCALAPPDATA\Microsoft\WinGet\Links",
-                    "$env:ProgramFiles\WinLibs",
-                    "$env:ProgramFiles\mingw64",
-                    "$env:SystemDrive\mingw64"
-                  ) | Where-Object { Test-Path $_ }
+          Write-Host 'Configuring PATH for WinLibs GCC toolchain'
+          $searchRoots = @(
+            "$env:LOCALAPPDATA\Microsoft\WinGet\Packages",
+            "$env:LOCALAPPDATA\Microsoft\WinGet\Links",
+            "$env:ProgramFiles\WinLibs",
+            "$env:ProgramFiles\mingw64",
+            "$env:SystemDrive\mingw64"
+          ) | Where-Object { Test-Path $_ }
 
-                  $gcc = $null
-                  foreach ($root in $searchRoots) {
-                    $gcc = Get-ChildItem -Path $root -Filter gcc.exe -Recurse -File -ErrorAction SilentlyContinue |
-                      Select-Object -First 1
-                    if ($gcc) { break }
-                  }
+          $gcc = $null
+          foreach ($root in $searchRoots) {
+            $gcc = Get-ChildItem -Path $root -Filter gcc.exe -Recurse -File -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+            if ($gcc) { break }
+          }
 
-                  if (-not $gcc) {
-                    throw 'Unable to locate gcc.exe after WinLibs installation'
-                  }
+          if (-not $gcc) {
+            throw 'Unable to locate gcc.exe after WinLibs installation'
+          }
 
-                  $vendoredNasmDir = Join-Path $env:GITHUB_WORKSPACE 'tools/host/nasm/win64'
-                  if (Test-Path (Join-Path $vendoredNasmDir 'nasm.exe')) {
-                    Add-Content -Path $env:GITHUB_PATH -Value $vendoredNasmDir
-                    Write-Host "Using vendored NASM directory: $vendoredNasmDir"
-                  }
+          $vendoredNasmDir = Join-Path $env:GITHUB_WORKSPACE 'tools/host/nasm/win64'
+          if (Test-Path (Join-Path $vendoredNasmDir 'nasm.exe')) {
+            Add-Content -Path $env:GITHUB_PATH -Value $vendoredNasmDir
+            Write-Host "Using vendored NASM directory: $vendoredNasmDir"
+          }
 
-                  Add-Content -Path $env:GITHUB_PATH -Value $gcc.DirectoryName
+          Add-Content -Path $env:GITHUB_PATH -Value $gcc.DirectoryName
 
-                  # Install pinned CMake in a Python virtualenv and prepend it to PATH.
-                  $cmakeVenv = Join-Path $env:RUNNER_TEMP "cmake-venv"
-                  py -3 -m venv $cmakeVenv
-                  & "$cmakeVenv\Scripts\python.exe" -m pip install --upgrade pip
-                  & "$cmakeVenv\Scripts\python.exe" -m pip install "cmake==4.2.0"
-                  Add-Content -Path $env:GITHUB_PATH -Value "$cmakeVenv\Scripts"
-                  & "$cmakeVenv\Scripts\cmake.exe" --version
+          # Install pinned CMake in a Python virtualenv and prepend it to PATH.
+          $cmakeVenv = Join-Path $env:RUNNER_TEMP "cmake-venv"
+          py -3 -m venv $cmakeVenv
+          & "$cmakeVenv\Scripts\python.exe" -m pip install --no-cache-dir --upgrade pip
+          & "$cmakeVenv\Scripts\python.exe" -m pip install --no-cache-dir "cmake==4.2.0"
+          Add-Content -Path $env:GITHUB_PATH -Value "$cmakeVenv\Scripts"
+          & "$cmakeVenv\Scripts\cmake.exe" --version
 
-            - name: Install CMake on Windows arm64
-              if: matrix.name == 'windows' && matrix.arch == 'arm64'
-              shell: powershell
-              run: |
-                  $vendoredNasmDir = Join-Path $env:GITHUB_WORKSPACE 'tools/host/nasm/win64'
-                  if (Test-Path (Join-Path $vendoredNasmDir 'nasm.exe')) {
-                    Add-Content -Path $env:GITHUB_PATH -Value $vendoredNasmDir
-                    Write-Host "Using vendored NASM directory: $vendoredNasmDir"
-                  }
+      - name: Install CMake on Windows arm64
+        if: matrix.name == 'windows' && matrix.arch == 'arm64'
+        shell: powershell
+        run: |
+          $vendoredNasmDir = Join-Path $env:GITHUB_WORKSPACE 'tools/host/nasm/win64'
+          if (Test-Path (Join-Path $vendoredNasmDir 'nasm.exe')) {
+            Add-Content -Path $env:GITHUB_PATH -Value $vendoredNasmDir
+            Write-Host "Using vendored NASM directory: $vendoredNasmDir"
+          }
 
-                  $cmakeVenv = Join-Path $env:RUNNER_TEMP 'cmake-venv'
-                  py -3 -m venv $cmakeVenv
-                  & "$cmakeVenv\Scripts\python.exe" -m pip install --upgrade pip
-                  & "$cmakeVenv\Scripts\python.exe" -m pip install "cmake==4.2.0"
-                  Add-Content -Path $env:GITHUB_PATH -Value "$cmakeVenv\Scripts"
-                  & "$cmakeVenv\Scripts\cmake.exe" --version
+          $cmakeVenv = Join-Path $env:RUNNER_TEMP 'cmake-venv'
+          py -3 -m venv $cmakeVenv
+          & "$cmakeVenv\Scripts\python.exe" -m pip install --no-cache-dir --upgrade pip
+          & "$cmakeVenv\Scripts\python.exe" -m pip install --no-cache-dir "cmake==4.2.0"
+          Add-Content -Path $env:GITHUB_PATH -Value "$cmakeVenv\Scripts"
+          & "$cmakeVenv\Scripts\cmake.exe" --version
 
-            - name: Resolve Visual Studio environment for Windows arm64
-              if: matrix.name == 'windows' && matrix.arch == 'arm64'
-              shell: powershell
-              run: |
-                  $vsWhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-                  if (-not (Test-Path $vsWhere)) {
-                    throw 'Unable to locate vswhere.exe to detect installed Visual Studio versions'
-                  }
+      - name: Resolve Visual Studio environment for Windows arm64
+        if: matrix.name == 'windows' && matrix.arch == 'arm64'
+        shell: powershell
+        run: |
+          $vsWhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path $vsWhere)) {
+            throw 'Unable to locate vswhere.exe to detect installed Visual Studio versions'
+          }
 
-                  $candidates = @(
-                    @{ Version = '[18.0,19.0)'; Generator = 'Visual Studio 18 2026' },
-                    @{ Version = '[17.0,18.0)'; Generator = 'Visual Studio 17 2022' }
-                  )
+          $candidates = @(
+            @{ Version = '[18.0,19.0)'; Generator = 'Visual Studio 18 2026' },
+            @{ Version = '[17.0,18.0)'; Generator = 'Visual Studio 17 2022' }
+          )
 
-                  $selectedGenerator = $null
-                  $installationPath = $null
-                  foreach ($candidate in $candidates) {
-                    $vsWhereArgs = @(
-                      '-version', $candidate.Version,
-                      '-products', '*',
-                      '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.ARM64',
-                      '-property', 'installationPath'
-                    )
-                    $resolvedInstallationPath = & $vsWhere @vsWhereArgs | Select-Object -First 1
-                    if ($LASTEXITCODE -eq 0 -and $resolvedInstallationPath) {
-                      $selectedGenerator = $candidate.Generator
-                      $installationPath = $resolvedInstallationPath
-                      break
-                    }
-                  }
+          $selectedGenerator = $null
+          $installationPath = $null
+          foreach ($candidate in $candidates) {
+            $vsWhereArgs = @(
+              '-version', $candidate.Version,
+              '-products', '*',
+              '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.ARM64',
+              '-property', 'installationPath'
+            )
+            $resolvedInstallationPath = & $vsWhere @vsWhereArgs | Select-Object -First 1
+            if ($LASTEXITCODE -eq 0 -and $resolvedInstallationPath) {
+              $selectedGenerator = $candidate.Generator
+              $installationPath = $resolvedInstallationPath
+              break
+            }
+          }
 
-                  if (-not $selectedGenerator -or -not $installationPath) {
-                    throw 'Unable to find a supported Visual Studio ARM64 installation'
-                  }
+          if (-not $selectedGenerator -or -not $installationPath) {
+            throw 'Unable to find a supported Visual Studio ARM64 installation'
+          }
 
-                  $vsDevCmd = Join-Path $installationPath 'Common7\Tools\VsDevCmd.bat'
-                  if (-not (Test-Path $vsDevCmd)) {
-                    throw "Unable to locate VsDevCmd.bat under $installationPath"
-                  }
+          $vsDevCmd = Join-Path $installationPath 'Common7\Tools\VsDevCmd.bat'
+          if (-not (Test-Path $vsDevCmd)) {
+            throw "Unable to locate VsDevCmd.bat under $installationPath"
+          }
 
-                  $vendoredNinja = Join-Path $env:GITHUB_WORKSPACE 'tools/host/ninja/winarm64/ninja.exe'
-                  $vendoredNasm = Join-Path $env:GITHUB_WORKSPACE 'tools/host/nasm/win64/nasm.exe'
-                  if (-not (Test-Path $vendoredNinja)) {
-                    throw "Unable to locate vendored Ninja for Windows arm64 at $vendoredNinja"
-                  }
-                  if (-not (Test-Path $vendoredNasm)) {
-                    throw "Unable to locate vendored NASM at $vendoredNasm"
-                  }
+          $vendoredNinja = Join-Path $env:GITHUB_WORKSPACE 'tools/host/ninja/winarm64/ninja.exe'
+          $vendoredNasm = Join-Path $env:GITHUB_WORKSPACE 'tools/host/nasm/win64/nasm.exe'
+          if (-not (Test-Path $vendoredNinja)) {
+            throw "Unable to locate vendored Ninja for Windows arm64 at $vendoredNinja"
+          }
+          if (-not (Test-Path $vendoredNasm)) {
+            throw "Unable to locate vendored NASM at $vendoredNasm"
+          }
 
-                  Add-Content -Path $env:GITHUB_ENV -Value "SPRING_VSDEVCMD=$vsDevCmd"
-                  Add-Content -Path $env:GITHUB_ENV -Value "SPRING_WINDOWS_NINJA=$vendoredNinja"
-                  Add-Content -Path $env:GITHUB_ENV -Value "SPRING_WINDOWS_NASM=$vendoredNasm"
-                  Write-Host "Using Visual Studio environment: $vsDevCmd"
-                  Write-Host "Using vendored Ninja executable: $vendoredNinja"
-                  Write-Host "Using vendored NASM executable: $vendoredNasm"
+          Add-Content -Path $env:GITHUB_ENV -Value "SPRING_VSDEVCMD=$vsDevCmd"
+          Add-Content -Path $env:GITHUB_ENV -Value "SPRING_WINDOWS_NINJA=$vendoredNinja"
+          Add-Content -Path $env:GITHUB_ENV -Value "SPRING_WINDOWS_NASM=$vendoredNasm"
+          Write-Host "Using Visual Studio environment: $vsDevCmd"
+          Write-Host "Using vendored Ninja executable: $vendoredNinja"
+          Write-Host "Using vendored NASM executable: $vendoredNasm"
 
-            # Build jobs (Non-Windows)
-            - name: Configure (macOS)
-              if: matrix.name == 'macos'
-              run: |
-                  cmake -S . -B out/build -G Ninja \
-                    -DCMAKE_MAKE_PROGRAM="$GITHUB_WORKSPACE/tools/host/ninja/mac/ninja" \
-                    -DSPRING_ENABLE_COMPILER_CACHE=OFF
+      # Build jobs (Non-Windows)
+      - name: Configure (macOS)
+        if: matrix.name == 'macos'
+        run: |
+          cmake -S . -B out/build -G Ninja \
+            -DCMAKE_MAKE_PROGRAM="$GITHUB_WORKSPACE/tools/host/ninja/mac/ninja" \
+            -DSPRING_ENABLE_COMPILER_CACHE=OFF
 
-            - name: Build and Strip (macOS)
-              if: matrix.name == 'macos'
-              run: |
-                  cmake --build out/build --parallel
-                  cmake --install out/build --prefix out
-                  strip out/bin/spring2
+      - name: Build and Strip (macOS)
+        if: matrix.name == 'macos'
+        run: |
+          cmake --build out/build --parallel
+          cmake --install out/build --prefix out
+          strip out/bin/spring2
 
-            - name: Prepare Artifacts (Linux/macOS)
-              if: matrix.name != 'windows'
-              run: |
-                  mkdir -p release
-                  if [ "${{ matrix.name }}" == "linux" ]; then
-                    cp spring2-linux-${{ matrix.arch }}.AppImage release/
-                    cp spring2-linux-${{ matrix.arch }}.tar.gz release/
-                  else
-                    cp out/bin/spring2 "release/${{ matrix.artifact_name }}"
-                  fi
+      - name: Prepare Artifacts (Linux/macOS)
+        if: matrix.name != 'windows'
+        run: |
+          mkdir -p release
+          cp out/bin/spring2 "release/${{ matrix.artifact_name }}"
 
-            - name: Configure (Windows)
-              if: matrix.name == 'windows' && matrix.arch == 'x86_64'
-              shell: powershell
-              run: |
-                  $env:CC="gcc"
-                  $env:CXX="g++"
-                  $vendoredNinja = Join-Path $env:GITHUB_WORKSPACE 'tools/host/ninja/win/ninja.exe'
-                  $vendoredNasm = Join-Path $env:GITHUB_WORKSPACE 'tools/host/nasm/win64/nasm.exe'
-                  $ninjaExe = $null
-                  if (Test-Path $vendoredNinja) {
-                    try {
-                      & $vendoredNinja --version | Out-Null
-                      $ninjaExe = $vendoredNinja
-                    } catch {
-                      Write-Host "Vendored Ninja is not runnable on this runner; falling back to PATH discovery."
-                    }
-                  }
-                  if (-not $ninjaExe) {
-                    $ninjaCommand = Get-Command ninja.exe -ErrorAction SilentlyContinue
-                    if ($ninjaCommand) {
-                      $ninjaExe = $ninjaCommand.Source
-                    }
-                  }
-                  if (-not $ninjaExe) {
-                    throw 'Unable to locate a working ninja.exe for CMake'
-                  }
-                  $ninjaExe = $ninjaExe -replace '\\','/'
-                  if (-not (Test-Path $vendoredNasm)) {
-                    throw 'Unable to locate vendored nasm.exe for CMake'
-                  }
-                  $vendoredNasm = $vendoredNasm -replace '\\','/'
-                  Write-Host "Using Ninja executable: $ninjaExe"
-                  Write-Host "Using vendored NASM executable: $vendoredNasm"
-                  cmake -S . -B out/build `
-                    -G Ninja `
-                    -DCMAKE_MAKE_PROGRAM="$ninjaExe" `
-                    -DSPRING_NASM_EXECUTABLE="$vendoredNasm" `
-                    -DSPRING_STATIC_RUNTIMES=ON
+      - name: Configure (Windows)
+        if: matrix.name == 'windows' && matrix.arch == 'x86_64'
+        shell: powershell
+        run: |
+          $env:CC="gcc"
+          $env:CXX="g++"
+          $vendoredNinja = Join-Path $env:GITHUB_WORKSPACE 'tools/host/ninja/win/ninja.exe'
+          $vendoredNasm = Join-Path $env:GITHUB_WORKSPACE 'tools/host/nasm/win64/nasm.exe'
+          $ninjaExe = $null
+          if (Test-Path $vendoredNinja) {
+            try {
+              & $vendoredNinja --version | Out-Null
+              $ninjaExe = $vendoredNinja
+            } catch {
+              Write-Host "Vendored Ninja is not runnable on this runner; falling back to PATH discovery."
+            }
+          }
+          if (-not $ninjaExe) {
+            $ninjaCommand = Get-Command ninja.exe -ErrorAction SilentlyContinue
+            if ($ninjaCommand) {
+              $ninjaExe = $ninjaCommand.Source
+            }
+          }
+          if (-not $ninjaExe) {
+            throw 'Unable to locate a working ninja.exe for CMake'
+          }
+          $ninjaExe = $ninjaExe -replace '\\','/'
+          if (-not (Test-Path $vendoredNasm)) {
+            throw 'Unable to locate vendored nasm.exe for CMake'
+          }
+          $vendoredNasm = $vendoredNasm -replace '\\','/'
+          Write-Host "Using Ninja executable: $ninjaExe"
+          Write-Host "Using vendored NASM executable: $vendoredNasm"
+          cmake -S . -B out/build `
+            -G Ninja `
+            -DCMAKE_MAKE_PROGRAM="$ninjaExe" `
+            -DSPRING_NASM_EXECUTABLE="$vendoredNasm" `
+            -DSPRING_STATIC_RUNTIMES=ON
 
-            - name: Configure (Windows arm64)
-              if: matrix.name == 'windows' && matrix.arch == 'arm64'
-              shell: powershell
-              run: |
-                  $vsDevCmd = $env:SPRING_VSDEVCMD
-                  $ninjaExe = $env:SPRING_WINDOWS_NINJA -replace '\\','/'
-                  $nasmExe = $env:SPRING_WINDOWS_NASM -replace '\\','/'
-                  $configureCommand = "call `"$vsDevCmd`" -no_logo -arch=arm64 -host_arch=arm64 && set CC=cl && set CXX=cl && cmake -S . -B out/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_MAKE_PROGRAM=`"$ninjaExe`" -DSPRING_NASM_EXECUTABLE=`"$nasmExe`""
-                  cmd /c $configureCommand
-                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Configure (Windows arm64)
+        if: matrix.name == 'windows' && matrix.arch == 'arm64'
+        shell: powershell
+        run: |
+          $vsDevCmd = $env:SPRING_VSDEVCMD
+          $ninjaExe = $env:SPRING_WINDOWS_NINJA -replace '\\','/'
+          $nasmExe = $env:SPRING_WINDOWS_NASM -replace '\\','/'
+          $configureCommand = "call `"$vsDevCmd`" -no_logo -arch=arm64 -host_arch=arm64 && set CC=cl && set CXX=cl && cmake -S . -B out/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_MAKE_PROGRAM=`"$ninjaExe`" -DSPRING_NASM_EXECUTABLE=`"$nasmExe`""
+          cmd /c $configureCommand
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-            - name: Build (Windows)
-              if: matrix.name == 'windows' && matrix.arch == 'x86_64'
-              shell: powershell
-              run: |
-                  magick docs/assets/icons/logo.png `
-                    -define icon:auto-resize=16,32,48,64,128,256 `
-                    docs/assets/icons/logo.ico
-                  $env:CC="gcc"
-                  $env:CXX="g++"
-                  cmake --build out/build --parallel
-                  cmake --install out/build --prefix out
-                  strip out/bin/spring2.exe
+      - name: Build (Windows)
+        if: matrix.name == 'windows' && matrix.arch == 'x86_64'
+        shell: powershell
+        run: |
+          magick docs/assets/icons/logo.png `
+            -define icon:auto-resize=16,32,48,64,128,256 `
+            docs/assets/icons/logo.ico
+          $env:CC="gcc"
+          $env:CXX="g++"
+          cmake --build out/build --parallel
+          cmake --install out/build --prefix out
+          strip out/bin/spring2.exe
 
-            - name: Build (Windows arm64)
-              if: matrix.name == 'windows' && matrix.arch == 'arm64'
-              shell: powershell
-              run: |
-                  $magickExists = Get-Command magick -ErrorAction SilentlyContinue
-                  if ($magickExists) {
-                    magick docs/assets/icons/logo.png `
-                      -define icon:auto-resize=16,32,48,64,128,256 `
-                      docs/assets/icons/logo.ico
-                  } else {
-                    Write-Host "ImageMagick not available; skipping icon generation"
-                  }
-                  $vsDevCmd = $env:SPRING_VSDEVCMD
-                  $buildCommand = "call `"$vsDevCmd`" -no_logo -arch=arm64 -host_arch=arm64 && cmake --build out/build --parallel && cmake --install out/build --prefix out"
-                  cmd /c $buildCommand
-                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build (Windows arm64)
+        if: matrix.name == 'windows' && matrix.arch == 'arm64'
+        shell: powershell
+        run: |
+          $magickExists = Get-Command magick -ErrorAction SilentlyContinue
+          if ($magickExists) {
+            magick docs/assets/icons/logo.png `
+              -define icon:auto-resize=16,32,48,64,128,256 `
+              docs/assets/icons/logo.ico
+          } else {
+            Write-Host "ImageMagick not available; skipping icon generation"
+          }
+          $vsDevCmd = $env:SPRING_VSDEVCMD
+          $buildCommand = "call `"$vsDevCmd`" -no_logo -arch=arm64 -host_arch=arm64 && cmake --build out/build --parallel && cmake --install out/build --prefix out"
+          cmd /c $buildCommand
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-            - name: Prepare Artifact (Windows)
-              if: matrix.name == 'windows'
-              shell: powershell
-              run: |
-                  if (!(Test-Path release)) {
-                    New-Item -ItemType Directory -Path release
-                  }
-                  Copy-Item out/bin/spring2.exe "release/${{ matrix.artifact_name }}"
+      - name: Prepare Artifact (Windows)
+        if: matrix.name == 'windows'
+        shell: powershell
+        run: |
+          if (!(Test-Path release)) {
+            New-Item -ItemType Directory -Path release
+          }
+          Copy-Item out/bin/spring2.exe "release/${{ matrix.artifact_name }}"
 
-            - name: Upload binary for universalizing
-              if: matrix.name == 'macos'
-              uses: actions/upload-artifact@v7
-              with:
-                  name: ${{ matrix.artifact_name }}
-                  path: |
-                      out/bin/spring2
-                  retention-days: 1
-
-            - name: Upload Windows binary for installer packaging
-              if: matrix.name == 'windows'
-              uses: actions/upload-artifact@v7
-              with:
-                  name: spring2-windows-${{ matrix.arch }}-binary
-                  path: |
-                      out/bin/spring2.exe
-                  retention-days: 1
-
-            - name: Upload Artifact to Release
-              uses: softprops/action-gh-release@v3
-              if: startsWith(github.ref, 'refs/tags/')
-              with:
-                  files: |
-                      release/${{ matrix.artifact_name }}
-                      release/*.AppImage
-                      release/*.tar.gz
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    windows-installers:
-        name: Create Windows Installers
-        needs: build
-        if: always() && needs.build.result != 'cancelled'
-        runs-on: windows-latest
-        steps:
-            - name: Checkout repository
-              uses: actions/checkout@v6
-              env:
-                  GIT_CONFIG_COUNT: 1
-                  GIT_CONFIG_KEY_0: init.defaultBranch
-                  GIT_CONFIG_VALUE_0: main
-
-            - name: Download x86_64 binary
-              uses: actions/download-artifact@v8
-              env:
-                  NODE_OPTIONS: --no-deprecation
-              with:
-                  name: spring2-windows-x86_64-binary
-                  path: windows-bin/x86_64
-
-            - name: Download arm64 binary
-              uses: actions/download-artifact@v8
-              env:
-                  NODE_OPTIONS: --no-deprecation
-              with:
-                  name: spring2-windows-arm64-binary
-                  path: windows-bin/arm64
-
-            - name: Install Inno Setup
-              shell: powershell
-              run: |
-                  choco install innosetup --no-progress -y
-                  $iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
-                  if (-not $iscc) {
-                    throw 'Unable to locate Inno Setup Compiler (iscc.exe) after installation'
-                  }
-
-            - name: Resolve release version
-              shell: powershell
-              run: |
-                  $versionHeader = Get-Content src/common/version.h -Raw
-                  if ($versionHeader -notmatch 'VERSION\[\]\s*=\s*"([^"]+)"') {
-                    throw 'Unable to extract SPRING2 version from src/common/version.h'
-                  }
-
-                  $version = $Matches[1]
-                  if ($version -match '^(\d+)\.(\d+)\.(\d+)-rc\.(\d+)$') {
-                    $numericVersion = "$($Matches[1]).$($Matches[2]).$($Matches[3]).$($Matches[4])"
-                  } elseif ($version -match '^(\d+)\.(\d+)\.(\d+)$') {
-                    $numericVersion = "$($Matches[1]).$($Matches[2]).$($Matches[3]).0"
-                  } else {
-                    throw "Unsupported SPRING2 version format: $version"
-                  }
-
-                  Add-Content -Path $env:GITHUB_ENV -Value "SPRING_VERSION=$version"
-                  Add-Content -Path $env:GITHUB_ENV -Value "SPRING_WINDOWS_NUMERIC_VERSION=$numericVersion"
-
-            - name: Optionally sign Windows binaries
-              shell: powershell
-              env:
-                  WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
-                  WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
-              run: |
-                  .\tools\release\windows\sign-artifact.ps1 `
-                    -FilePath @(
-                      "$env:GITHUB_WORKSPACE\windows-bin\x86_64\spring2.exe",
-                      "$env:GITHUB_WORKSPACE\windows-bin\arm64\spring2.exe"
-                    )
-
-            - name: Build x86_64 installer
-              shell: powershell
-              run: |
-                  New-Item -ItemType Directory -Force -Path release | Out-Null
-                  $iscc = (Get-Command iscc.exe -ErrorAction Stop).Source
-                  & $iscc `
-                    "/DRepositoryRoot=$env:GITHUB_WORKSPACE" `
-                    "/DBinarySourceDir=$env:GITHUB_WORKSPACE\windows-bin\x86_64" `
-                    "/DOutputDir=$env:GITHUB_WORKSPACE\release" `
-                    "/DAppVersion=$env:SPRING_VERSION" `
-                    "/DAppNumericVersion=$env:SPRING_WINDOWS_NUMERIC_VERSION" `
-                    "/DBuildArch=x86_64" `
-                    "/DArchitecturesAllowed=x64compatible" `
-                    "/DArchitecturesInstallIn64BitMode=x64compatible" `
-                    "$env:GITHUB_WORKSPACE\tools\release\windows\spring2.iss"
-                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-            - name: Build arm64 installer
-              shell: powershell
-              run: |
-                  $iscc = (Get-Command iscc.exe -ErrorAction Stop).Source
-                  & $iscc `
-                    "/DRepositoryRoot=$env:GITHUB_WORKSPACE" `
-                    "/DBinarySourceDir=$env:GITHUB_WORKSPACE\windows-bin\arm64" `
-                    "/DOutputDir=$env:GITHUB_WORKSPACE\release" `
-                    "/DAppVersion=$env:SPRING_VERSION" `
-                    "/DAppNumericVersion=$env:SPRING_WINDOWS_NUMERIC_VERSION" `
-                    "/DBuildArch=arm64" `
-                    "/DArchitecturesAllowed=arm64" `
-                    "/DArchitecturesInstallIn64BitMode=arm64" `
-                    "$env:GITHUB_WORKSPACE\tools\release\windows\spring2.iss"
-                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-            - name: Optionally sign Windows installers
-              shell: powershell
-              env:
-                  WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
-                  WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
-              run: |
-                  .\tools\release\windows\sign-artifact.ps1 `
-                    -FilePath @(
-                      "$env:GITHUB_WORKSPACE\release\spring2-windows-x86_64-setup.exe",
-                      "$env:GITHUB_WORKSPACE\release\spring2-windows-arm64-setup.exe"
-                    )
-
-            - name: Upload Artifact to Release
-              uses: softprops/action-gh-release@v3
-              if: startsWith(github.ref, 'refs/tags/')
-              with:
-                  files: |
-                      release/spring2-windows-*-setup.exe
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    macos-universal:
-        name: Create macOS Universal DMG
-        needs: build
-        if: always() && needs.build.result != 'cancelled'
-        runs-on: macos-latest
-        steps:
-            - name: Checkout repository
-              uses: actions/checkout@v6
-              env:
-                  GIT_CONFIG_COUNT: 1
-                  GIT_CONFIG_KEY_0: init.defaultBranch
-                  GIT_CONFIG_VALUE_0: main
-
-            - name: Download arm64 binaries
-              uses: actions/download-artifact@v8
-              env:
-                  NODE_OPTIONS: --no-deprecation
-              with:
-                  name: spring2-macos-arm64
-                  path: bin-arm64
-
-            - name: Download x86_64 binaries
-              uses: actions/download-artifact@v8
-              env:
-                  NODE_OPTIONS: --no-deprecation
-              with:
-                  name: spring2-macos-x86_64
-                  path: bin-x86_64
-
-            - name: Create Universal Binaries
-              run: |
-                  mkdir -p universal-bin
-                  lipo -create bin-arm64/spring2 bin-x86_64/spring2 \
-                    -output universal-bin/spring2
-                  chmod +x universal-bin/spring2
-
-            - name: Resolve macOS package version
-              run: |
-                  SPRING_VERSION=$(python3 - <<'PY'
-                  import pathlib, re
-                  text = pathlib.Path('src/common/version.h').read_text(encoding='utf-8')
-                  match = re.search(r'VERSION\[\]\s*=\s*"([^"]+)"', text)
-                  if not match:
-                    raise SystemExit('Unable to extract SPRING2 version from src/common/version.h')
-                  version = match.group(1)
-                  rc_match = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)-rc\.(\d+)', version)
-                  if rc_match:
-                    print('.'.join(rc_match.groups()))
-                  else:
-                    stable_match = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)', version)
-                    if not stable_match:
-                      raise SystemExit(f'Unsupported SPRING2 version format: {version}')
-                    print(f'{version}.0')
-                  PY
-                  )
-                  echo "SPRING_MACOS_PKG_VERSION=$SPRING_VERSION" >> "$GITHUB_ENV"
-
-            - name: Generate macOS Icon
-              run: |
-                  mkdir spring2.iconset
-                  sips -z 16 16     docs/assets/icons/logo.png --out spring2.iconset/icon_16x16.png
-                  sips -z 32 32     docs/assets/icons/logo.png --out spring2.iconset/icon_16x16@2x.png
-                  sips -z 32 32     docs/assets/icons/logo.png --out spring2.iconset/icon_32x32.png
-                  sips -z 64 64     docs/assets/icons/logo.png --out spring2.iconset/icon_32x32@2x.png
-                  sips -z 128 128   docs/assets/icons/logo.png --out spring2.iconset/icon_128x128.png
-                  sips -z 256 256   docs/assets/icons/logo.png \
-                    --out spring2.iconset/icon_128x128@2x.png
-                  sips -z 256 256   docs/assets/icons/logo.png --out spring2.iconset/icon_256x256.png
-                  sips -z 512 512   docs/assets/icons/logo.png \
-                    --out spring2.iconset/icon_256x256@2x.png
-                  sips -z 512 512   docs/assets/icons/logo.png --out spring2.iconset/icon_512x512.png
-                  cp docs/assets/icons/logo.png spring2.iconset/icon_512x512@2x.png
-                  iconutil -c icns spring2.iconset
-                  rm -rf spring2.iconset
-
-            - name: Create DMG
-              run: |
-                  brew install create-dmg
-                  mkdir -p dmg-root
-                  cp universal-bin/spring2 dmg-root/
-                  cp tools/release/macos/README.txt dmg-root/
-                  cp tools/release/macos/install-spring2.command dmg-root/
-                  chmod +x dmg-root/spring2 dmg-root/install-spring2.command
-
-                  create-dmg \
-                    --volname "SPRING2" \
-                    --volicon "spring2.icns" \
-                    --window-pos 200 120 \
-                    --window-size 760 320 \
-                    --icon-size 100 \
-                    --icon "spring2" 180 150 \
-                    --icon "install-spring2.command" 380 150 \
-                    --icon "README.txt" 580 150 \
-                    --hide-extension "spring2" \
-                    --hide-extension "install-spring2.command" \
-                    "spring2-macos-universal.dmg" \
-                    "dmg-root/"
-
-            - name: Create PKG Installer
-              run: |
-                  mkdir -p pkg-root/usr/local/bin
-                  cp universal-bin/spring2 pkg-root/usr/local/bin/spring2
-                  chmod +x pkg-root/usr/local/bin/spring2
-
-                  pkgbuild \
-                    --root pkg-root \
-                    --identifier io.github.thisisamirv.spring2 \
-                    --version "$SPRING_MACOS_PKG_VERSION" \
-                    --install-location / \
-                    "spring2-macos-universal.pkg"
-
-            - name: Upload Artifact to Release
-              uses: softprops/action-gh-release@v3
-              if: startsWith(github.ref, 'refs/tags/')
-              with:
-                  files: |
-                      spring2-macos-universal.dmg
-                      spring2-macos-universal.pkg
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload Artifact to Release
+        uses: softprops/action-gh-release@v3
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            release/${{ matrix.artifact_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

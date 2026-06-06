@@ -2,6 +2,12 @@
 
 # Changelog
 
+## V1.0.0
+
+### Chnnged
+
+- Dropped installers as they may cause confusion, while they are not offering any substantial benefits.
+
 ## V1.0.0-rc.2
 
 ### Added
