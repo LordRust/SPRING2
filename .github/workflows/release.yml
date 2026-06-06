@@ -116,8 +116,8 @@ jobs:
             mkdir -p AppDir/usr/share/metainfo && \
             mkdir -p AppDir/usr/share/icons/hicolor/512x512/apps && \
             printf '%s\n' \
-              '<?xml version="1.0" encoding="UTF-8"?>' \
-              '<component type="desktop-application">' \
+              '<?xml version=\"1.0\" encoding=\"UTF-8\"?>' \
+              '<component type=\"desktop-application\">' \
               '  <id>io.github.thisisamirv.spring2.desktop</id>' \
               '  <name>SPRING2</name>' \
               '  <summary>FASTQ/FASTA compression and decompression tool</summary>' \
@@ -126,7 +126,7 @@ jobs:
               '  <description>' \
               '    <p>SPRING2 is a cross-platform genomic read compressor for FASTQ/FASTA workflows.</p>' \
               '  </description>' \
-              '  <launchable type="desktop-id">io.github.thisisamirv.spring2.desktop</launchable>' \
+              '  <launchable type=\"desktop-id\">io.github.thisisamirv.spring2.desktop</launchable>' \
               '</component>' \
               > AppDir/usr/share/metainfo/io.github.thisisamirv.spring2.appdata.xml && \
             printf '%s\n' \
