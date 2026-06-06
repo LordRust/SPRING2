@@ -1288,6 +1288,7 @@ spring_link_windows_system_libraries(unit-tests)
 target_compile_definitions(
     unit-tests
     PRIVATE
+        DOCTEST_CONFIG_USE_STD_HEADERS
         UNIT_TEST_ASSET_DIR="${CMAKE_SOURCE_DIR}/tests/data"
         UNIT_TEST_REFERENCE_DIR="${CMAKE_SOURCE_DIR}/tools/assay-reference"
 )
@@ -1320,6 +1321,7 @@ spring_link_windows_system_libraries(integration-tests)
 target_compile_definitions(
     integration-tests
     PRIVATE
+        DOCTEST_CONFIG_USE_STD_HEADERS
         SPRING2_EXECUTABLE=\"$<TARGET_FILE:spring2>\"
         INTEGRATION_TEST_ASSET_DIR=\"${CMAKE_SOURCE_DIR}/tests/data\"
 )
@@ -1343,6 +1345,7 @@ spring_link_windows_system_libraries(smoke-tests)
 target_compile_definitions(
     smoke-tests
     PRIVATE
+        DOCTEST_CONFIG_USE_STD_HEADERS
         SPRING2_EXECUTABLE="$<TARGET_FILE:spring2>"
         SMOKE_TEST_ASSET_DIR="${CMAKE_SOURCE_DIR}/tests/data"
         SMOKE_TEST_OUTPUT_ROOT="${CMAKE_SOURCE_DIR}/out/tests/smoke"

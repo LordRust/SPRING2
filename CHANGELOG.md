@@ -7,6 +7,7 @@
 ### Chnnged
 
 - Dropped installers as they may cause confusion, while they are not offering any substantial benefits.
+- Set `DOCTEST_CONFIG_USE_STD_HEADERS` for `unit-tests`, `integration-tests`, and `smoke-tests` so MSVC no longer emits C5285 warnings from doctest forward declarations of standard library templates.
 
 ## V1.0.0-rc.2
 
