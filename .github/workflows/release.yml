@@ -154,6 +154,12 @@ jobs:
       - name: Install macOS dependencies
         if: matrix.name == 'macos'
         run: |
+          # Remove preinstalled third-party taps that are unrelated to this build.
+          for tap in aws/tap azure/bicep hashicorp/tap; do
+            if brew tap | grep -qx "$tap"; then
+              brew untap "$tap"
+            fi
+          done
           brew update
           brew install libomp
           echo "MACOS_LIBOMP_PREFIX=$(brew --prefix libomp)" >> "$GITHUB_ENV"
