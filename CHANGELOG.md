@@ -6,6 +6,7 @@
 
 ### Chnnged
 
+- Removed the README license-restriction notice after receiving redistribution permission; SPRING2 is now published under the same license as upstream SPRING.
 - Dropped Windows installers to reduce release complexity and confusion; releases now ship Windows standalone binaries, Linux AppImages, and macOS `.app` bundles.
 - Set `DOCTEST_CONFIG_USE_STD_HEADERS` for `unit-tests`, `integration-tests`, and `smoke-tests` so MSVC no longer emits C5285 warnings from doctest forward declarations of standard library templates.
 
