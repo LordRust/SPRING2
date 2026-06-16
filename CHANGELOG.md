@@ -15,6 +15,7 @@
 - Removed the README license-restriction notice after receiving redistribution permission; SPRING2 is now published under the same license as upstream SPRING.
 - Dropped Windows installers to reduce release complexity and confusion; releases now ship Windows standalone binaries, Linux AppImages, and macOS `.app` bundles.
 - Downgraded minimum CMake dependency version to 3.31+ to support more platforms.
+- Replaced the native C++ `embed-reference` codegen executable with an equivalent Python script (`tools/codegen/embed_reference.py`). The C++ binary was blocked at build time by Windows Device Guard policy on hardened runners and developer machines. The Python interpreter is signed and trusted by Device Guard. Python's `zlib.compress()` produces standard RFC 1950 zlib output, which is fully compatible with the `libdeflate_zlib_decompress` runtime path. CMake now locates the interpreter via `find_package(Python3 REQUIRED COMPONENTS Interpreter)` instead of building and invoking a custom executable.
 
 ### Fixed
 

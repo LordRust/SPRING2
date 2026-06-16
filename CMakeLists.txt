@@ -897,25 +897,20 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 add_vendor_subdirectory_no_install("${LIBARCHIVE_DIR}" "${CMAKE_BINARY_DIR}/libarchive-build" EXCLUDE_FROM_ALL)
 
 # Reference embedding and shared source lists.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/generated)
 set(REFERENCE_GENERATED ${CMAKE_BINARY_DIR}/generated/reference_data.cpp)
-
-add_executable(
-    embed-reference
-    ${CMAKE_SOURCE_DIR}/tools/codegen/embed_reference.cpp
-)
-target_link_libraries(embed-reference PRIVATE libdeflate::libdeflate_static)
 
 add_custom_command(
     OUTPUT ${REFERENCE_GENERATED}
     COMMAND
-        $<TARGET_FILE:embed-reference>
+        ${Python3_EXECUTABLE}
+        ${CMAKE_SOURCE_DIR}/tools/codegen/embed_reference.py
         ${CMAKE_SOURCE_DIR}/tools/assay-reference/ref_hg38_gencode49.fa
         ${REFERENCE_GENERATED}
     DEPENDS
-        embed-reference
+        ${CMAKE_SOURCE_DIR}/tools/codegen/embed_reference.py
         ${CMAKE_SOURCE_DIR}/tools/assay-reference/ref_hg38_gencode49.fa
-        ${CMAKE_SOURCE_DIR}/tools/codegen/embed_reference.cpp
     COMMENT "Embedding reference data into binary"
 )
 
