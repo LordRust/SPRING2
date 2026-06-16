@@ -5,7 +5,6 @@
 #include "hasher.hpp"
 #include "search.hpp"
 
-
 namespace pthash {
 
 template <typename Hasher, typename Bucketer>
@@ -249,7 +248,8 @@ private:
       m_bucket.init(begin, m_bucket_size);
       if ((m_bucket.begin() - 1) == end and m_bucket_size != 0) {
         --m_bucket_size;
-        --m_buffers_it;
+        if (m_bucket_size != 0)
+          --m_buffers_it; // avoid decrementing iterator past begin()
         skip_empty_buckets();
       }
     }
@@ -264,6 +264,8 @@ private:
     void skip_empty_buckets() {
       while (m_bucket_size != 0 and m_buffers_it->empty()) {
         --m_bucket_size;
+        if (m_bucket_size == 0)
+          break; // avoid decrementing iterator past begin()
         --m_buffers_it;
       }
       if (m_bucket_size != 0)

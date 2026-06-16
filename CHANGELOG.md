@@ -10,7 +10,7 @@
 - Added conda reliability checks to CI (`.github/workflows/ci.yml`) that build the conda recipe and run smoke tests (`spring2 --version`, `spring2 --help`) from a locally installed conda artifact, without publishing.
 - Added conda publishing documentation (`docs/dev/CONDA_PUBLISHING.md`) covering local build/test, Anaconda channel upload, and conda-forge feedstock flow.
 
-### Chnnged
+### Changed
 
 - Removed the README license-restriction notice after receiving redistribution permission; SPRING2 is now published under the same license as upstream SPRING.
 - Dropped Windows installers to reduce release complexity and confusion; releases now ship Windows standalone binaries, Linux AppImages, and macOS `.app` bundles.
@@ -18,6 +18,7 @@
 
 ### Fixed
 
+- Fixed an MSVC-specific crash (`abort()` / segfault, exit code 3) during MPHF construction in the vendored pthash library. `buckets_iterator_t::skip_empty_buckets()` and `operator++` unconditionally decremented `m_buffers_it` even after `m_bucket_size` reached zero, walking a `std::vector::const_iterator` before `begin()`. Under MSVC Debug (`_ITERATOR_DEBUG_LEVEL=2`) this triggers an iterator-bounds assertion; under MSVC Release the resulting undefined behaviour causes a crash. Fixed by guarding both decrement sites so `m_buffers_it` is only decremented when `m_bucket_size` is still non-zero.
 - Set `DOCTEST_CONFIG_USE_STD_HEADERS` for `unit-tests`, `integration-tests`, and `smoke-tests` so MSVC no longer emits C5285 warnings from doctest forward declarations of standard library templates.
 
 ## V1.0.0-rc.2
