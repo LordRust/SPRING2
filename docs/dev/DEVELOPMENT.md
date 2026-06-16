@@ -5,6 +5,7 @@ This guide is for developers who want to contribute to SPRING2 or maintain the b
 ## Project Structure
 
 - `src/`: Core C++20 source files and headers.
+- `conda/recipe/`: Conda build recipe and platform build scripts for package publishing.
 - `vendor/`: Bundled third-party dependencies as `.tar.xz` archives.
 - `docs/user/`, `docs/dev/`, `docs/assays/`: User, developer, and assay-specific documentation.
 - `tools/dev/`: Developer workflow entrypoints for linting, smoke checks, and Docker environments.
@@ -36,7 +37,7 @@ Three Docker environments are available in `tools/dev/docker/`:
 
 All environments include:
 
-- CMake 4.2.0
+- CMake 3.31+ (the current Docker images may provide newer versions)
 - Ninja build system
 - NASM assembler
 - Python 3 with pip
@@ -280,3 +281,5 @@ The project uses GitHub Actions for automated multi-architecture releases.
   - Linux: AppImage per architecture (`spring2-linux-*.AppImage`)
   - macOS: zipped `.app` bundles per architecture (`spring2-macos-*.app.zip`)
   - Windows: standalone executable per architecture (`spring2-windows-*.exe`)
+
+For conda packaging and publication steps, see `docs/dev/CONDA_PUBLISHING.md`.

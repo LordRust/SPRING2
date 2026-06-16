@@ -25,7 +25,7 @@ struct compression_io_config {
   std::string input_path_1;
   std::string input_path_2;
   std::string archive_path;
-  bool paired_end;
+  bool paired_end = false;
 };
 
 struct decompression_io_config {
@@ -37,8 +37,8 @@ struct decompression_io_config {
 struct prepared_compression_inputs {
   std::string input_path_1;
   std::string input_path_2;
-  bool input_1_was_gzipped;
-  bool input_2_was_gzipped;
+  bool input_1_was_gzipped = false;
+  bool input_2_was_gzipped = false;
 };
 
 enum class input_record_format : uint8_t { fastq, fasta };

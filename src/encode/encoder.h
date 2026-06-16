@@ -23,10 +23,13 @@ struct compression_params;
 template <size_t bitset_size> struct encoder_global_b;
 
 struct encoder_global {
-  uint32_t numreads, numreads_s, numreads_N;
+  uint32_t numreads = 0;
+  uint32_t numreads_s = 0;
+  uint32_t numreads_N = 0;
   int numdict_s = NUM_DICT_ENCODER;
 
-  int max_readlen, num_thr;
+  int max_readlen = 0;
+  int num_thr = 0;
 
   std::string basedir;
   std::string outfile_unaligned;
@@ -35,16 +38,16 @@ struct encoder_global {
   std::string outfile_noise;
   std::string outfile_noisepos;
 
-  char enc_noise[128][128];
+  char enc_noise[128][128] = {{0}};
   bool bisulfite_ternary = false;
 };
 
 struct contig_reads {
   std::string read;
-  int64_t pos;
-  char RC;
-  uint32_t order;
-  uint16_t read_length;
+  int64_t pos = 0;
+  char RC = 0;
+  uint32_t order = 0;
+  uint16_t read_length = 0;
 };
 
 struct encoded_metadata_buffer {

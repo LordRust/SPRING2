@@ -719,7 +719,7 @@ reorder_compress_quality_id(const post_encode_side_stream_artifact &artifact,
 
       const uint32_t file_read_count = reads_per_file(num_reads, paired_end);
       struct TailRecord {
-        uint16_t info;
+        uint16_t info = 0;
         std::string qual;
       };
       std::vector<TailRecord> tails(file_read_count);
@@ -784,7 +784,7 @@ reorder_compress_quality_id(const post_encode_side_stream_artifact &artifact,
 
       const uint32_t file_read_count = reads_per_file(num_reads, paired_end);
       struct AdapterRecord {
-        uint8_t info;
+        uint8_t info = 0;
         std::string qual;
       };
       std::vector<AdapterRecord> adapters(file_read_count);
@@ -943,7 +943,7 @@ reorder_compress_quality_id(const std::string &artifact_root_dir,
 
       const uint32_t file_read_count = reads_per_file(num_reads, paired_end);
       struct TailRecord {
-        uint16_t info;
+        uint16_t info = 0;
         std::string qual;
       };
       std::vector<TailRecord> tails(file_read_count);
@@ -999,7 +999,7 @@ reorder_compress_quality_id(const std::string &artifact_root_dir,
 
       const uint32_t file_read_count = reads_per_file(num_reads, paired_end);
       struct AdapterRecord {
-        uint8_t info;
+        uint8_t info = 0;
         std::string qual;
       };
       std::vector<AdapterRecord> adapters(file_read_count);

@@ -16,8 +16,8 @@
 namespace spring {
 
 struct reference_chunk {
-  uint64_t start_offset;
-  uint64_t size;
+  uint64_t start_offset = 0;
+  uint64_t size = 0;
   std::string owned_data;
   const char *data = nullptr;
 };

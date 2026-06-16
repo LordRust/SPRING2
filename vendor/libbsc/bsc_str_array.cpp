@@ -64,9 +64,9 @@ namespace spring {
 namespace bsc {
 
 class bsc_str_array_class {
-  std::string *str_array;
-  uint32_t size_str_array;
-  uint32_t *str_lengths;
+  std::string *str_array = nullptr;
+  uint32_t size_str_array = 0;
+  uint32_t *str_lengths = nullptr;
   uint32_t pos_in_str_array = 0;
   uint32_t pos_in_current_str = 0;
 
@@ -114,7 +114,7 @@ class bsc_str_array_class {
 #define BSC_FTELL ftell
 #define BSC_FILEOFFSET long
 
-  [[maybe_unused]] int segmentedBlock[256];
+  [[maybe_unused]] int segmentedBlock[256] = {0};
 
   int read_str_array(unsigned char *buf, int bsize) {
 

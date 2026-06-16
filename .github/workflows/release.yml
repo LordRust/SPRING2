@@ -260,8 +260,12 @@ jobs:
               '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.ARM64',
               '-property', 'installationPath'
             )
-            $resolvedInstallationPath = & $vsWhere @vsWhereArgs | Select-Object -First 1
-            if ($LASTEXITCODE -eq 0 -and $resolvedInstallationPath) {
+            # Collect all output first so vswhere runs to completion and is not
+            # killed by an early Select-Object pipe close (which would set
+            # $LASTEXITCODE to non-zero even when a valid path was found).
+            $vsWhereOutput = @(& $vsWhere @vsWhereArgs)
+            $resolvedInstallationPath = if ($vsWhereOutput.Count -gt 0) { $vsWhereOutput[0].Trim() } else { $null }
+            if ($resolvedInstallationPath) {
               $selectedGenerator = $candidate.Generator
               $installationPath = $resolvedInstallationPath
               break

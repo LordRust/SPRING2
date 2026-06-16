@@ -109,7 +109,7 @@ class bsc_class {
 #define BSC_FTELL ftell
 #define BSC_FILEOFFSET long
 
-  int segmentedBlock[256];
+  int segmentedBlock[256] = {0};
 
   void Compression(char *argv[]) {
     if (!paramEnableLZP) {

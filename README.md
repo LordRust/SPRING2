@@ -14,7 +14,7 @@
 SPRING2 is a compressor for FASTQ and FASTA sequencing data, including paired-end data and gzipped FASTQ inputs. It is built on top of the original **[SPRING](https://github.com/shubhamchandak94/SPRING)** project and represents a substantial modernization of that codebase.
 
 > [!TIP]
-> SPRING2 substantially modernizes the original SPRING codebase. It upgrades the build system to C++20 and CMake 4.2, removes the remaining Boost dependency, adds first-class cross-platform support for Linux, macOS, and native Windows builds, and expands the runtime to cover grouped lane archives, assay-aware compression behavior, preview and audit workflows, richer gzip metadata preservation, and cleaner developer and benchmarking tooling.
+> SPRING2 substantially modernizes the original SPRING codebase. It upgrades the build system to C++20 and CMake 3.31+, removes the remaining Boost dependency, adds first-class cross-platform support for Linux, macOS, and native Windows builds, and expands the runtime to cover grouped lane archives, assay-aware compression behavior, preview and audit workflows, richer gzip metadata preservation, and cleaner developer and benchmarking tooling.
 
 ## Features
 
@@ -44,6 +44,20 @@ SPRING2 is built and validated on:
 > <https://spring2.readthedocs.io/>
 
 ## Installation
+
+### Conda (conda-forge)
+
+If you are using conda environments, install SPRING2 with:
+
+```bash
+conda install -c conda-forge spring2
+```
+
+You can then verify the install:
+
+```bash
+spring2 --version
+```
 
 ### Pre-built Binaries
 
