@@ -216,7 +216,7 @@ We use the **doctest** framework for both granular unit testing and high-level i
 ```bash
 cmake -S . -B out/build
 cmake --build out/build --parallel --target unit-tests integration-tests smoke-tests
-ctest --test-dir out/build --output-on-failure
+ctest --test-dir out/build -C Debug --output-on-failure
 ```
 
 If you already built only the main executable, rebuild the test targets before invoking `ctest`:
