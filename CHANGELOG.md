@@ -9,6 +9,7 @@
 - Added first-class conda packaging support with an in-repo recipe (`conda/recipe/meta.yaml`) and platform build scripts (`conda/recipe/build.sh`, `conda/recipe/bld.bat`) so SPRING2 can be built as a conda package on Linux, macOS, and Windows.
 - Added conda reliability checks to CI (`.github/workflows/ci.yml`) that build the conda recipe and run smoke tests (`spring2 --version`, `spring2 --help`) from a locally installed conda artifact, without publishing.
 - Added conda publishing documentation (`docs/dev/CONDA_PUBLISHING.md`) covering local build/test, Anaconda channel upload, and conda-forge feedstock flow.
+- Added tests to all CI runners to ensure full platform and compiler compability.
 
 ### Changed
 

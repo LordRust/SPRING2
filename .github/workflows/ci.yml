@@ -365,7 +365,7 @@ jobs:
           echo "All round-trip tests passed."
 
   additional-arch-builds:
-    name: Build Only / ${{ matrix.name }}
+    name: Build and Test / ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -520,7 +520,8 @@ jobs:
               -DCMAKE_C_FLAGS='-march=armv8-a+crc' \
               -DCMAKE_CXX_FLAGS='-march=armv8-a+crc' \
               -DSPRING_ENABLE_IPO=OFF && \
-            cmake --build out/build-${{ matrix.os }} --parallel
+            cmake --build out/build-${{ matrix.os }} --parallel && \
+            ctest --test-dir out/build-${{ matrix.os }} --output-on-failure --verbose
           "
 
       - name: Configure macOS arm64
@@ -551,6 +552,12 @@ jobs:
         run: |
           cmake --build out/build-${{ matrix.os }} --parallel
 
+      - name: Run tests on macOS arm64
+        if: matrix.name == 'macOS arm64'
+        shell: bash
+        run: |
+          ctest --test-dir out/build-${{ matrix.os }} --output-on-failure --verbose
+
       - name: Build Windows arm64 target
         if: matrix.name == 'Windows arm64'
         shell: powershell
@@ -560,8 +567,17 @@ jobs:
           cmd /c $buildCommand
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Run tests on Windows arm64
+        if: matrix.name == 'Windows arm64'
+        shell: powershell
+        run: |
+          $vsDevCmd = $env:SPRING_VSDEVCMD
+          $testCommand = "call `"$vsDevCmd`" -no_logo -arch=arm64 -host_arch=arm64 && ctest --test-dir ${{ matrix.build_dir }} --output-on-failure --verbose"
+          cmd /c $testCommand
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
   compiler-compatibility-builds:
-    name: Compiler Compatibility / ${{ matrix.name }}
+    name: Build and Test / ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -630,6 +646,10 @@ jobs:
       - name: Build Linux Clang target
         if: matrix.name == 'Linux Clang'
         run: cmake --build ${{ matrix.build_dir }} --parallel
+
+      - name: Run tests on Linux Clang
+        if: matrix.name == 'Linux Clang'
+        run: ctest --test-dir ${{ matrix.build_dir }} --output-on-failure --verbose
 
       - name: Set up MSYS2 Clang environment
         if: matrix.name == 'Windows Clang'
@@ -711,6 +731,11 @@ jobs:
           $env:CC='clang'
           $env:CXX='clang++'
           cmake --build ${{ matrix.build_dir }} --parallel
+
+      - name: Run tests on Windows Clang
+        if: matrix.name == 'Windows Clang'
+        shell: powershell
+        run: ctest --test-dir ${{ matrix.build_dir }} --output-on-failure --verbose
 
       - name: Resolve Visual Studio environment
         if: matrix.name == 'Windows ClangCL' || matrix.name == 'Windows MSVC'
@@ -806,6 +831,15 @@ jobs:
           cmd /c $buildCommand
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Run tests on Windows MSVC
+        if: matrix.name == 'Windows MSVC'
+        shell: powershell
+        run: |
+          $vsDevCmd = $env:SPRING_VSDEVCMD
+          $testCommand = "call `"$vsDevCmd`" -no_logo -arch=amd64 -host_arch=amd64 && ctest --test-dir ${{ matrix.build_dir }} --output-on-failure --verbose"
+          cmd /c $testCommand
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Build Windows ClangCL target
         if: matrix.name == 'Windows ClangCL'
         shell: powershell
@@ -816,6 +850,15 @@ jobs:
           $vsDevCmd = $env:SPRING_VSDEVCMD
           $buildCommand = "call `"$vsDevCmd`" -no_logo -arch=amd64 -host_arch=amd64 && cmake --build ${{ matrix.build_dir }} --parallel"
           cmd /c $buildCommand
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run tests on Windows ClangCL
+        if: matrix.name == 'Windows ClangCL'
+        shell: powershell
+        run: |
+          $vsDevCmd = $env:SPRING_VSDEVCMD
+          $testCommand = "call `"$vsDevCmd`" -no_logo -arch=amd64 -host_arch=amd64 && ctest --test-dir ${{ matrix.build_dir }} --output-on-failure --verbose"
+          cmd /c $testCommand
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   sanitizers:
