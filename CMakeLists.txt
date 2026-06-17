@@ -848,6 +848,48 @@ set(LIBDEFLATE_DIR ${build_vendor_dir}/libdeflate)
 set(QVZ_DIR ${build_vendor_dir}/qvz)
 set(LIBARCHIVE_DIR ${build_vendor_dir}/libarchive)
 set(include_dir ${CMAKE_SOURCE_DIR}/src)
+
+# Workaround for ClangCL x64 miscompilation on Windows.
+# ClangCL with /O2 miscompiles various code paths for complex real-world inputs
+# (e.g., reads >80bp, varied quality, complex IDs), causing access violations
+# (0xC0000005). The issue affects both vendor libraries and the main application.
+# We override the Release-build optimization flags globally in this scope so
+# that all targets � including spring2.exe and the test executables � compile
+# with /Od. Vendor subdirectories that already apply this override locally
+# (libbsc, cloudflare_zlib) will continue to work correctly.
+if(
+    WIN32
+    AND SPRING_MSVC_FRONTEND
+    AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
+    AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|aarch64)$"
+)
+    get_filename_component(
+        _spring_compiler_name_we
+        "${CMAKE_CXX_COMPILER}"
+        NAME_WE
+    )
+    if(_spring_compiler_name_we STREQUAL "clang-cl")
+        foreach(cfg RELEASE RELWITHDEBINFO MINSIZEREL)
+            string(
+                REGEX REPLACE "/O[0-9dtx]"
+                "/Od"
+                CMAKE_C_FLAGS_${cfg}
+                "${CMAKE_C_FLAGS_${cfg}}"
+            )
+            string(
+                REGEX REPLACE "/O[0-9dtx]"
+                "/Od"
+                CMAKE_CXX_FLAGS_${cfg}
+                "${CMAKE_CXX_FLAGS_${cfg}}"
+            )
+        endforeach()
+        message(
+            NOTICE
+            "Using /Od (no optimization) globally for ClangCL x64 to avoid access violations"
+        )
+    endif()
+endif()
+
 add_vendor_subdirectory_no_install("${PTHASH_DIR}" "${CMAKE_BINARY_DIR}/pthash-build")
 
 # Zstd build configuration
