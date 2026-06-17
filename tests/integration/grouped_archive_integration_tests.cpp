@@ -82,12 +82,15 @@ TEST_CASE(
 
   fs::remove(fs::path(nested_read_dir) / "_repack_tmp.tar");
   REQUIRE(
-      std::system(("cd " + nested_read_dir + " && tar -cf _repack_tmp.tar *")
+      std::system(("cd " + nested_read_dir +
+                   " && tar -cf _repack_tmp.tar --exclude _repack_tmp.tar *")
                       .c_str()) == 0);
   fs::rename(fs::path(nested_read_dir) / "_repack_tmp.tar", read_archive);
   fs::remove(fs::path(corrupt_dir) / "_repack_tmp.tar");
-  REQUIRE(std::system(("cd " + corrupt_dir + " && tar -cf _repack_tmp.tar *")
-                          .c_str()) == 0);
+  REQUIRE(
+      std::system(("cd " + corrupt_dir +
+                   " && tar -cf _repack_tmp.tar --exclude _repack_tmp.tar *")
+                      .c_str()) == 0);
   fs::rename(fs::path(corrupt_dir) / "_repack_tmp.tar", corrupted_archive_path);
 
   const std::string corrupt_audit_cmd = std::string(SPRING2_EXECUTABLE) +
@@ -260,8 +263,10 @@ TEST_CASE("Grouped decompression rejects invalid read3 alias metadata") {
   replace_exact_in_file(extract_dir + "/bundle.meta", "read3_alias_source=R1",
                         "read3_alias_source=BAD");
   fs::remove(fs::path(extract_dir) / "_repack_tmp.tar");
-  REQUIRE(std::system(("cd " + extract_dir + " && tar -cf _repack_tmp.tar *")
-                          .c_str()) == 0);
+  REQUIRE(
+      std::system(("cd " + extract_dir +
+                   " && tar -cf _repack_tmp.tar --exclude _repack_tmp.tar *")
+                      .c_str()) == 0);
   fs::rename(fs::path(extract_dir) / "_repack_tmp.tar", corrupted_archive);
 
   const std::string decompress_cmd =
@@ -302,8 +307,10 @@ TEST_CASE(
                         "has_index=0");
   replace_exact_in_file(extract_dir + "/bundle.meta", "has_i2=0", "has_i2=1");
   fs::remove(fs::path(extract_dir) / "_repack_tmp.tar");
-  REQUIRE(std::system(("cd " + extract_dir + " && tar -cf _repack_tmp.tar *")
-                          .c_str()) == 0);
+  REQUIRE(
+      std::system(("cd " + extract_dir +
+                   " && tar -cf _repack_tmp.tar --exclude _repack_tmp.tar *")
+                      .c_str()) == 0);
   fs::rename(fs::path(extract_dir) / "_repack_tmp.tar", corrupted_archive);
 
   const std::string preview_cmd = std::string(SPRING2_EXECUTABLE) + " -p " +

@@ -176,8 +176,10 @@ TEST_CASE("Paired gzip outputs preserve per-stream compression profile") {
   }
 
   fs::remove(fs::path(extract_dir) / "_repack_tmp.tar");
-  REQUIRE(std::system(("cd " + extract_dir + " && tar -cf _repack_tmp.tar *")
-                          .c_str()) == 0);
+  REQUIRE(
+      std::system(("cd " + extract_dir +
+                   " && tar -cf _repack_tmp.tar --exclude _repack_tmp.tar *")
+                      .c_str()) == 0);
   fs::rename(fs::path(extract_dir) / "_repack_tmp.tar", archive_path);
 
   run_spring(decompress_cmd);
