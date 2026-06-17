@@ -67,8 +67,29 @@ if(WIN32)
     if(needs_zlib_workaround)
         if(use_msvc_flag_syntax)
             # Use /Od (no optimization) for MSVC and ClangCL
-            # /O1 still caused crashes on ClangCL, so disable optimization entirely
-            target_compile_options(spring_cloudflare_zlib PRIVATE /Od)
+            # Set compile flags on each source file to override CMake defaults
+            set(zlib_sources
+                adler32.c
+                compress.c
+                crc32.c
+                deflate.c
+                gzclose.c
+                gzlib.c
+                gzread.c
+                gzwrite.c
+                inffast.c
+                inflate.c
+                inftrees.c
+                trees.c
+                uncompr.c
+                zutil.c
+            )
+            foreach(source_file ${zlib_sources})
+                set_source_files_properties(
+                    ${source_file}
+                    PROPERTIES COMPILE_FLAGS "/Od"
+                )
+            endforeach()
             message(
                 NOTICE
                 "Using /Od (no optimization) for zlib on Windows (${workaround_reason}) to avoid access violations"
