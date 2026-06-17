@@ -271,10 +271,16 @@ void decompress_short(const decompression_archive_artifact &artifact,
       }
 
       std::exception_ptr omp_exception;
-#pragma omp parallel
-      {
+      const int num_blocks_in_step =
+          static_cast<int>((static_cast<uint64_t>(num_reads_cur_step) +
+                            num_reads_per_block - 1) /
+                           num_reads_per_block);
+#pragma omp parallel for num_threads(archive_encoding_thread_count)            \
+    schedule(static, 1)
+      for (int thread_id_int = 0; thread_id_int < num_blocks_in_step;
+           ++thread_id_int) {
         try {
-          const uint64_t thread_id = omp_get_thread_num();
+          const uint64_t thread_id = static_cast<uint64_t>(thread_id_int);
           if (thread_id * num_reads_per_block < num_reads_cur_step) {
             const uint32_t thread_read_count = compute_thread_read_count(
                 num_reads_cur_step, num_reads_per_block, thread_id);
@@ -746,10 +752,16 @@ void decompress_long(const decompression_archive_artifact &artifact,
       }
 
       std::exception_ptr omp_exception;
-#pragma omp parallel
-      {
+      const int num_blocks_in_step =
+          static_cast<int>((static_cast<uint64_t>(num_reads_cur_step) +
+                            num_reads_per_block - 1) /
+                           num_reads_per_block);
+#pragma omp parallel for num_threads(archive_encoding_thread_count)            \
+    schedule(static, 1)
+      for (int thread_id_int = 0; thread_id_int < num_blocks_in_step;
+           ++thread_id_int) {
         try {
-          const uint64_t thread_id = omp_get_thread_num();
+          const uint64_t thread_id = static_cast<uint64_t>(thread_id_int);
           if (thread_id * num_reads_per_block < num_reads_cur_step) {
             const uint32_t thread_read_count = compute_thread_read_count(
                 num_reads_cur_step, num_reads_per_block, thread_id);
