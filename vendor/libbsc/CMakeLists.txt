@@ -113,6 +113,18 @@ if(
             CMAKE_CXX_FLAGS_${cfg}
             "${CMAKE_CXX_FLAGS_${cfg}}"
         )
+        string(
+            REGEX REPLACE "/Ob[0-9]"
+            ""
+            CMAKE_C_FLAGS_${cfg}
+            "${CMAKE_C_FLAGS_${cfg}}"
+        )
+        string(
+            REGEX REPLACE "/Ob[0-9]"
+            ""
+            CMAKE_CXX_FLAGS_${cfg}
+            "${CMAKE_CXX_FLAGS_${cfg}}"
+        )
     endforeach()
     message(
         NOTICE

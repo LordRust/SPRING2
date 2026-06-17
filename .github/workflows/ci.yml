@@ -445,7 +445,11 @@ jobs:
           $ninjaExe = $env:SPRING_WINDOWS_NINJA -replace '\\','/'
           $nasmExe = $env:SPRING_WINDOWS_NASM -replace '\\','/'
           $arch = if ('${{ matrix.windows_toolchain }}' -eq 'msvc-arm64') { 'arm64' } else { 'amd64' }
-          $configureCommand = "call `"$vsDevCmd`" -no_logo -arch=$arch -host_arch=$arch && set CC=${{ matrix.cc }} && set CXX=${{ matrix.cxx }} && cmake -S . -B ${{ matrix.build_dir }} -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_MAKE_PROGRAM=`"$ninjaExe`" -DSPRING_NASM_EXECUTABLE=`"$nasmExe`""
+          # Use Debug for ClangCL to enable /RTC1 runtime error checks and the
+          # debug MSVC CRT, which catches memory/stack errors that survive /Od.
+          # MSVC and MSVC ARM64 use Release as usual.
+          $buildType = if ('${{ matrix.windows_toolchain }}' -eq 'clangcl') { 'Debug' } else { 'Release' }
+          $configureCommand = "call `"$vsDevCmd`" -no_logo -arch=$arch -host_arch=$arch && set CC=${{ matrix.cc }} && set CXX=${{ matrix.cxx }} && cmake -S . -B ${{ matrix.build_dir }} -G Ninja -DCMAKE_BUILD_TYPE=$buildType -DCMAKE_MAKE_PROGRAM=`"$ninjaExe`" -DSPRING_NASM_EXECUTABLE=`"$nasmExe`""
           cmd /c $configureCommand
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

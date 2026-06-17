@@ -73,6 +73,7 @@ if(WIN32)
             foreach(cfg RELEASE RELWITHDEBINFO MINSIZEREL)
                 set(flags "${CMAKE_C_FLAGS_${cfg}}")
                 string(REGEX REPLACE "/O[0-9dtx]" "/Od" flags "${flags}")
+                string(REGEX REPLACE "/Ob[0-9]" "" flags "${flags}")
                 set(CMAKE_C_FLAGS_${cfg} "${flags}")
             endforeach()
             message(
