@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import argparse
 import concurrent.futures
 import ctypes
 import json
@@ -18,8 +19,9 @@ from dataclasses import dataclass
 from typing import Iterable
 
 ROOT_DIR = pathlib.Path(__file__).resolve().parents[3]
-BUILD_DIR = ROOT_DIR / "out" / "build"
-BUILD_COMPILE_COMMANDS = BUILD_DIR / "compile_commands.json"
+DEFAULT_BUILD_DIR = ROOT_DIR / "out" / "build"
+BUILD_DIR = DEFAULT_BUILD_DIR  # Will be updated by parse_args
+BUILD_COMPILE_COMMANDS = BUILD_DIR / "compile_commands.json"  # Will be updated
 WORKSPACE_COMPILE_COMMANDS = ROOT_DIR / "out" / "clangd" / "compile_commands.json"
 DEFAULT_CPP_ROOTS = (ROOT_DIR / "src", ROOT_DIR / "vendor")
 SUMMARY_LINE_PATTERN = re.compile(
@@ -702,8 +704,34 @@ def run_parallel_jobs(work_items: list[tuple[str, list[str]]], job_count: int) -
     return overall_status
 
 
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Cross-platform lint driver for the SPRING2 repository."
+    )
+    parser.add_argument(
+        "--build-dir",
+        "-b",
+        type=pathlib.Path,
+        default=DEFAULT_BUILD_DIR,
+        help=f"Build directory containing compile_commands.json (default: {DEFAULT_BUILD_DIR})",
+    )
+    parser.add_argument(
+        "targets",
+        nargs="*",
+        default=[str(ROOT_DIR / "src"), str(ROOT_DIR / "vendor")],
+        help="Directories or files to lint (default: src and vendor)",
+    )
+    return parser.parse_args()
+
+
 def main() -> int:
     """Run repository linting for the requested paths."""
+    global BUILD_DIR, BUILD_COMPILE_COMMANDS
+
+    args = parse_args()
+    BUILD_DIR = args.build_dir.resolve()
+    BUILD_COMPILE_COMMANDS = BUILD_DIR / "compile_commands.json"
 
     clang_tidy_bin = find_required_command(
         ("clang-tidy", "clang-tidy-18", "clang-tidy-17", "clang-tidy-16"),
@@ -714,11 +742,7 @@ def main() -> int:
     )
     lint_jobs = resolve_parallel_job_count()
 
-    lint_targets = (
-        sys.argv[1:]
-        if len(sys.argv) > 1
-        else [str(ROOT_DIR / "src"), str(ROOT_DIR / "vendor")]
-    )
+    lint_targets = args.targets
     cpp_files = collect_cpp_sources(lint_targets)
     python_files = collect_python_sources(lint_targets)
 

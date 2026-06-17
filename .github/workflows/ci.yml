@@ -496,19 +496,19 @@ jobs:
 
       - name: Run lint on Linux (non-Docker)
         if: runner.os == 'Linux' && matrix.use_docker != true
-        run: python3 tools/dev/lint/lint.py
+        run: python3 tools/dev/lint/lint.py --build-dir ${{ matrix.build_dir }}
 
       - name: Run lint on macOS
         if: runner.os == 'macOS'
         shell: bash
         run: |
           export PATH="$HOMEBREW_LLVM_BIN:$PATH"
-          python3 tools/dev/lint/lint.py
+          python3 tools/dev/lint/lint.py --build-dir ${{ matrix.build_dir }}
 
       - name: Run lint on Windows
         if: runner.os == 'Windows' && matrix.windows_toolchain != 'msvc-arm64'
         shell: powershell
-        run: py -3 .\tools\dev\lint\lint.py
+        run: py -3 .\tools\dev\lint\lint.py --build-dir ${{ matrix.build_dir }}
 
       - name: Run cppcheck on Linux (non-Docker)
         if: runner.os == 'Linux' && matrix.use_docker != true
@@ -622,14 +622,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sanitizer: [asan_ubsan, tsan]
+        sanitizer: [ASan and UBSan, TSan]
         include:
-          - sanitizer: asan_ubsan
+          - sanitizer: ASan and UBSan
             build_dir: out/build-asan
             san_flags: "-g -O1 -fno-omit-frame-pointer -fsanitize=address,undefined"
             ld_flags: "-fsanitize=address,undefined"
             options: "ASAN_OPTIONS=detect_leaks=1:abort_on_error=1"
-          - sanitizer: tsan
+          - sanitizer: TSan
             build_dir: out/build-tsan
             san_flags: "-g -O1 -fno-omit-frame-pointer -fsanitize=thread"
             ld_flags: "-fsanitize=thread"
@@ -666,7 +666,7 @@ jobs:
 
       - name: Configure CMake with sanitizer flags
         run: |
-          if [ "${{ matrix.sanitizer }}" = "tsan" ]; then
+          if [ "${{ matrix.sanitizer }}" = "TSan" ]; then
             echo "TSAN_OPTIONS=halt_on_error=1:suppressions=$GITHUB_WORKSPACE/tests/support/tsan.supp" >> $GITHUB_ENV
           else
             echo "${{ matrix.options }}" >> $GITHUB_ENV
