@@ -12,19 +12,87 @@ permissions:
   contents: read
 
 jobs:
-  build-test-and-analysis:
+  ci:
     name: CI / ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
+          # Linux builds
           - os: ubuntu-latest
-            name: Linux
+            name: Linux x64 GCC
+            cc: gcc
+            cxx: g++
+            ninja_path: tools/host/ninja/linux/ninja
+            build_dir: out/build
+
+          - os: ubuntu-latest
+            name: Linux x64 Clang
+            cc: clang
+            cxx: clang++
+            ninja_path: tools/host/ninja/linux/ninja
+            build_dir: out/build-linux-clang
+            extra_deps: clang lld
+
+          - os: ubuntu-24.04-arm
+            name: Linux ARM64 GCC
+            cc: gcc
+            cxx: g++
+            ninja_path: tools/host/ninja/linux-aarch64/ninja
+            build_dir: out/build-linux-arm64
+            use_docker: true
+
+          # macOS builds
           - os: macos-latest
-            name: macOS
+            name: macOS x64 Clang
+            cc: clang
+            cxx: clang++
+            ninja_path: tools/host/ninja/mac/ninja
+            build_dir: out/build
+
+          - os: macos-latest
+            name: macOS ARM64 Clang
+            cc: clang
+            cxx: clang++
+            ninja_path: tools/host/ninja/mac/ninja
+            build_dir: out/build-macos-arm64
+
+          # Windows builds
           - os: windows-latest
-            name: Windows
+            name: Windows x64 GCC
+            cc: gcc
+            cxx: g++
+            build_dir: out/build
+            windows_toolchain: mingw
+
+          - os: windows-latest
+            name: Windows x64 MSVC
+            cc: cl
+            cxx: cl
+            build_dir: out/build-windows-msvc
+            windows_toolchain: msvc
+
+          - os: windows-latest
+            name: Windows x64 Clang
+            cc: clang
+            cxx: clang++
+            build_dir: out/build-windows-clang
+            windows_toolchain: msys2-clang
+
+          - os: windows-latest
+            name: Windows x64 ClangCL
+            cc: clang-cl
+            cxx: clang-cl
+            build_dir: out/build-windows-clangcl
+            windows_toolchain: clangcl
+
+          - os: windows-11-arm
+            name: Windows ARM64 MSVC
+            cc: cl
+            cxx: cl
+            build_dir: out/build-windows-arm64
+            windows_toolchain: msvc-arm64
 
     steps:
       - name: Checkout repository
@@ -34,7 +102,9 @@ jobs:
           GIT_CONFIG_KEY_0: init.defaultBranch
           GIT_CONFIG_VALUE_0: main
 
-      - name: Ensure vendored tools and scripts are executable on Unix
+      # ========== Setup Steps ==========
+
+      - name: Ensure vendored tools are executable on Unix
         if: runner.os != 'Windows'
         shell: bash
         run: |
@@ -42,7 +112,7 @@ jobs:
           chmod +x tools/host/nasm/linux/nasm tools/host/nasm/macosx/nasm
 
       - name: Install Linux dependencies
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.use_docker != true
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -56,7 +126,8 @@ jobs:
             python3 \
             python3-pip \
             python3-venv \
-            valgrind
+            valgrind \
+            ${{ matrix.extra_deps }}
 
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
@@ -70,8 +141,8 @@ jobs:
           echo "MACOS_LIBOMP_PREFIX=$(brew --prefix libomp)" >> "$GITHUB_ENV"
           echo "HOMEBREW_LLVM_BIN=$(brew --prefix llvm)/bin" >> "$GITHUB_ENV"
 
-      - name: Install CMake on Linux and macOS
-        if: runner.os != 'Windows'
+      - name: Install CMake on Linux and macOS (non-Docker)
+        if: runner.os != 'Windows' && matrix.use_docker != true
         shell: bash
         run: |
           CMAKE_VENV="$RUNNER_TEMP/cmake-venv"
@@ -81,8 +152,8 @@ jobs:
           echo "$CMAKE_VENV/bin" >> "$GITHUB_PATH"
           "$CMAKE_VENV/bin/cmake" --version
 
-      - name: Install native MinGW-w64 toolchain (winlibs) and tools
-        if: runner.os == 'Windows'
+      - name: Install MinGW-w64 toolchain for Windows GCC
+        if: matrix.windows_toolchain == 'mingw'
         shell: powershell
         run: |
           $wingetFlags = @(
@@ -125,40 +196,172 @@ jobs:
 
           Add-Content -Path $env:GITHUB_PATH -Value $gcc.DirectoryName
 
-          # Install pinned CMake in a Python virtualenv and prepend it to PATH.
-          $cmakeVenv = Join-Path $env:RUNNER_TEMP "cmake-venv"
+      - name: Set up MSYS2 for Windows Clang or analysis
+        if: matrix.windows_toolchain == 'msys2-clang' || (runner.os == 'Windows' && matrix.windows_toolchain == 'mingw')
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.windows_toolchain == 'msys2-clang' && 'CLANG64' || 'UCRT64' }}
+          update: false
+          install: >-
+            ${{ matrix.windows_toolchain == 'msys2-clang' && 'mingw-w64-clang-x86_64-clang mingw-w64-clang-x86_64-lld mingw-w64-clang-x86_64-python mingw-w64-clang-x86_64-llvm-openmp' || 'mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-clang-tools-extra mingw-w64-ucrt-x86_64-lld mingw-w64-ucrt-x86_64-python' }}
+
+      - name: Expose MSYS2 tools on PATH
+        if: matrix.windows_toolchain == 'msys2-clang'
+        shell: powershell
+        run: |
+          Add-Content -Path $env:GITHUB_PATH -Value 'C:\msys64\clang64\bin'
+          Add-Content -Path $env:GITHUB_PATH -Value 'C:\msys64\usr\bin'
+
+      - name: Expose MSYS2 UCRT64 tools on PATH for analysis
+        if: runner.os == 'Windows' && matrix.windows_toolchain == 'mingw'
+        shell: powershell
+        run: |
+          Add-Content -Path $env:GITHUB_PATH -Value 'C:\msys64\ucrt64\bin'
+          Add-Content -Path $env:GITHUB_PATH -Value 'C:\msys64\usr\bin'
+
+      - name: Resolve Visual Studio environment
+        if: matrix.windows_toolchain == 'msvc' || matrix.windows_toolchain == 'clangcl' || matrix.windows_toolchain == 'msvc-arm64'
+        shell: powershell
+        run: |
+          $vsWhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path $vsWhere)) {
+            throw 'Unable to locate vswhere.exe to detect installed Visual Studio versions'
+          }
+
+          $candidates = @(
+            @{ Version = '[18.0,19.0)'; Generator = 'Visual Studio 18 2026' },
+            @{ Version = '[17.0,18.0)'; Generator = 'Visual Studio 17 2022' }
+          )
+
+          $vcComponent = if ('${{ matrix.windows_toolchain }}' -eq 'msvc-arm64') {
+            'Microsoft.VisualStudio.Component.VC.Tools.ARM64'
+          } else {
+            'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
+          }
+
+          $selectedGenerator = $null
+          $installationPath = $null
+          foreach ($candidate in $candidates) {
+            $vsWhereArgs = @(
+              '-version', $candidate.Version,
+              '-products', '*',
+              '-requires', $vcComponent,
+              '-property', 'installationPath'
+            )
+            $vsWhereOutput = @(& $vsWhere @vsWhereArgs)
+            $resolvedInstallationPath = if ($vsWhereOutput.Count -gt 0) { $vsWhereOutput[0].Trim() } else { $null }
+            if ($resolvedInstallationPath) {
+              $selectedGenerator = $candidate.Generator
+              $installationPath = $resolvedInstallationPath
+              break
+            }
+          }
+
+          if (-not $selectedGenerator -or -not $installationPath) {
+            throw 'Unable to find a supported Visual Studio installation'
+          }
+
+          $vsDevCmd = Join-Path $installationPath 'Common7\Tools\VsDevCmd.bat'
+          if (-not (Test-Path $vsDevCmd)) {
+            throw "Unable to locate VsDevCmd.bat under $installationPath"
+          }
+
+          $ninjaPath = if ('${{ matrix.windows_toolchain }}' -eq 'msvc-arm64') {
+            'tools/host/ninja/winarm64/ninja.exe'
+          } else {
+            'tools/host/ninja/win/ninja.exe'
+          }
+          $vendoredNinja = Join-Path $env:GITHUB_WORKSPACE $ninjaPath
+          $vendoredNasm = Join-Path $env:GITHUB_WORKSPACE 'tools/host/nasm/win64/nasm.exe'
+
+          if (-not (Test-Path $vendoredNinja)) {
+            throw "Unable to locate vendored Ninja at $vendoredNinja"
+          }
+          if (-not (Test-Path $vendoredNasm)) {
+            throw "Unable to locate vendored NASM at $vendoredNasm"
+          }
+
+          Add-Content -Path $env:GITHUB_ENV -Value "SPRING_VSDEVCMD=$vsDevCmd"
+          Add-Content -Path $env:GITHUB_ENV -Value "SPRING_WINDOWS_NINJA=$vendoredNinja"
+          Add-Content -Path $env:GITHUB_ENV -Value "SPRING_WINDOWS_NASM=$vendoredNasm"
+          Write-Host "Using Visual Studio environment: $vsDevCmd"
+          Write-Host "Using vendored Ninja: $vendoredNinja"
+          Write-Host "Using vendored NASM: $vendoredNasm"
+
+      - name: Install CMake on Windows
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $vendoredNasmDir = Join-Path $env:GITHUB_WORKSPACE 'tools/host/nasm/win64'
+          if (Test-Path (Join-Path $vendoredNasmDir 'nasm.exe')) {
+            Add-Content -Path $env:GITHUB_PATH -Value $vendoredNasmDir
+            Write-Host "Using vendored NASM directory: $vendoredNasmDir"
+          }
+
+          $cmakeVenv = Join-Path $env:RUNNER_TEMP 'cmake-venv'
           py -3 -m venv $cmakeVenv
           & "$cmakeVenv\Scripts\python.exe" -m pip install --upgrade pip
           & "$cmakeVenv\Scripts\python.exe" -m pip install "cmake==4.2.0"
           Add-Content -Path $env:GITHUB_PATH -Value "$cmakeVenv\Scripts"
           & "$cmakeVenv\Scripts\cmake.exe" --version
 
-      - name: Configure on Linux
-        if: runner.os == 'Linux'
-        env:
-          CC: gcc
-          CXX: g++
+      # ========== Build Steps ==========
+
+      - name: Build and test Linux ARM64 in Docker
+        if: matrix.use_docker == true
+        shell: bash
         run: |
-          cmake -S . -B out/build -G Ninja \
-            -DCMAKE_MAKE_PROGRAM="$GITHUB_WORKSPACE/tools/host/ninja/linux/ninja"
+          docker run --rm --platform linux/arm64 \
+            -e container=docker \
+            -v "$PWD":/work -w /work arm64v8/almalinux:8 /bin/bash -c "
+            dnf install -y --setopt=install_weak_deps=False epel-release dnf-plugins-core && \
+            (dnf config-manager --set-enabled powertools || \
+              dnf config-manager --set-enabled crb) && \
+            dnf install -y --setopt=install_weak_deps=False gcc-toolset-12-gcc-c++ libomp-devel \
+              python39 python39-pip cppcheck && \
+            source /opt/rh/gcc-toolset-12/enable && \
+            python3.9 -m venv .cmake-venv && \
+            . .cmake-venv/bin/activate && \
+            chmod +x /work/${{ matrix.ninja_path }} /work/tools/host/nasm/linux/nasm && \
+            python3.9 -m pip install --no-cache-dir --upgrade pip && \
+            python3.9 -m pip install --no-cache-dir 'cmake==4.2.0' && \
+            cmake -S . -B ${{ matrix.build_dir }} -G Ninja \
+              -DCMAKE_MAKE_PROGRAM=/work/${{ matrix.ninja_path }} \
+              -DLIBRAPIDARCHIVE_WITH_ISAL=OFF \
+              -DCMAKE_C_FLAGS='-march=armv8-a+crc' \
+              -DCMAKE_CXX_FLAGS='-march=armv8-a+crc' \
+              -DSPRING_ENABLE_IPO=OFF && \
+            cmake --build ${{ matrix.build_dir }} --parallel && \
+            ctest --test-dir ${{ matrix.build_dir }} --output-on-failure --verbose && \
+            python3.9 tools/dev/lint/cppcheck.py
+          "
+
+      - name: Configure on Linux (non-Docker)
+        if: runner.os == 'Linux' && matrix.use_docker != true
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          cmake -S . -B ${{ matrix.build_dir }} -G Ninja \
+            -DCMAKE_MAKE_PROGRAM="$GITHUB_WORKSPACE/${{ matrix.ninja_path }}"
 
       - name: Configure on macOS
         if: runner.os == 'macOS'
         shell: bash
         env:
-          CC: clang
-          CXX: clang++
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
         run: |
-          cmake -S . -B out/build -G Ninja \
-            -DCMAKE_MAKE_PROGRAM="$GITHUB_WORKSPACE/tools/host/ninja/mac/ninja" \
+          cmake -S . -B ${{ matrix.build_dir }} -G Ninja \
+            -DCMAKE_MAKE_PROGRAM="$GITHUB_WORKSPACE/${{ matrix.ninja_path }}" \
             -DOpenMP_ROOT="$MACOS_LIBOMP_PREFIX"
 
-      - name: Configure on Windows
-        if: runner.os == 'Windows'
+      - name: Configure on Windows with MinGW
+        if: matrix.windows_toolchain == 'mingw'
         shell: powershell
         run: |
-          $env:CC="gcc"
-          $env:CXX="g++"
+          $env:CC="${{ matrix.cc }}"
+          $env:CXX="${{ matrix.cxx }}"
           $vendoredNinja = Join-Path $env:GITHUB_WORKSPACE 'tools/host/ninja/win/ninja.exe'
           $vendoredNasm = Join-Path $env:GITHUB_WORKSPACE 'tools/host/nasm/win64/nasm.exe'
           $ninjaExe = $null
@@ -167,7 +370,7 @@ jobs:
               & $vendoredNinja --version | Out-Null
               $ninjaExe = $vendoredNinja
             } catch {
-              Write-Host "Vendored Ninja is not runnable on this runner; falling back to PATH discovery."
+              Write-Host "Vendored Ninja is not runnable; falling back to PATH discovery."
             }
           }
           if (-not $ninjaExe) {
@@ -186,55 +389,113 @@ jobs:
           $vendoredNasm = $vendoredNasm -replace '\\','/'
           Write-Host "Using Ninja executable: $ninjaExe"
           Write-Host "Using vendored NASM executable: $vendoredNasm"
-          cmake -S . -B out/build -G Ninja -DCMAKE_MAKE_PROGRAM="$ninjaExe" -DSPRING_NASM_EXECUTABLE="$vendoredNasm"
+          cmake -S . -B ${{ matrix.build_dir }} -G Ninja -DCMAKE_MAKE_PROGRAM="$ninjaExe" -DSPRING_NASM_EXECUTABLE="$vendoredNasm"
 
-      - name: Build on Linux and macOS
-        if: runner.os != 'Windows'
-        run: |
-          cmake --build out/build --parallel
-          cmake --install out/build --prefix out
-
-      - name: Build on Windows
-        if: runner.os == 'Windows'
+      - name: Configure on Windows with MSYS2 Clang
+        if: matrix.windows_toolchain == 'msys2-clang'
         shell: powershell
         run: |
-          magick docs/assets/icons/logo.png `
-            -define icon:auto-resize=16,32,48,64,128,256 `
-            docs/assets/icons/logo.ico
-          $env:CC="gcc"
-          $env:CXX="g++"
-          cmake --build out/build --parallel
-          cmake --install out/build --prefix out
+          $env:CC='${{ matrix.cc }}'
+          $env:CXX='${{ matrix.cxx }}'
+          $vendoredNinja = Join-Path $env:GITHUB_WORKSPACE 'tools/host/ninja/win/ninja.exe'
+          $vendoredNasm = Join-Path $env:GITHUB_WORKSPACE 'tools/host/nasm/win64/nasm.exe'
+          $ninjaExe = $null
+          if (Test-Path $vendoredNinja) {
+            try {
+              & $vendoredNinja --version | Out-Null
+              $ninjaExe = $vendoredNinja
+            } catch {
+              Write-Host "Vendored Ninja is not runnable; falling back to PATH discovery."
+            }
+          }
+          if (-not $ninjaExe) {
+            $ninjaCommand = Get-Command ninja.exe -ErrorAction SilentlyContinue
+            if ($ninjaCommand) {
+              $ninjaExe = $ninjaCommand.Source
+            }
+          }
+          if (-not $ninjaExe) {
+            throw 'Unable to locate a working ninja.exe for CMake'
+          }
+          $ninjaExe = $ninjaExe -replace '\\','/'
+          if (-not (Test-Path $vendoredNasm)) {
+            throw 'Unable to locate vendored nasm.exe for CMake'
+          }
+          $vendoredNasm = $vendoredNasm -replace '\\','/'
+          Write-Host "Using Ninja: $ninjaExe"
+          Write-Host "Using NASM: $vendoredNasm"
+          cmake -S . -B ${{ matrix.build_dir }} -G Ninja -DCMAKE_MAKE_PROGRAM="$ninjaExe" -DSPRING_NASM_EXECUTABLE="$vendoredNasm"
 
-      - name: Run all tests (Unit + Smoke) on Linux and macOS
-        if: runner.os != 'Windows'
-        run: ctest --test-dir out/build --output-on-failure --verbose
-
-      - name: Run all tests (Unit + Smoke) on Windows
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: ctest --test-dir out/build --output-on-failure --verbose
-
-      - name: Set up MSYS2 analysis environment
-        if: runner.os == 'Windows'
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: UCRT64
-          update: false
-          install: >-
-            mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-clang-tools-extra
-            mingw-w64-ucrt-x86_64-lld mingw-w64-ucrt-x86_64-python
-
-      - name: Expose MSYS2 UCRT64 tools on PATH
-        if: runner.os == 'Windows'
+      - name: Configure on Windows with MSVC toolchain
+        if: matrix.windows_toolchain == 'msvc' || matrix.windows_toolchain == 'clangcl' || matrix.windows_toolchain == 'msvc-arm64'
         shell: powershell
         run: |
-          Add-Content -Path $env:GITHUB_PATH -Value 'C:\msys64\ucrt64\bin'
-          Add-Content -Path $env:GITHUB_PATH -Value 'C:\msys64\usr\bin'
+          $vsDevCmd = $env:SPRING_VSDEVCMD
+          $ninjaExe = $env:SPRING_WINDOWS_NINJA -replace '\\','/'
+          $nasmExe = $env:SPRING_WINDOWS_NASM -replace '\\','/'
+          $arch = if ('${{ matrix.windows_toolchain }}' -eq 'msvc-arm64') { 'arm64' } else { 'amd64' }
+          $configureCommand = "call `"$vsDevCmd`" -no_logo -arch=$arch -host_arch=$arch && set CC=${{ matrix.cc }} && set CXX=${{ matrix.cxx }} && cmake -S . -B ${{ matrix.build_dir }} -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_MAKE_PROGRAM=`"$ninjaExe`" -DSPRING_NASM_EXECUTABLE=`"$nasmExe`""
+          cmd /c $configureCommand
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Run lint on Linux
-        if: runner.os == 'Linux'
+      - name: Build on Linux and macOS (non-Docker)
+        if: runner.os != 'Windows' && matrix.use_docker != true
+        run: |
+          cmake --build ${{ matrix.build_dir }} --parallel
+
+      - name: Build on Windows with MinGW or MSYS2 Clang
+        if: matrix.windows_toolchain == 'mingw' || matrix.windows_toolchain == 'msys2-clang'
+        shell: powershell
+        run: |
+          if (Test-Path 'docs/assets/icons/logo.png') {
+            magick docs/assets/icons/logo.png `
+              -define icon:auto-resize=16,32,48,64,128,256 `
+              docs/assets/icons/logo.ico
+          }
+          $env:CC='${{ matrix.cc }}'
+          $env:CXX='${{ matrix.cxx }}'
+          cmake --build ${{ matrix.build_dir }} --parallel
+
+      - name: Build on Windows with MSVC toolchain
+        if: matrix.windows_toolchain == 'msvc' || matrix.windows_toolchain == 'clangcl' || matrix.windows_toolchain == 'msvc-arm64'
+        shell: powershell
+        run: |
+          if (Test-Path 'docs/assets/icons/logo.png') {
+            magick docs/assets/icons/logo.png `
+              -define icon:auto-resize=16,32,48,64,128,256 `
+              docs/assets/icons/logo.ico
+          }
+          $vsDevCmd = $env:SPRING_VSDEVCMD
+          $arch = if ('${{ matrix.windows_toolchain }}' -eq 'msvc-arm64') { 'arm64' } else { 'amd64' }
+          $buildCommand = "call `"$vsDevCmd`" -no_logo -arch=$arch -host_arch=$arch && cmake --build ${{ matrix.build_dir }} --parallel"
+          cmd /c $buildCommand
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # ========== Test Steps ==========
+
+      - name: Run tests on Linux and macOS (non-Docker)
+        if: runner.os != 'Windows' && matrix.use_docker != true
+        run: ctest --test-dir ${{ matrix.build_dir }} --output-on-failure --verbose
+
+      - name: Run tests on Windows with MinGW or MSYS2 Clang
+        if: matrix.windows_toolchain == 'mingw' || matrix.windows_toolchain == 'msys2-clang'
+        shell: powershell
+        run: ctest --test-dir ${{ matrix.build_dir }} --output-on-failure --verbose
+
+      - name: Run tests on Windows with MSVC toolchain
+        if: matrix.windows_toolchain == 'msvc' || matrix.windows_toolchain == 'clangcl' || matrix.windows_toolchain == 'msvc-arm64'
+        shell: powershell
+        run: |
+          $vsDevCmd = $env:SPRING_VSDEVCMD
+          $arch = if ('${{ matrix.windows_toolchain }}' -eq 'msvc-arm64') { 'arm64' } else { 'amd64' }
+          $testCommand = "call `"$vsDevCmd`" -no_logo -arch=$arch -host_arch=$arch && ctest --test-dir ${{ matrix.build_dir }} --output-on-failure --verbose"
+          cmd /c $testCommand
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # ========== Lint and Analysis Steps ==========
+
+      - name: Run lint on Linux (non-Docker)
+        if: runner.os == 'Linux' && matrix.use_docker != true
         run: python3 tools/dev/lint/lint.py
 
       - name: Run lint on macOS
@@ -245,35 +506,26 @@ jobs:
           python3 tools/dev/lint/lint.py
 
       - name: Run lint on Windows
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && matrix.windows_toolchain != 'msvc-arm64'
         shell: powershell
         run: py -3 .\tools\dev\lint\lint.py
 
-      - name: Run cppcheck on Linux and macOS
-        if: runner.os != 'Windows'
+      - name: Run cppcheck on Linux (non-Docker)
+        if: runner.os == 'Linux' && matrix.use_docker != true
+        run: python3 tools/dev/lint/cppcheck.py
+
+      - name: Run cppcheck on macOS
+        if: runner.os == 'macOS'
         run: python3 tools/dev/lint/cppcheck.py
 
       - name: Run cppcheck on Windows
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && matrix.windows_toolchain != 'msvc-arm64'
         shell: powershell
         run: py -3 .\tools\dev\lint\cppcheck.py
 
-      - name: Run valgrind smoke test
-        if: runner.os == 'Linux'
+      - name: Run valgrind smoke test on Linux x64
+        if: matrix.name == 'Linux x64 GCC'
         run: python3 tools/dev/smoke/valgrind_smoke.py
-
-      - name: Skip valgrind on macOS
-        if: runner.os == 'macOS'
-        run: |
-          echo "Valgrind is not available in a practical form on " \
-               "GitHub-hosted macOS runners; skipping."
-
-      - name: Skip valgrind on Windows
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: |
-          Write-Host ("Valgrind is not available on GitHub-hosted Windows " + `
-                      "runners; skipping.")
 
   conda-build-and-test:
     name: Conda / ${{ matrix.name }}
@@ -363,503 +615,6 @@ jobs:
 
           rm -rf "$TMP"
           echo "All round-trip tests passed."
-
-  additional-arch-builds:
-    name: Build and Test / ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04-arm
-            name: Linux arm64
-            ninja_path: tools/host/ninja/linux-aarch64/ninja
-          - os: macos-latest
-            name: macOS arm64
-            ninja_path: tools/host/ninja/mac/ninja
-          - os: windows-11-arm
-            name: Windows arm64
-            build_dir: out/build-windows-arm64
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        env:
-          GIT_CONFIG_COUNT: 1
-          GIT_CONFIG_KEY_0: init.defaultBranch
-          GIT_CONFIG_VALUE_0: main
-
-      - name: Ensure vendored tools are executable
-        if: matrix.name != 'Windows arm64'
-        shell: bash
-        run: |
-          chmod +x tools/host/ninja/linux/ninja tools/host/ninja/linux-aarch64/ninja tools/host/ninja/mac/ninja
-          chmod +x tools/host/nasm/linux/nasm tools/host/nasm/macosx/nasm
-
-      - name: Install macOS arm64 dependencies
-        if: matrix.name == 'macOS arm64'
-        shell: bash
-        env:
-          HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
-        run: |
-          brew untap aws/tap aws/tap-nightly hashicorp/tap 2>/dev/null || true
-          brew update
-          brew install ccache libomp lld llvm python
-          echo "MACOS_LIBOMP_PREFIX=$(brew --prefix libomp)" >> "$GITHUB_ENV"
-
-      - name: Install CMake
-        if: matrix.name == 'macOS arm64'
-        shell: bash
-        run: |
-          CMAKE_VENV="$RUNNER_TEMP/cmake-venv"
-          python3 -m venv "$CMAKE_VENV"
-          "$CMAKE_VENV/bin/python" -m pip install --no-cache-dir --upgrade pip
-          "$CMAKE_VENV/bin/python" -m pip install --no-cache-dir "cmake==4.2.0"
-          echo "$CMAKE_VENV/bin" >> "$GITHUB_PATH"
-          "$CMAKE_VENV/bin/cmake" --version
-
-      - name: Install CMake on Windows arm64
-        if: matrix.name == 'Windows arm64'
-        shell: powershell
-        run: |
-          $vendoredNasmDir = Join-Path $env:GITHUB_WORKSPACE 'tools/host/nasm/win64'
-          if (Test-Path (Join-Path $vendoredNasmDir 'nasm.exe')) {
-            Add-Content -Path $env:GITHUB_PATH -Value $vendoredNasmDir
-            Write-Host "Using vendored NASM directory: $vendoredNasmDir"
-          }
-
-          $cmakeVenv = Join-Path $env:RUNNER_TEMP 'cmake-venv'
-          py -3 -m venv $cmakeVenv
-          & "$cmakeVenv\Scripts\python.exe" -m pip install --upgrade pip
-          & "$cmakeVenv\Scripts\python.exe" -m pip install "cmake==4.2.0"
-          Add-Content -Path $env:GITHUB_PATH -Value "$cmakeVenv\Scripts"
-          & "$cmakeVenv\Scripts\cmake.exe" --version
-
-      - name: Resolve Visual Studio environment for Windows arm64
-        if: matrix.name == 'Windows arm64'
-        shell: powershell
-        run: |
-          $vsWhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-          if (-not (Test-Path $vsWhere)) {
-            throw 'Unable to locate vswhere.exe to detect installed Visual Studio versions'
-          }
-
-          $candidates = @(
-            @{ Version = '[18.0,19.0)'; Generator = 'Visual Studio 18 2026' },
-            @{ Version = '[17.0,18.0)'; Generator = 'Visual Studio 17 2022' }
-          )
-
-          $selectedGenerator = $null
-          $installationPath = $null
-          foreach ($candidate in $candidates) {
-            $vsWhereArgs = @(
-              '-version', $candidate.Version,
-              '-products', '*',
-              '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.ARM64',
-              '-property', 'installationPath'
-            )
-            # Collect all output first so vswhere runs to completion and is not
-            # killed by an early Select-Object pipe close (which would set
-            # $LASTEXITCODE to non-zero even when a valid path was found).
-            $vsWhereOutput = @(& $vsWhere @vsWhereArgs)
-            $resolvedInstallationPath = if ($vsWhereOutput.Count -gt 0) { $vsWhereOutput[0].Trim() } else { $null }
-            if ($resolvedInstallationPath) {
-              $selectedGenerator = $candidate.Generator
-              $installationPath = $resolvedInstallationPath
-              break
-            }
-          }
-
-          if (-not $selectedGenerator -or -not $installationPath) {
-            throw 'Unable to find a supported Visual Studio ARM64 installation'
-          }
-
-          $vsDevCmd = Join-Path $installationPath 'Common7\Tools\VsDevCmd.bat'
-          if (-not (Test-Path $vsDevCmd)) {
-            throw "Unable to locate VsDevCmd.bat under $installationPath"
-          }
-
-          $vendoredNinja = Join-Path $env:GITHUB_WORKSPACE 'tools/host/ninja/winarm64/ninja.exe'
-          $vendoredNasm = Join-Path $env:GITHUB_WORKSPACE 'tools/host/nasm/win64/nasm.exe'
-          if (-not (Test-Path $vendoredNinja)) {
-            throw "Unable to locate vendored Ninja for Windows arm64 at $vendoredNinja"
-          }
-          if (-not (Test-Path $vendoredNasm)) {
-            throw "Unable to locate vendored NASM at $vendoredNasm"
-          }
-
-          Add-Content -Path $env:GITHUB_ENV -Value "SPRING_VSDEVCMD=$vsDevCmd"
-          Add-Content -Path $env:GITHUB_ENV -Value "SPRING_WINDOWS_NINJA=$vendoredNinja"
-          Add-Content -Path $env:GITHUB_ENV -Value "SPRING_WINDOWS_NASM=$vendoredNasm"
-          Write-Host "Using Visual Studio environment: $vsDevCmd"
-          Write-Host "Using vendored Ninja executable: $vendoredNinja"
-          Write-Host "Using vendored NASM executable: $vendoredNasm"
-
-      - name: Build Linux arm64 in release-like Docker environment
-        if: matrix.name == 'Linux arm64'
-        shell: bash
-        run: |
-          docker run --rm --platform linux/arm64 \
-            -e container=docker \
-            -v "$PWD":/work -w /work arm64v8/almalinux:8 /bin/bash -c "
-            dnf install -y --setopt=install_weak_deps=False epel-release dnf-plugins-core && \
-            (dnf config-manager --set-enabled powertools || \
-              dnf config-manager --set-enabled crb) && \
-            dnf install -y --setopt=install_weak_deps=False gcc-toolset-12-gcc-c++ libomp-devel \
-              python39 python39-pip && \
-            source /opt/rh/gcc-toolset-12/enable && \
-            python3.9 -m venv .cmake-venv && \
-            . .cmake-venv/bin/activate && \
-            chmod +x /work/tools/host/ninja/linux-aarch64/ninja \
-              /work/tools/host/nasm/linux/nasm && \
-            python3.9 -m pip install --no-cache-dir --upgrade pip && \
-            python3.9 -m pip install --no-cache-dir 'cmake==4.2.0' && \
-            cmake -S . -B out/build-${{ matrix.os }} -G Ninja \
-              -DCMAKE_MAKE_PROGRAM=/work/${{ matrix.ninja_path }} \
-              -DLIBRAPIDARCHIVE_WITH_ISAL=OFF \
-              -DCMAKE_C_FLAGS='-march=armv8-a+crc' \
-              -DCMAKE_CXX_FLAGS='-march=armv8-a+crc' \
-              -DSPRING_ENABLE_IPO=OFF && \
-            cmake --build out/build-${{ matrix.os }} --parallel && \
-            ctest --test-dir out/build-${{ matrix.os }} --output-on-failure --verbose
-          "
-
-      - name: Configure macOS arm64
-        if: matrix.name == 'macOS arm64'
-        shell: bash
-        env:
-          CC: clang
-          CXX: clang++
-        run: |
-          cmake -S . -B out/build-${{ matrix.os }} -G Ninja \
-            -DCMAKE_MAKE_PROGRAM="$GITHUB_WORKSPACE/${{ matrix.ninja_path }}" \
-            -DOpenMP_ROOT="$MACOS_LIBOMP_PREFIX"
-
-      - name: Configure Windows arm64
-        if: matrix.name == 'Windows arm64'
-        shell: powershell
-        run: |
-          $vsDevCmd = $env:SPRING_VSDEVCMD
-          $ninjaExe = $env:SPRING_WINDOWS_NINJA -replace '\\','/'
-          $nasmExe = $env:SPRING_WINDOWS_NASM -replace '\\','/'
-          $configureCommand = "call `"$vsDevCmd`" -no_logo -arch=arm64 -host_arch=arm64 && set CC=cl && set CXX=cl && cmake -S . -B ${{ matrix.build_dir }} -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_MAKE_PROGRAM=`"$ninjaExe`" -DSPRING_NASM_EXECUTABLE=`"$nasmExe`""
-          cmd /c $configureCommand
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Build additional architecture target
-        if: matrix.name == 'macOS arm64'
-        shell: bash
-        run: |
-          cmake --build out/build-${{ matrix.os }} --parallel
-
-      - name: Run tests on macOS arm64
-        if: matrix.name == 'macOS arm64'
-        shell: bash
-        run: |
-          ctest --test-dir out/build-${{ matrix.os }} --output-on-failure --verbose
-
-      - name: Build Windows arm64 target
-        if: matrix.name == 'Windows arm64'
-        shell: powershell
-        run: |
-          $vsDevCmd = $env:SPRING_VSDEVCMD
-          $buildCommand = "call `"$vsDevCmd`" -no_logo -arch=arm64 -host_arch=arm64 && cmake --build ${{ matrix.build_dir }} --parallel"
-          cmd /c $buildCommand
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Run tests on Windows arm64
-        if: matrix.name == 'Windows arm64'
-        shell: powershell
-        run: |
-          $vsDevCmd = $env:SPRING_VSDEVCMD
-          $testCommand = "call `"$vsDevCmd`" -no_logo -arch=arm64 -host_arch=arm64 && ctest --test-dir ${{ matrix.build_dir }} --output-on-failure --verbose"
-          cmd /c $testCommand
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-  compiler-compatibility-builds:
-    name: Build and Test / ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            name: Linux Clang
-            build_dir: out/build-linux-clang
-          - os: windows-latest
-            name: Windows MSVC
-            build_dir: out/build-windows-msvc
-          - os: windows-latest
-            name: Windows Clang
-            build_dir: out/build-windows-clang
-          - os: windows-latest
-            name: Windows ClangCL
-            build_dir: out/build-windows-clangcl
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        env:
-          GIT_CONFIG_COUNT: 1
-          GIT_CONFIG_KEY_0: init.defaultBranch
-          GIT_CONFIG_VALUE_0: main
-
-      - name: Ensure vendored tools are executable on Unix
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          chmod +x tools/host/ninja/linux/ninja tools/host/ninja/linux-aarch64/ninja tools/host/ninja/mac/ninja
-          chmod +x tools/host/nasm/linux/nasm tools/host/nasm/macosx/nasm
-
-      - name: Install Linux Clang dependencies
-        if: matrix.name == 'Linux Clang'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            clang \
-            libomp-dev \
-            lld \
-            python3 \
-            python3-pip \
-            python3-venv
-
-      - name: Install CMake on Linux
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          CMAKE_VENV="$RUNNER_TEMP/cmake-venv"
-          python3 -m venv "$CMAKE_VENV"
-          "$CMAKE_VENV/bin/python" -m pip install --no-cache-dir --upgrade pip
-          "$CMAKE_VENV/bin/python" -m pip install --no-cache-dir "cmake==4.2.0"
-          echo "$CMAKE_VENV/bin" >> "$GITHUB_PATH"
-          "$CMAKE_VENV/bin/cmake" --version
-
-      - name: Configure Linux Clang build
-        if: matrix.name == 'Linux Clang'
-        env:
-          CC: clang
-          CXX: clang++
-        run: |
-          cmake -S . -B ${{ matrix.build_dir }} -G Ninja \
-            -DCMAKE_MAKE_PROGRAM="$GITHUB_WORKSPACE/tools/host/ninja/linux/ninja"
-
-      - name: Build Linux Clang target
-        if: matrix.name == 'Linux Clang'
-        run: cmake --build ${{ matrix.build_dir }} --parallel
-
-      - name: Run tests on Linux Clang
-        if: matrix.name == 'Linux Clang'
-        run: ctest --test-dir ${{ matrix.build_dir }} --output-on-failure --verbose
-
-      - name: Set up MSYS2 Clang environment
-        if: matrix.name == 'Windows Clang'
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: CLANG64
-          update: false
-          install: >-
-            mingw-w64-clang-x86_64-clang mingw-w64-clang-x86_64-lld
-            mingw-w64-clang-x86_64-python
-            mingw-w64-clang-x86_64-llvm-openmp
-
-      - name: Expose MSYS2 CLANG64 tools on PATH
-        if: matrix.name == 'Windows Clang'
-        shell: powershell
-        run: |
-          Add-Content -Path $env:GITHUB_PATH -Value 'C:\msys64\clang64\bin'
-          Add-Content -Path $env:GITHUB_PATH -Value 'C:\msys64\usr\bin'
-
-      - name: Install CMake on Windows
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: |
-          $vendoredNasmDir = Join-Path $env:GITHUB_WORKSPACE 'tools/host/nasm/win64'
-          if (Test-Path (Join-Path $vendoredNasmDir 'nasm.exe')) {
-            Add-Content -Path $env:GITHUB_PATH -Value $vendoredNasmDir
-            Write-Host "Using vendored NASM directory: $vendoredNasmDir"
-          }
-
-          $cmakeVenv = Join-Path $env:RUNNER_TEMP 'cmake-venv'
-          py -3 -m venv $cmakeVenv
-          & "$cmakeVenv\Scripts\python.exe" -m pip install --upgrade pip
-          & "$cmakeVenv\Scripts\python.exe" -m pip install "cmake==4.2.0"
-          Add-Content -Path $env:GITHUB_PATH -Value "$cmakeVenv\Scripts"
-          & "$cmakeVenv\Scripts\cmake.exe" --version
-
-      - name: Configure Windows Clang build
-        if: matrix.name == 'Windows Clang'
-        shell: powershell
-        run: |
-          $env:CC='clang'
-          $env:CXX='clang++'
-          $vendoredNinja = Join-Path $env:GITHUB_WORKSPACE 'tools/host/ninja/win/ninja.exe'
-          $vendoredNasm = Join-Path $env:GITHUB_WORKSPACE 'tools/host/nasm/win64/nasm.exe'
-          $ninjaExe = $null
-          if (Test-Path $vendoredNinja) {
-            try {
-              & $vendoredNinja --version | Out-Null
-              $ninjaExe = $vendoredNinja
-            } catch {
-              Write-Host "Vendored Ninja is not runnable on this runner; falling back to PATH discovery."
-            }
-          }
-          if (-not $ninjaExe) {
-            $ninjaCommand = Get-Command ninja.exe -ErrorAction SilentlyContinue
-            if ($ninjaCommand) {
-              $ninjaExe = $ninjaCommand.Source
-            }
-          }
-          if (-not $ninjaExe) {
-            throw 'Unable to locate a working ninja.exe for CMake'
-          }
-          $ninjaExe = $ninjaExe -replace '\\','/'
-          if (-not (Test-Path $vendoredNasm)) {
-            throw 'Unable to locate vendored nasm.exe for CMake'
-          }
-          $vendoredNasm = $vendoredNasm -replace '\\','/'
-          Write-Host "Using Ninja executable: $ninjaExe"
-          Write-Host "Using vendored NASM executable: $vendoredNasm"
-          cmake -S . -B ${{ matrix.build_dir }} -G Ninja -DCMAKE_MAKE_PROGRAM="$ninjaExe" -DSPRING_NASM_EXECUTABLE="$vendoredNasm"
-
-      - name: Build Windows Clang target
-        if: matrix.name == 'Windows Clang'
-        shell: powershell
-        run: |
-          magick docs/assets/icons/logo.png `
-            -define icon:auto-resize=16,32,48,64,128,256 `
-            docs/assets/icons/logo.ico
-          $env:CC='clang'
-          $env:CXX='clang++'
-          cmake --build ${{ matrix.build_dir }} --parallel
-
-      - name: Run tests on Windows Clang
-        if: matrix.name == 'Windows Clang'
-        shell: powershell
-        run: ctest --test-dir ${{ matrix.build_dir }} --output-on-failure --verbose
-
-      - name: Resolve Visual Studio environment
-        if: matrix.name == 'Windows ClangCL' || matrix.name == 'Windows MSVC'
-        shell: powershell
-        run: |
-          $vsWhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-          if (-not (Test-Path $vsWhere)) {
-            throw 'Unable to locate vswhere.exe to detect installed Visual Studio versions'
-          }
-
-          $candidates = @(
-            @{ Version = '[18.0,19.0)'; Generator = 'Visual Studio 18 2026' },
-            @{ Version = '[17.0,18.0)'; Generator = 'Visual Studio 17 2022' }
-          )
-
-          $selectedGenerator = $null
-          $installationPath = $null
-          foreach ($candidate in $candidates) {
-            $vsWhereArgs = @(
-              '-version', $candidate.Version,
-              '-products', '*',
-              '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
-              '-property', 'installationPath'
-            )
-            # Collect all output first so vswhere runs to completion and is not
-            # killed by an early Select-Object pipe close (which would set
-            # $LASTEXITCODE to non-zero even when a valid path was found).
-            $vsWhereOutput = @(& $vsWhere @vsWhereArgs)
-            $resolvedInstallationPath = if ($vsWhereOutput.Count -gt 0) { $vsWhereOutput[0].Trim() } else { $null }
-            if ($resolvedInstallationPath) {
-              $selectedGenerator = $candidate.Generator
-              $installationPath = $resolvedInstallationPath
-              break
-            }
-          }
-
-          if (-not $selectedGenerator -or -not $installationPath) {
-            throw 'Unable to find a supported Visual Studio installation (looked for Visual Studio 18 2026, then Visual Studio 17 2022)'
-          }
-
-          $vsDevCmd = Join-Path $installationPath 'Common7\Tools\VsDevCmd.bat'
-          if (-not (Test-Path $vsDevCmd)) {
-            throw "Unable to locate VsDevCmd.bat under $installationPath"
-          }
-
-          $vendoredNinja = Join-Path $env:GITHUB_WORKSPACE 'tools/host/ninja/win/ninja.exe'
-          $vendoredNasm = Join-Path $env:GITHUB_WORKSPACE 'tools/host/nasm/win64/nasm.exe'
-          if (-not (Test-Path $vendoredNinja)) {
-            throw "Unable to locate vendored Ninja at $vendoredNinja"
-          }
-          if (-not (Test-Path $vendoredNasm)) {
-            throw "Unable to locate vendored NASM at $vendoredNasm"
-          }
-
-          Add-Content -Path $env:GITHUB_ENV -Value "SPRING_VSDEVCMD=$vsDevCmd"
-          Add-Content -Path $env:GITHUB_ENV -Value "SPRING_WINDOWS_NINJA=$vendoredNinja"
-          Add-Content -Path $env:GITHUB_ENV -Value "SPRING_WINDOWS_NASM=$vendoredNasm"
-          Write-Host "Using Visual Studio environment: $vsDevCmd"
-          Write-Host "Using vendored Ninja executable: $vendoredNinja"
-          Write-Host "Using vendored NASM executable: $vendoredNasm"
-
-      - name: Configure Windows ClangCL build
-        if: matrix.name == 'Windows ClangCL'
-        shell: powershell
-        run: |
-          $vsDevCmd = $env:SPRING_VSDEVCMD
-          $ninjaExe = $env:SPRING_WINDOWS_NINJA -replace '\\','/'
-          $nasmExe = $env:SPRING_WINDOWS_NASM -replace '\\','/'
-          $configureCommand = "call `"$vsDevCmd`" -no_logo -arch=amd64 -host_arch=amd64 && set CC=clang-cl && set CXX=clang-cl && cmake -S . -B ${{ matrix.build_dir }} -G Ninja -DCMAKE_MAKE_PROGRAM=`"$ninjaExe`" -DSPRING_NASM_EXECUTABLE=`"$nasmExe`""
-          cmd /c $configureCommand
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Configure Windows MSVC build
-        if: matrix.name == 'Windows MSVC'
-        shell: powershell
-        run: |
-          $vsDevCmd = $env:SPRING_VSDEVCMD
-          $ninjaExe = $env:SPRING_WINDOWS_NINJA -replace '\\','/'
-          $nasmExe = $env:SPRING_WINDOWS_NASM -replace '\\','/'
-          $configureCommand = "call `"$vsDevCmd`" -no_logo -arch=amd64 -host_arch=amd64 && set CC=cl && set CXX=cl && cmake -S . -B ${{ matrix.build_dir }} -G Ninja -DCMAKE_MAKE_PROGRAM=`"$ninjaExe`" -DSPRING_NASM_EXECUTABLE=`"$nasmExe`""
-          cmd /c $configureCommand
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Build Windows MSVC target
-        if: matrix.name == 'Windows MSVC'
-        shell: powershell
-        run: |
-          magick docs/assets/icons/logo.png `
-            -define icon:auto-resize=16,32,48,64,128,256 `
-            docs/assets/icons/logo.ico
-          $vsDevCmd = $env:SPRING_VSDEVCMD
-          $buildCommand = "call `"$vsDevCmd`" -no_logo -arch=amd64 -host_arch=amd64 && cmake --build ${{ matrix.build_dir }} --parallel"
-          cmd /c $buildCommand
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Run tests on Windows MSVC
-        if: matrix.name == 'Windows MSVC'
-        shell: powershell
-        run: |
-          $vsDevCmd = $env:SPRING_VSDEVCMD
-          $testCommand = "call `"$vsDevCmd`" -no_logo -arch=amd64 -host_arch=amd64 && ctest --test-dir ${{ matrix.build_dir }} --output-on-failure --verbose"
-          cmd /c $testCommand
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Build Windows ClangCL target
-        if: matrix.name == 'Windows ClangCL'
-        shell: powershell
-        run: |
-          magick docs/assets/icons/logo.png `
-            -define icon:auto-resize=16,32,48,64,128,256 `
-            docs/assets/icons/logo.ico
-          $vsDevCmd = $env:SPRING_VSDEVCMD
-          $buildCommand = "call `"$vsDevCmd`" -no_logo -arch=amd64 -host_arch=amd64 && cmake --build ${{ matrix.build_dir }} --parallel"
-          cmd /c $buildCommand
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Run tests on Windows ClangCL
-        if: matrix.name == 'Windows ClangCL'
-        shell: powershell
-        run: |
-          $vsDevCmd = $env:SPRING_VSDEVCMD
-          $testCommand = "call `"$vsDevCmd`" -no_logo -arch=amd64 -host_arch=amd64 && ctest --test-dir ${{ matrix.build_dir }} --output-on-failure --verbose"
-          cmd /c $testCommand
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   sanitizers:
     name: Sanitizers / ${{ matrix.sanitizer }}
