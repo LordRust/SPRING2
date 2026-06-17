@@ -78,6 +78,9 @@ SUPPRESSIONS = (
     "ctuuninitvar:*vendor/libarchive/*",
     "invalidPrintfArgType_sint:*vendor/zstd/*",
     "invalidPrintfArgType_uint:*vendor/zstd/*",
+    "uninitvar:*vendor/cloudflare_zlib/deflate.c",
+    "localMutex:*vendor/libdeflate/matchfinder_common.h",
+    "preprocessorErrorDirective:*vendor/zstd/*",
 )
 
 
