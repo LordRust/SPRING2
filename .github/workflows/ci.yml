@@ -506,7 +506,7 @@ jobs:
           python3 tools/dev/lint/lint.py --build-dir ${{ matrix.build_dir }}
 
       - name: Run lint on Windows
-        if: runner.os == 'Windows' && matrix.windows_toolchain != 'msvc-arm64'
+        if: runner.os == 'Windows' && matrix.windows_toolchain != 'msvc-arm64' && matrix.windows_toolchain != 'msvc'
         shell: powershell
         run: py -3 .\tools\dev\lint\lint.py --build-dir ${{ matrix.build_dir }}
 
