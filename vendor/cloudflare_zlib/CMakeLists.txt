@@ -36,6 +36,20 @@ if(
 )
     target_compile_options(spring_cloudflare_zlib PRIVATE -Wno-unused-variable)
 endif()
+
+# Workaround for Windows ARM64 zlib crashes with gzipped input
+# Apply conservative optimizations to avoid miscompilation
+if(WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|aarch64)$")
+    if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+        # Use /Od (no optimization) for Windows ARM64 to avoid access violations
+        target_compile_options(spring_cloudflare_zlib PRIVATE /Od /Zi)
+        message(
+            NOTICE
+            "Using /Od for zlib on Windows ARM64 to avoid access violations"
+        )
+    endif()
+endif()
+
 set_target_properties(
     spring_cloudflare_zlib
     PROPERTIES POSITION_INDEPENDENT_CODE ON
