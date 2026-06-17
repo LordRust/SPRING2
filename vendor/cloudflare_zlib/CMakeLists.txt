@@ -38,7 +38,8 @@ if(
 endif()
 
 # Workaround for Windows zlib crashes with gzipped input on MSVC-like compilers
-# Apply conservative optimizations to avoid miscompilation in inflate/deflate
+# The issue appears to be aggressive optimizations causing miscompilation in
+# inflate/gzread code paths. Use conservative /O1 instead of aggressive /O2.
 if(WIN32)
     set(needs_zlib_workaround FALSE)
 
@@ -65,11 +66,12 @@ if(WIN32)
     endif()
 
     if(needs_zlib_workaround)
-        # Use /Od (no optimization) to avoid access violations
-        target_compile_options(spring_cloudflare_zlib PRIVATE /Od /Zi)
+        # Use /O1 (optimize for size) instead of /O2 to avoid access violations
+        # /O1 is safer than /Od (no optimization) and provides reasonable performance
+        target_compile_options(spring_cloudflare_zlib PRIVATE /O1)
         message(
             NOTICE
-            "Using /Od for zlib on Windows (${workaround_reason}) to avoid access violations"
+            "Using /O1 for zlib on Windows (${workaround_reason}) to avoid access violations"
         )
     endif()
 endif()
