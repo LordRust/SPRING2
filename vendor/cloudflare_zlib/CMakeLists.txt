@@ -39,9 +39,24 @@ endif()
 
 # Workaround for Windows zlib crashes with gzipped input on MSVC-like compilers
 # The issue appears to be aggressive optimizations causing miscompilation in
-# inflate/gzread code paths. Use conservative /O1 instead of aggressive /O2.
+# inflate/gzread code paths. Use conservative O1 instead of aggressive O2.
 if(WIN32)
     set(needs_zlib_workaround FALSE)
+    set(is_msvc_like FALSE)
+
+    # Check if we're using MSVC or ClangCL (Clang with MSVC frontend)
+    if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+        set(is_msvc_like TRUE)
+    elseif(
+        CMAKE_C_COMPILER_ID STREQUAL "Clang"
+        AND (
+            MSVC
+            OR CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
+            OR CMAKE_C_SIMULATE_ID STREQUAL "MSVC"
+        )
+    )
+        set(is_msvc_like TRUE)
+    endif()
 
     # MSVC on ARM64 needs the workaround
     if(
@@ -53,26 +68,36 @@ if(WIN32)
     endif()
 
     # ClangCL on any architecture needs the workaround
-    if(
-        CMAKE_C_COMPILER_ID STREQUAL "Clang"
-        AND (
-            MSVC
-            OR CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
-            OR CMAKE_C_SIMULATE_ID STREQUAL "MSVC"
-        )
-    )
+    if(is_msvc_like AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
         set(needs_zlib_workaround TRUE)
         set(workaround_reason "ClangCL")
     endif()
 
+    # Regular Clang on Windows (not ClangCL) also needs the workaround
+    if(
+        NOT is_msvc_like
+        AND CMAKE_C_COMPILER_ID STREQUAL "Clang"
+    )
+        set(needs_zlib_workaround TRUE)
+        set(workaround_reason "Windows Clang")
+    endif()
+
     if(needs_zlib_workaround)
-        # Use /O1 (optimize for size) instead of /O2 to avoid access violations
-        # /O1 is safer than /Od (no optimization) and provides reasonable performance
-        target_compile_options(spring_cloudflare_zlib PRIVATE /O1)
-        message(
-            NOTICE
-            "Using /O1 for zlib on Windows (${workaround_reason}) to avoid access violations"
-        )
+        if(is_msvc_like)
+            # Use /O1 (optimize for size) for MSVC and ClangCL
+            target_compile_options(spring_cloudflare_zlib PRIVATE /O1)
+            message(
+                NOTICE
+                "Using /O1 for zlib on Windows (${workaround_reason}) to avoid access violations"
+            )
+        else()
+            # Use -O1 for regular Clang on Windows
+            target_compile_options(spring_cloudflare_zlib PRIVATE -O1)
+            message(
+                NOTICE
+                "Using -O1 for zlib on Windows (${workaround_reason}) to avoid access violations"
+            )
+        endif()
     endif()
 endif()
 
