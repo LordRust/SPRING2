@@ -67,8 +67,6 @@ TEST_CASE(
       read_manifest_value(corrupt_dir + "/bundle.meta", "read_archive");
   REQUIRE(!read_archive_name.empty());
   const fs::path read_archive = fs::path(corrupt_dir) / read_archive_name;
-  const std::string read_archive_tar_path =
-      fs::absolute(read_archive).generic_string();
   const std::string corrupted_archive_tar_path =
       corrupted_archive_path.generic_string();
   REQUIRE(fs::exists(read_archive));
@@ -82,12 +80,13 @@ TEST_CASE(
   REQUIRE(cp_size > 16);
   fs::resize_file(cp_path, cp_size / 2);
 
-  REQUIRE(std::system(("cd " + nested_read_dir + " && tar -cf \"" +
-                       read_archive_tar_path + "\" *")
+  REQUIRE(
+      std::system(("cd " + nested_read_dir + " && tar -cf _repack_tmp.tar *")
+                      .c_str()) == 0);
+  fs::rename(fs::path(nested_read_dir) / "_repack_tmp.tar", read_archive);
+  REQUIRE(std::system(("cd " + corrupt_dir + " && tar -cf _repack_tmp.tar *")
                           .c_str()) == 0);
-  REQUIRE(std::system(("cd " + corrupt_dir + " && tar -cf \"" +
-                       corrupted_archive_tar_path + "\" *")
-                          .c_str()) == 0);
+  fs::rename(fs::path(corrupt_dir) / "_repack_tmp.tar", corrupted_archive_path);
 
   const std::string corrupt_audit_cmd = std::string(SPRING2_EXECUTABLE) +
                                         " -p -a " + corrupted_archive_tar_path +
@@ -244,8 +243,6 @@ TEST_CASE("Grouped decompression rejects invalid read3 alias metadata") {
   const std::string extract_dir = test_dir + "/extract";
   const std::string corrupted_archive = test_dir + "/grouped_alias_corrupt.sp";
   const std::string corrupt_log = test_dir + "/corrupt.log";
-  const std::string corrupted_archive_tar_path =
-      fs::absolute(corrupted_archive).generic_string();
 
   create_dummy_fastq(r1_fastq, 200);
   create_dummy_fastq(r2_fastq, 200);
@@ -260,9 +257,9 @@ TEST_CASE("Grouped decompression rejects invalid read3 alias metadata") {
               ("tar -xf " + archive_path + " -C " + extract_dir).c_str()) == 0);
   replace_exact_in_file(extract_dir + "/bundle.meta", "read3_alias_source=R1",
                         "read3_alias_source=BAD");
-  REQUIRE(std::system(("cd " + extract_dir + " && tar -cf \"" +
-                       corrupted_archive_tar_path + "\" *")
+  REQUIRE(std::system(("cd " + extract_dir + " && tar -cf _repack_tmp.tar *")
                           .c_str()) == 0);
+  fs::rename(fs::path(extract_dir) / "_repack_tmp.tar", corrupted_archive);
 
   const std::string decompress_cmd =
       std::string(SPRING2_EXECUTABLE) + " -d -i " + corrupted_archive + " -o " +
@@ -285,8 +282,6 @@ TEST_CASE(
   const std::string extract_dir = test_dir + "/extract";
   const std::string corrupted_archive = test_dir + "/grouped_index_corrupt.sp";
   const std::string preview_log = test_dir + "/preview.log";
-  const std::string corrupted_archive_tar_path =
-      fs::absolute(corrupted_archive).generic_string();
 
   create_dummy_fastq(r1_fastq, 200);
   create_dummy_fastq(r2_fastq, 200);
@@ -303,9 +298,9 @@ TEST_CASE(
   replace_exact_in_file(extract_dir + "/bundle.meta", "has_index=1",
                         "has_index=0");
   replace_exact_in_file(extract_dir + "/bundle.meta", "has_i2=0", "has_i2=1");
-  REQUIRE(std::system(("cd " + extract_dir + " && tar -cf \"" +
-                       corrupted_archive_tar_path + "\" *")
+  REQUIRE(std::system(("cd " + extract_dir + " && tar -cf _repack_tmp.tar *")
                           .c_str()) == 0);
+  fs::rename(fs::path(extract_dir) / "_repack_tmp.tar", corrupted_archive);
 
   const std::string preview_cmd = std::string(SPRING2_EXECUTABLE) + " -p " +
                                   corrupted_archive + " > " + preview_log +

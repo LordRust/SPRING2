@@ -156,8 +156,6 @@ TEST_CASE("Corrupt long-read archive reports a normal decompression error") {
   const std::string corrupted_archive = test_dir + "/corrupted.sp";
   const std::string output_fastq = test_dir + "/restored.fastq";
   const std::string decompress_log = test_dir + "/decompress.log";
-  const std::string corrupted_archive_tar_path =
-      fs::absolute(corrupted_archive).generic_string();
 
   create_custom_fastq(input_fastq, 128, false, false, 700);
 
@@ -177,9 +175,9 @@ TEST_CASE("Corrupt long-read archive reports a normal decompression error") {
   REQUIRE(block_size > 8);
   fs::resize_file(read_length_block, block_size / 2);
 
-  REQUIRE(std::system(("cd " + corrupt_dir + " && tar -cf \"" +
-                       corrupted_archive_tar_path + "\" *")
+  REQUIRE(std::system(("cd " + corrupt_dir + " && tar -cf _repack_tmp.tar *")
                           .c_str()) == 0);
+  fs::rename(fs::path(corrupt_dir) / "_repack_tmp.tar", corrupted_archive);
 
   const std::string decompress_cmd =
       std::string(SPRING2_EXECUTABLE) + " -d -i " + corrupted_archive + " -o " +
@@ -201,8 +199,6 @@ TEST_CASE("Preview and SpringReader reject truncated metadata") {
   const std::string corrupt_dir = test_dir + "/extract";
   const std::string corrupted_archive = test_dir + "/corrupted.sp";
   const std::string preview_log = test_dir + "/preview.log";
-  const std::string corrupted_archive_tar_path =
-      fs::absolute(corrupted_archive).generic_string();
 
   create_dummy_fastq(input_fastq, 200);
 
@@ -221,9 +217,9 @@ TEST_CASE("Preview and SpringReader reject truncated metadata") {
   REQUIRE(cp_size > 16);
   fs::resize_file(cp_path, cp_size / 2);
 
-  REQUIRE(std::system(("cd " + corrupt_dir + " && tar -cf \"" +
-                       corrupted_archive_tar_path + "\" *")
+  REQUIRE(std::system(("cd " + corrupt_dir + " && tar -cf _repack_tmp.tar *")
                           .c_str()) == 0);
+  fs::rename(fs::path(corrupt_dir) / "_repack_tmp.tar", corrupted_archive);
 
   const std::string preview_cmd = std::string(SPRING2_EXECUTABLE) + " -p " +
                                   corrupted_archive + " > " + preview_log +
