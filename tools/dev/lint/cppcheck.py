@@ -61,6 +61,8 @@ SUPPRESSIONS = (
     "resourceLeak:*vendor/libbsc/*",
     "preprocessorErrorDirective:*vendor/libbsc/*",
     "dangerousTypeCast:*vendor/libbsc/*",
+    "arrayIndexOutOfBoundsCond:*vendor/libbsc/*",
+    "objectIndex:*vendor/libbsc/*",
     "identicalInnerCondition:*vendor/libbsc/detectors.cpp",
     "identicalInnerCondition:*vendor/libbsc/filters/detectors.cpp",
     "legacyUninitvar:*vendor/libbsc/st/st.cpp",
@@ -73,13 +75,13 @@ SUPPRESSIONS = (
     "sameIteratorExpression:*vendor/indexed_bzip2/src/core/FasterVector.hpp",
     "uninitvar:*vendor/indexed_bzip2/isa-l/*",
     "arrayIndexOutOfBoundsCond:*vendor/libdeflate/*",
+    "objectIndex:*vendor/libdeflate/*",
     "unknownMacro:*vendor/pthash/*",
     "ctunullpointerOutOfMemory:*vendor/qvz/*",
     "ctuuninitvar:*vendor/libarchive/*",
     "invalidPrintfArgType_sint:*vendor/zstd/*",
     "invalidPrintfArgType_uint:*vendor/zstd/*",
     "uninitvar:*vendor/cloudflare_zlib/deflate.c",
-    "localMutex:*vendor/libdeflate/matchfinder_common.h",
     "preprocessorErrorDirective:*vendor/zstd/*",
 )
 
