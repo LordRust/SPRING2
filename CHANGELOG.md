@@ -20,6 +20,7 @@
 ### Fixed
 
 - Fixed an MSVC-specific crash (`abort()` / segfault, exit code 3) during MPHF construction in the vendored pthash library. `buckets_iterator_t::skip_empty_buckets()` and `operator++` unconditionally decremented `m_buffers_it` even after `m_bucket_size` reached zero, walking a `std::vector::const_iterator` before `begin()`. Under MSVC Debug (`_ITERATOR_DEBUG_LEVEL=2`) this triggers an iterator-bounds assertion; under MSVC Release the resulting undefined behaviour causes a crash. Fixed by guarding both decrement sites so `m_buffers_it` is only decremented when `m_bucket_size` is still non-zero.
+- Fixed an MSVC-specific access violation (exit code 0xC0000005) in `populate_bucket_read_ids` during dictionary construction. MSVC does not inline `std::unique_ptr::operator[]` in Debug builds, so the LLVM OpenMP `atomic capture` operation received a non-addressable function call rather than a plain memory address, triggering the crash. Fixed by extracting raw pointers from the `unique_ptr` members before entering the `#pragma omp atomic capture` region, which satisfies the OpenMP requirement that the captured variable is a scalar lvalue.
 - Set `DOCTEST_CONFIG_USE_STD_HEADERS` for `unit-tests`, `integration-tests`, and `smoke-tests` so MSVC no longer emits C5285 warnings from doctest forward declarations of standard library templates.
 
 ## V1.0.0-rc.2

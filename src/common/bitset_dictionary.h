@@ -416,11 +416,14 @@ inline void populate_bucket_read_ids(bbhashdict &dictionary,
     }
 
     uint32_t insert_index;
+    // Use raw pointers for omp atomic capture: MSVC does not inline
+    // unique_ptr::operator[] in debug builds, causing atomic to fail.
+    uint32_t *startpos_raw = local_dictionary->startpos.get();
+    uint32_t *read_id_raw = local_dictionary->read_id.get();
 #pragma omp atomic capture
-    insert_index = local_dictionary->startpos[current_hash]++;
+    insert_index = startpos_raw[current_hash]++;
 
-    local_dictionary->read_id[insert_index] =
-        (*local_eligible_read_ids)[hash_index];
+    read_id_raw[insert_index] = (*local_eligible_read_ids)[hash_index];
   }
 
   if (usable_count < static_cast<uint32_t>(hash_values.size())) {
