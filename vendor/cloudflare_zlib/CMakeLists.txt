@@ -42,20 +42,18 @@ endif()
 # inflate/gzread code paths. Use conservative O1 instead of aggressive O2.
 if(WIN32)
     set(needs_zlib_workaround FALSE)
-    set(is_msvc_like FALSE)
+    set(use_msvc_flag_syntax FALSE)
 
-    # Check if we're using MSVC or ClangCL (Clang with MSVC frontend)
+    # Determine if we should use MSVC flag syntax (/O1) or GCC syntax (-O1)
+    # Only use MSVC syntax for actual MSVC or clang-cl.exe
     if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
-        set(is_msvc_like TRUE)
-    elseif(
-        CMAKE_C_COMPILER_ID STREQUAL "Clang"
-        AND (
-            MSVC
-            OR CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
-            OR CMAKE_C_SIMULATE_ID STREQUAL "MSVC"
-        )
-    )
-        set(is_msvc_like TRUE)
+        set(use_msvc_flag_syntax TRUE)
+    elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
+        # Check if the compiler executable is clang-cl (not just any Clang)
+        get_filename_component(compiler_name "${CMAKE_C_COMPILER}" NAME_WE)
+        if(compiler_name STREQUAL "clang-cl")
+            set(use_msvc_flag_syntax TRUE)
+        endif()
     endif()
 
     # MSVC on ARM64 needs the workaround
@@ -68,22 +66,19 @@ if(WIN32)
     endif()
 
     # ClangCL on any architecture needs the workaround
-    if(is_msvc_like AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
+    if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND use_msvc_flag_syntax)
         set(needs_zlib_workaround TRUE)
         set(workaround_reason "ClangCL")
     endif()
 
     # Regular Clang on Windows (not ClangCL) also needs the workaround
-    if(
-        NOT is_msvc_like
-        AND CMAKE_C_COMPILER_ID STREQUAL "Clang"
-    )
+    if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND NOT use_msvc_flag_syntax)
         set(needs_zlib_workaround TRUE)
         set(workaround_reason "Windows Clang")
     endif()
 
     if(needs_zlib_workaround)
-        if(is_msvc_like)
+        if(use_msvc_flag_syntax)
             # Use /O1 (optimize for size) for MSVC and ClangCL
             target_compile_options(spring_cloudflare_zlib PRIVATE /O1)
             message(
