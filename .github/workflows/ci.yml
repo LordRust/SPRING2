@@ -164,9 +164,20 @@ jobs:
             "--disable-interactivity"
           )
 
-          winget install --id BrechtSanders.WinLibs.MCF.UCRT @wingetFlags
-          winget install --id Mozilla.sccache --exact @wingetFlags
-          winget install --id Git.Git @wingetFlags
+          # winget exits with 0x8A15002B (-1978335189) when the package is already
+          # installed and no upgrade is available. Treat that as success.
+          function Invoke-Winget {
+            param([string[]]$Args)
+            winget install @Args
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "winget exited with code $LASTEXITCODE (may already be installed at latest version)"
+            }
+            $global:LASTEXITCODE = 0
+          }
+
+          Invoke-Winget --id BrechtSanders.WinLibs.MCF.UCRT @wingetFlags
+          Invoke-Winget --id Mozilla.sccache --exact @wingetFlags
+          Invoke-Winget --id Git.Git @wingetFlags
 
           Write-Host 'Configuring PATH for WinLibs GCC toolchain'
           $searchRoots = @(
