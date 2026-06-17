@@ -66,29 +66,14 @@ if(WIN32)
 
     if(needs_zlib_workaround)
         if(use_msvc_flag_syntax)
-            # Use /Od (no optimization) for MSVC and ClangCL
-            # Set compile flags on each source file to override CMake defaults
-            set(zlib_sources
-                adler32.c
-                compress.c
-                crc32.c
-                deflate.c
-                gzclose.c
-                gzlib.c
-                gzread.c
-                gzwrite.c
-                inffast.c
-                inflate.c
-                inftrees.c
-                trees.c
-                uncompr.c
-                zutil.c
-            )
-            foreach(source_file ${zlib_sources})
-                set_source_files_properties(
-                    ${source_file}
-                    PROPERTIES COMPILE_FLAGS "/Od"
-                )
+            # For MSVC/ClangCL: override the per-config flags in this subdirectory scope.
+            # Setting CMAKE_C_FLAGS_<CONFIG> here creates a local variable that shadows the
+            # cache variable, affecting only targets defined in this CMakeLists.txt.
+            # We replace /O1 and /O2 with /Od (no optimization) to prevent miscompilation.
+            foreach(cfg RELEASE RELWITHDEBINFO MINSIZEREL)
+                set(flags "${CMAKE_C_FLAGS_${cfg}}")
+                string(REGEX REPLACE "/O[0-9dtx]" "/Od" flags "${flags}")
+                set(CMAKE_C_FLAGS_${cfg} "${flags}")
             endforeach()
             message(
                 NOTICE
