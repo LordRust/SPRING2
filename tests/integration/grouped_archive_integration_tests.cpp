@@ -80,10 +80,12 @@ TEST_CASE(
   REQUIRE(cp_size > 16);
   fs::resize_file(cp_path, cp_size / 2);
 
+  fs::remove(fs::path(nested_read_dir) / "_repack_tmp.tar");
   REQUIRE(
       std::system(("cd " + nested_read_dir + " && tar -cf _repack_tmp.tar *")
                       .c_str()) == 0);
   fs::rename(fs::path(nested_read_dir) / "_repack_tmp.tar", read_archive);
+  fs::remove(fs::path(corrupt_dir) / "_repack_tmp.tar");
   REQUIRE(std::system(("cd " + corrupt_dir + " && tar -cf _repack_tmp.tar *")
                           .c_str()) == 0);
   fs::rename(fs::path(corrupt_dir) / "_repack_tmp.tar", corrupted_archive_path);
@@ -257,6 +259,7 @@ TEST_CASE("Grouped decompression rejects invalid read3 alias metadata") {
               ("tar -xf " + archive_path + " -C " + extract_dir).c_str()) == 0);
   replace_exact_in_file(extract_dir + "/bundle.meta", "read3_alias_source=R1",
                         "read3_alias_source=BAD");
+  fs::remove(fs::path(extract_dir) / "_repack_tmp.tar");
   REQUIRE(std::system(("cd " + extract_dir + " && tar -cf _repack_tmp.tar *")
                           .c_str()) == 0);
   fs::rename(fs::path(extract_dir) / "_repack_tmp.tar", corrupted_archive);
@@ -298,6 +301,7 @@ TEST_CASE(
   replace_exact_in_file(extract_dir + "/bundle.meta", "has_index=1",
                         "has_index=0");
   replace_exact_in_file(extract_dir + "/bundle.meta", "has_i2=0", "has_i2=1");
+  fs::remove(fs::path(extract_dir) / "_repack_tmp.tar");
   REQUIRE(std::system(("cd " + extract_dir + " && tar -cf _repack_tmp.tar *")
                           .c_str()) == 0);
   fs::rename(fs::path(extract_dir) / "_repack_tmp.tar", corrupted_archive);

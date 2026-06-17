@@ -175,6 +175,7 @@ TEST_CASE("Corrupt long-read archive reports a normal decompression error") {
   REQUIRE(block_size > 8);
   fs::resize_file(read_length_block, block_size / 2);
 
+  fs::remove(fs::path(corrupt_dir) / "_repack_tmp.tar");
   REQUIRE(std::system(("cd " + corrupt_dir + " && tar -cf _repack_tmp.tar *")
                           .c_str()) == 0);
   fs::rename(fs::path(corrupt_dir) / "_repack_tmp.tar", corrupted_archive);
@@ -217,6 +218,7 @@ TEST_CASE("Preview and SpringReader reject truncated metadata") {
   REQUIRE(cp_size > 16);
   fs::resize_file(cp_path, cp_size / 2);
 
+  fs::remove(fs::path(corrupt_dir) / "_repack_tmp.tar");
   REQUIRE(std::system(("cd " + corrupt_dir + " && tar -cf _repack_tmp.tar *")
                           .c_str()) == 0);
   fs::rename(fs::path(corrupt_dir) / "_repack_tmp.tar", corrupted_archive);
