@@ -44,7 +44,8 @@ TEST_CASE("ATAC adapter stripping round-trips and is recorded") {
         std::string::npos);
   }
 
-  CHECK(read_file_binary(output_fastq) == read_file_binary(input_fastq));
+  check_bytes_equal(read_file_binary(output_fastq),
+                    read_file_binary(input_fastq), "ATAC round-trip");
   fs::remove_all(test_dir);
 }
 
@@ -84,7 +85,8 @@ TEST_CASE("Sparse ATAC read-through keeps adapter stripping disabled") {
         std::string::npos);
   }
 
-  CHECK(read_file_binary(output_fastq) == read_file_binary(input_fastq));
+  check_bytes_equal(read_file_binary(output_fastq),
+                    read_file_binary(input_fastq), "sparse ATAC round-trip");
   fs::remove_all(test_dir);
 }
 
@@ -139,7 +141,9 @@ TEST_CASE("Grouped sc-ATAC auto mode round-trips with N-containing reads") {
   for (const auto &[original_path, restored_path] :
        {std::pair{r1_fastq, out_r1}, std::pair{r2_fastq, out_r2},
         std::pair{r3_fastq, out_r3}, std::pair{i1_fastq, out_i1}}) {
-    CHECK(read_file_binary(restored_path) == read_file_binary(original_path));
+    check_bytes_equal(read_file_binary(restored_path),
+                      read_file_binary(original_path),
+                      "sc-ATAC lane round-trip");
   }
 
   fs::remove_all(test_dir);
@@ -219,7 +223,9 @@ TEST_CASE("Grouped sc-RNA index IDs are reconstructed from I1/I2 reads") {
   for (const auto &[original_path, restored_path] :
        {std::pair{r1_fastq, out_r1}, std::pair{r2_fastq, out_r2},
         std::pair{i1_fastq, out_i1}, std::pair{i2_fastq, out_i2}}) {
-    CHECK(read_file_binary(restored_path) == read_file_binary(original_path));
+    check_bytes_equal(read_file_binary(restored_path),
+                      read_file_binary(original_path),
+                      "sc-RNA lane round-trip");
   }
 
   fs::remove_all(test_dir);

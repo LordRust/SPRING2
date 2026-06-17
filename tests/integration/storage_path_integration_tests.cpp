@@ -47,9 +47,12 @@ TEST_CASE("Single-end sample matches for memory_path and disk_path") {
   REQUIRE(std::system(disk_decompress_cmd.c_str()) == 0);
 
   const std::string original_bytes = read_file_binary(input_fastq);
-  CHECK(read_file_binary(memory_output) == original_bytes);
-  CHECK(read_file_binary(disk_output) == original_bytes);
-  CHECK(read_file_binary(memory_output) == read_file_binary(disk_output));
+  check_bytes_equal(read_file_binary(memory_output), original_bytes,
+                    "memory-path output");
+  check_bytes_equal(read_file_binary(disk_output), original_bytes,
+                    "disk-path output");
+  check_bytes_equal(read_file_binary(memory_output),
+                    read_file_binary(disk_output), "memory vs disk output");
 
   const std::string memory_log_output = read_file_binary(memory_log);
   const std::string disk_log_output = read_file_binary(disk_log);
@@ -103,10 +106,10 @@ TEST_CASE("Paired sample matches for memory_path and disk_path") {
 
   const std::string original_r1 = read_file_binary(input_r1);
   const std::string original_r2 = read_file_binary(input_r2);
-  CHECK(read_file_binary(memory_r1) == original_r1);
-  CHECK(read_file_binary(memory_r2) == original_r2);
-  CHECK(read_file_binary(disk_r1) == original_r1);
-  CHECK(read_file_binary(disk_r2) == original_r2);
+  check_bytes_equal(read_file_binary(memory_r1), original_r1, "memory-path R1");
+  check_bytes_equal(read_file_binary(memory_r2), original_r2, "memory-path R2");
+  check_bytes_equal(read_file_binary(disk_r1), original_r1, "disk-path R1");
+  check_bytes_equal(read_file_binary(disk_r2), original_r2, "disk-path R2");
 
   const std::string memory_log_output = read_file_binary(memory_log);
   const std::string disk_log_output = read_file_binary(disk_log);

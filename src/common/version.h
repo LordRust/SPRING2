@@ -5,7 +5,7 @@
 #define SPRING_VERSION_H_
 
 namespace spring {
-constexpr char VERSION[] = "1.0.0-rc.2";
+constexpr char VERSION[] = "1.0.0";
 }
 
 #endif // SPRING_VERSION_H_

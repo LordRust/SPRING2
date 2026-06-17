@@ -137,7 +137,9 @@ TEST_CASE("Grouped decompression accepts five explicit output files") {
        {std::pair{r1_fastq, out_r1}, std::pair{r2_fastq, out_r2},
         std::pair{r3_fastq, out_r3}, std::pair{i1_fastq, out_i1},
         std::pair{i2_fastq, out_i2}}) {
-    CHECK(read_file_binary(restored_path) == read_file_binary(original_path));
+    check_bytes_equal(read_file_binary(restored_path),
+                      read_file_binary(original_path),
+                      "grouped lane round-trip");
   }
 
   fs::remove_all(test_dir);
@@ -175,14 +177,14 @@ TEST_CASE("Grouped decompression derives unique default output names") {
     REQUIRE(std::system(decompress_cmd.c_str()) == 0);
   }
 
-  CHECK(read_file_binary(test_dir + "/same.R1.fastq") ==
-        read_file_binary(r1_fastq));
-  CHECK(read_file_binary(test_dir + "/same.R2.fastq") ==
-        read_file_binary(r2_fastq));
-  CHECK(read_file_binary(test_dir + "/same.R3.fastq") ==
-        read_file_binary(r3_fastq));
-  CHECK(read_file_binary(test_dir + "/same.I1.fastq") ==
-        read_file_binary(i1_fastq));
+  check_bytes_equal(read_file_binary(test_dir + "/same.R1.fastq"),
+                    read_file_binary(r1_fastq), "R1 default name");
+  check_bytes_equal(read_file_binary(test_dir + "/same.R2.fastq"),
+                    read_file_binary(r2_fastq), "R2 default name");
+  check_bytes_equal(read_file_binary(test_dir + "/same.R3.fastq"),
+                    read_file_binary(r3_fastq), "R3 default name");
+  check_bytes_equal(read_file_binary(test_dir + "/same.I1.fastq"),
+                    read_file_binary(i1_fastq), "I1 default name");
 
   fs::remove_all(test_dir);
 }
@@ -226,7 +228,8 @@ TEST_CASE("Grouped aliased R3 output honors requested target format") {
                              is_bgzf, bgzf_block_size, uncompressed_size,
                              compressed_size, member_count);
   CHECK(is_gzipped);
-  CHECK(read_gzip_file_binary(out_r3) == read_file_binary(r1_fastq));
+  check_bytes_equal(read_gzip_file_binary(out_r3), read_file_binary(r1_fastq),
+                    "R3 alias gzip content");
 
   fs::remove_all(test_dir);
 }

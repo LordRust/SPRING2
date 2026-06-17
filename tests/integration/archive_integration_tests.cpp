@@ -63,14 +63,15 @@ void check_legacy_single_stream_fixture(const char *archive_name,
   const std::string reference = read_file_binary(reference_path);
   const std::string normalized_restored = normalize_newlines(restored);
   const std::string normalized_reference = normalize_newlines(reference);
-  CHECK_MESSAGE(
-      normalized_restored == normalized_reference,
-      "Normalized decompressed output mismatch for "
-          << archive_name << " vs " << reference_name << " (restored bytes="
-          << restored.size() << ", reference bytes=" << reference.size()
-          << ", normalized restored bytes=" << normalized_restored.size()
-          << ", normalized reference bytes=" << normalized_reference.size()
-          << ")");
+  const bool content_ok = (normalized_restored == normalized_reference);
+  CHECK_MESSAGE(content_ok, "Normalized decompressed output mismatch for "
+                                << archive_name << " vs " << reference_name
+                                << " (restored bytes=" << restored.size()
+                                << ", reference bytes=" << reference.size()
+                                << ", normalized restored bytes="
+                                << normalized_restored.size()
+                                << ", normalized reference bytes="
+                                << normalized_reference.size() << ")");
 
   fs::remove_all(test_dir);
 }
@@ -289,8 +290,10 @@ TEST_CASE("Decompression restores legacy Spring short-read archives") {
 
   CHECK_NOTHROW(decompress({paired_archive}, {output_r1, output_r2}, 1, 6));
 
-  CHECK(read_file_binary(output_r1) == read_gzip_file_binary(reference_r1));
-  CHECK(read_file_binary(output_r2) == read_gzip_file_binary(reference_r2));
+  check_bytes_equal(read_file_binary(output_r1),
+                    read_gzip_file_binary(reference_r1), "R1 round-trip");
+  check_bytes_equal(read_file_binary(output_r2),
+                    read_gzip_file_binary(reference_r2), "R2 round-trip");
 
   fs::remove_all(test_dir);
 }

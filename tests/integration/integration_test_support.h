@@ -54,4 +54,18 @@ struct ScopedCurrentPath {
   std::string original;
 };
 
+// Compare binary content without dumping file bytes to the test log on
+// failure.  Use this instead of CHECK(a == b) when a and b are large strings
+// (e.g. file contents), so doctest's expression decomposer does not print
+// megabytes of data when the assertion fails.
+inline void check_bytes_equal(const std::string &actual,
+                              const std::string &expected,
+                              const char *description = "") {
+  const bool match = (actual == expected);
+  CHECK_MESSAGE(match, "Content mismatch ["
+                           << description << "]: actual=" << actual.size()
+                           << " bytes, expected=" << expected.size()
+                           << " bytes");
+}
+
 } // namespace integration_test_support

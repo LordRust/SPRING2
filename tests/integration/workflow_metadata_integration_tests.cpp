@@ -61,8 +61,10 @@ TEST_CASE("Paired FASTQ preserves per-stream plus lines and line endings") {
   REQUIRE(std::system(compress_cmd.c_str()) == 0);
   REQUIRE(std::system(decompress_cmd.c_str()) == 0);
 
-  CHECK(read_file_binary(out_r1) == read_file_binary(r1_fastq));
-  CHECK(read_file_binary(out_r2) == read_file_binary(r2_fastq));
+  check_bytes_equal(read_file_binary(out_r1), read_file_binary(r1_fastq),
+                    "R1 round-trip");
+  check_bytes_equal(read_file_binary(out_r2), read_file_binary(r2_fastq),
+                    "R2 round-trip");
 
   fs::remove_all(test_dir);
 }
@@ -86,7 +88,8 @@ TEST_CASE("Late overlength read escalates sampled short input into long mode") {
 
   REQUIRE(std::system(compress_cmd.c_str()) == 0);
   REQUIRE(std::system(decompress_cmd.c_str()) == 0);
-  CHECK(read_file_binary(output_fastq) == read_file_binary(input_fastq));
+  check_bytes_equal(read_file_binary(output_fastq),
+                    read_file_binary(input_fastq), "long-mode round-trip");
 
   auto contents = read_files_from_tar_memory(archive_path, {"cp.bin"});
   REQUIRE(contents.contains("cp.bin"));
