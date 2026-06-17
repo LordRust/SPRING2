@@ -269,6 +269,21 @@ int run_process_windows(const fs::path &executable,
 void run_command(const fs::path &executable, std::vector<std::string> args,
                  const fs::path *capture_path = nullptr) {
   args = prepare_command_args(std::move(args));
+
+  // When no external capture path is provided, redirect subprocess
+  // stdout/stderr to a temp file so it does not flood the console.
+  // The captured text is attached via INFO() so doctest surfaces it only
+  // when the test fails.
+  static std::atomic<unsigned> tmp_counter{0};
+  fs::path own_capture_path;
+  const bool using_own_capture = (capture_path == nullptr);
+  if (using_own_capture) {
+    own_capture_path =
+        fs::temp_directory_path() /
+        ("spring2_smoke_" + std::to_string(tmp_counter.fetch_add(1)) + ".log");
+    capture_path = &own_capture_path;
+  }
+
   const std::string command =
       build_command_string(executable, args, capture_path);
   INFO(command);
@@ -282,6 +297,21 @@ void run_command(const fs::path &executable, std::vector<std::string> args,
 #else
   status = std::system(command.c_str());
 #endif
+
+  if (using_own_capture) {
+    std::string captured;
+    {
+      std::ifstream log_file(own_capture_path);
+      if (log_file.is_open()) {
+        captured.assign(std::istreambuf_iterator<char>(log_file),
+                        std::istreambuf_iterator<char>());
+      }
+    }
+    std::error_code ec;
+    fs::remove(own_capture_path, ec);
+    INFO(captured);
+  }
+
   const std::string failure_message =
       std::string("Smoke command failed: ") + command;
   INFO(failure_message);

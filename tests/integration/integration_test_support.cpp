@@ -4,7 +4,9 @@
 
 #include <archive.h>
 #include <archive_entry.h>
+#include <atomic>
 #include <filesystem>
+#include <fstream>
 #include <string_view>
 #include <system_error>
 
@@ -366,6 +368,35 @@ ScopedCurrentPath::ScopedCurrentPath(const std::string &path)
 ScopedCurrentPath::~ScopedCurrentPath() {
   std::error_code ec;
   fs::current_path(original, ec);
+}
+
+void run_spring(const std::string &cmd) {
+  static std::atomic<unsigned> counter{0};
+  const fs::path tmp_log =
+      fs::temp_directory_path() /
+      ("spring2_int_" + std::to_string(counter.fetch_add(1)) + ".log");
+
+#ifdef _WIN32
+  const std::string quoted_log = "\"" + tmp_log.string() + "\"";
+#else
+  const std::string quoted_log = "'" + tmp_log.string() + "'";
+#endif
+  const std::string redirect_cmd = cmd + " > " + quoted_log + " 2>&1";
+  const int status = std::system(redirect_cmd.c_str());
+
+  std::string captured;
+  {
+    std::ifstream f(tmp_log, std::ios::binary);
+    if (f.is_open()) {
+      captured.assign(std::istreambuf_iterator<char>(f),
+                      std::istreambuf_iterator<char>());
+    }
+  }
+  std::error_code ec;
+  fs::remove(tmp_log, ec);
+
+  INFO("spring2 output:\n" << captured);
+  REQUIRE(status == 0);
 }
 
 } // namespace integration_test_support

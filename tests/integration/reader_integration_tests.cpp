@@ -46,7 +46,7 @@ TEST_CASE("SpringReader Integration Test") {
   std::ostringstream compress_cmd;
   compress_cmd << SPRING2_EXECUTABLE << " -c --R1 " << input_fastq << " -o "
                << archive_spring << " -t 1";
-  REQUIRE(std::system(compress_cmd.str().c_str()) == 0);
+  run_spring(compress_cmd.str());
 
   SUBCASE("Stream decompression (Single End)") {
     SpringReader reader(archive_spring, 1);
@@ -97,7 +97,7 @@ TEST_CASE("SpringReader streams grouped archives via primary read member") {
   compress_cmd << SPRING2_EXECUTABLE << " -c --R1 " << r1_fastq << " --R2 "
                << r2_fastq << " --R3 " << r3_fastq << " --I1 " << i1_fastq
                << " -o " << archive_path << " -t 1";
-  REQUIRE(std::system(compress_cmd.str().c_str()) == 0);
+  run_spring(compress_cmd.str());
 
   SpringReader reader(archive_path, 1);
   ReadRecord mate1;

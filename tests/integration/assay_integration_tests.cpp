@@ -28,8 +28,8 @@ TEST_CASE("ATAC adapter stripping round-trips and is recorded") {
   const std::string preview_cmd = std::string(SPRING2_EXECUTABLE) + " -p " +
                                   archive_atac + " > " + preview_log + " 2>&1";
 
-  REQUIRE(std::system(compress_atac_cmd.c_str()) == 0);
-  REQUIRE(std::system(decompress_atac_cmd.c_str()) == 0);
+  run_spring(compress_atac_cmd);
+  run_spring(decompress_atac_cmd);
   REQUIRE(std::system(preview_cmd.c_str()) == 0);
 
   {
@@ -43,7 +43,6 @@ TEST_CASE("ATAC adapter stripping round-trips and is recorded") {
             "ATAC Adapters:     Stripped terminal Tn5/Nextera read-through") !=
         std::string::npos);
   }
-
   check_bytes_equal(read_file_binary(output_fastq),
                     read_file_binary(input_fastq), "ATAC round-trip");
   fs::remove_all(test_dir);
@@ -69,8 +68,8 @@ TEST_CASE("Sparse ATAC read-through keeps adapter stripping disabled") {
   const std::string preview_cmd = std::string(SPRING2_EXECUTABLE) + " -p " +
                                   archive_atac + " > " + preview_log + " 2>&1";
 
-  REQUIRE(std::system(compress_atac_cmd.c_str()) == 0);
-  REQUIRE(std::system(decompress_atac_cmd.c_str()) == 0);
+  run_spring(compress_atac_cmd);
+  run_spring(decompress_atac_cmd);
   REQUIRE(std::system(preview_cmd.c_str()) == 0);
 
   {
@@ -120,8 +119,8 @@ TEST_CASE("Grouped sc-ATAC auto mode round-trips with N-containing reads") {
   const std::string preview_cmd = std::string(SPRING2_EXECUTABLE) + " -p " +
                                   archive_path + " > " + preview_log + " 2>&1";
 
-  REQUIRE(std::system(compress_cmd.c_str()) == 0);
-  REQUIRE(std::system(decompress_cmd.c_str()) == 0);
+  run_spring(compress_cmd);
+  run_spring(decompress_cmd);
   REQUIRE(std::system(preview_cmd.c_str()) == 0);
 
   {
@@ -186,9 +185,9 @@ TEST_CASE("Grouped sc-RNA index IDs are reconstructed from I1/I2 reads") {
   const std::string preview_cmd = std::string(SPRING2_EXECUTABLE) + " -p " +
                                   archive_auto + " > " + preview_log + " 2>&1";
 
-  REQUIRE(std::system(compress_auto_cmd.c_str()) == 0);
-  REQUIRE(std::system(compress_dna_cmd.c_str()) == 0);
-  REQUIRE(std::system(decompress_auto_cmd.c_str()) == 0);
+  run_spring(compress_auto_cmd);
+  run_spring(compress_dna_cmd);
+  run_spring(decompress_auto_cmd);
   REQUIRE(std::system(preview_cmd.c_str()) == 0);
 
   fs::create_directories(auto_extract_dir);

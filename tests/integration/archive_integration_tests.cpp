@@ -87,11 +87,11 @@ TEST_CASE("Archive Integrity Verification Test") {
 
   std::string compress_cmd = std::string(SPRING2_EXECUTABLE) + " -c -a --R1 " +
                              input_fastq + " -o " + archive_sp + " -t 1";
-  REQUIRE(std::system(compress_cmd.c_str()) == 0);
+  run_spring(compress_cmd);
 
   std::string spring2_path = SPRING2_EXECUTABLE;
   std::string audit_cmd = spring2_path + " -p -a " + archive_sp;
-  CHECK(std::system(audit_cmd.c_str()) == 0);
+  run_spring(audit_cmd);
 
   std::string corrupt_dir = test_dir + "/corrupt_work";
   fs::create_directories(corrupt_dir);
@@ -162,7 +162,7 @@ TEST_CASE("Corrupt long-read archive reports a normal decompression error") {
   const std::string compress_cmd = std::string(SPRING2_EXECUTABLE) +
                                    " -c --R1 " + input_fastq + " -o " +
                                    archive_path + " -t 1";
-  REQUIRE(std::system(compress_cmd.c_str()) == 0);
+  run_spring(compress_cmd);
 
   fs::create_directories(corrupt_dir);
   REQUIRE(std::system(
@@ -205,7 +205,7 @@ TEST_CASE("Preview and SpringReader reject truncated metadata") {
   const std::string compress_cmd = std::string(SPRING2_EXECUTABLE) +
                                    " -c --R1 " + input_fastq + " -o " +
                                    archive_path + " -t 1";
-  REQUIRE(std::system(compress_cmd.c_str()) == 0);
+  run_spring(compress_cmd);
 
   fs::create_directories(corrupt_dir);
   REQUIRE(std::system(
@@ -334,13 +334,10 @@ TEST_CASE("Decompression rejects colliding output paths") {
   create_dummy_fastq(r1_fastq, 180);
   create_dummy_fastq(r2_fastq, 180);
 
-  REQUIRE(
-      std::system((std::string(SPRING2_EXECUTABLE) + " -c --R1 " + r1_fastq +
-                   " --R2 " + r2_fastq + " -o " + paired_archive + " -t 1")
-                      .c_str()) == 0);
-  REQUIRE(std::system((std::string(SPRING2_EXECUTABLE) + " -c --R1 " +
-                       r1_fastq + " -o " + single_archive + " -t 1")
-                          .c_str()) == 0);
+  run_spring(std::string(SPRING2_EXECUTABLE) + " -c --R1 " + r1_fastq +
+             " --R2 " + r2_fastq + " -o " + paired_archive + " -t 1");
+  run_spring(std::string(SPRING2_EXECUTABLE) + " -c --R1 " + r1_fastq + " -o " +
+             single_archive + " -t 1");
 
   const std::string duplicate_cmd = std::string(SPRING2_EXECUTABLE) +
                                     " -d -i " + paired_archive + " -o " +

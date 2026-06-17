@@ -43,8 +43,8 @@ TEST_CASE("Single-end sample matches for memory_path and disk_path") {
 
   REQUIRE(std::system(memory_compress_cmd.c_str()) == 0);
   REQUIRE(std::system(disk_compress_cmd.c_str()) == 0);
-  REQUIRE(std::system(memory_decompress_cmd.c_str()) == 0);
-  REQUIRE(std::system(disk_decompress_cmd.c_str()) == 0);
+  run_spring(memory_decompress_cmd);
+  run_spring(disk_decompress_cmd);
 
   const std::string original_bytes = read_file_binary(input_fastq);
   check_bytes_equal(read_file_binary(memory_output), original_bytes,
@@ -101,8 +101,8 @@ TEST_CASE("Paired sample matches for memory_path and disk_path") {
 
   REQUIRE(std::system(memory_compress_cmd.c_str()) == 0);
   REQUIRE(std::system(disk_compress_cmd.c_str()) == 0);
-  REQUIRE(std::system(memory_decompress_cmd.c_str()) == 0);
-  REQUIRE(std::system(disk_decompress_cmd.c_str()) == 0);
+  run_spring(memory_decompress_cmd);
+  run_spring(disk_decompress_cmd);
 
   const std::string original_r1 = read_file_binary(input_r1);
   const std::string original_r2 = read_file_binary(input_r2);

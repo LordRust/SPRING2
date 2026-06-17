@@ -54,6 +54,12 @@ struct ScopedCurrentPath {
   std::string original;
 };
 
+// Run a spring2 subprocess, suppressing its stdout/stderr unless the command
+// fails.  On failure the captured output is printed via INFO() and the test
+// is aborted with REQUIRE.  Do NOT use this for commands that already redirect
+// their own output (> file 2>&1) or for non-spring2 system commands (e.g. tar).
+void run_spring(const std::string &cmd);
+
 // Compare binary content without dumping file bytes to the test log on
 // failure.  Use this instead of CHECK(a == b) when a and b are large strings
 // (e.g. file contents), so doctest's expression decomposer does not print

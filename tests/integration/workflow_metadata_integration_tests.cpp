@@ -28,11 +28,11 @@ TEST_CASE("Multi-thread compression compatibility") {
     std::string compress_cmd = std::string(SPRING2_EXECUTABLE) + " -c --R1 " +
                                input_fastq + " -o " + archive_sp + " -t " +
                                std::to_string(compress_threads);
-    REQUIRE(std::system(compress_cmd.c_str()) == 0);
+    run_spring(compress_cmd);
 
     std::string decompress_cmd = std::string(SPRING2_EXECUTABLE) + " -d -i " +
                                  archive_sp + " -o " + output_fastq + " -t 1";
-    CHECK(std::system(decompress_cmd.c_str()) == 0);
+    run_spring(decompress_cmd);
   }
 
   fs::remove_all(test_dir);
@@ -58,8 +58,8 @@ TEST_CASE("Paired FASTQ preserves per-stream plus lines and line endings") {
                                      " -d -i " + archive_path + " -o " +
                                      out_r1 + " " + out_r2 + " -t 1";
 
-  REQUIRE(std::system(compress_cmd.c_str()) == 0);
-  REQUIRE(std::system(decompress_cmd.c_str()) == 0);
+  run_spring(compress_cmd);
+  run_spring(decompress_cmd);
 
   check_bytes_equal(read_file_binary(out_r1), read_file_binary(r1_fastq),
                     "R1 round-trip");
@@ -86,8 +86,8 @@ TEST_CASE("Late overlength read escalates sampled short input into long mode") {
                                      " -d -i " + archive_path + " -o " +
                                      output_fastq + " -t 1";
 
-  REQUIRE(std::system(compress_cmd.c_str()) == 0);
-  REQUIRE(std::system(decompress_cmd.c_str()) == 0);
+  run_spring(compress_cmd);
+  run_spring(decompress_cmd);
   check_bytes_equal(read_file_binary(output_fastq),
                     read_file_binary(input_fastq), "long-mode round-trip");
 
@@ -115,7 +115,7 @@ TEST_CASE("Late CRLF updates metadata after startup sample") {
   const std::string compress_cmd = std::string(SPRING2_EXECUTABLE) +
                                    " -c --R1 " + input_fastq + " -o " +
                                    archive_path + " -t 1";
-  REQUIRE(std::system(compress_cmd.c_str()) == 0);
+  run_spring(compress_cmd);
 
   auto contents = read_files_from_tar_memory(archive_path, {"cp.bin"});
   REQUIRE(contents.contains("cp.bin"));
@@ -154,7 +154,7 @@ TEST_CASE("Paired gzip outputs preserve per-stream compression profile") {
                                      " -d -i " + archive_path + " -o " +
                                      out_r1 + " " + out_r2 + " -t 1";
 
-  REQUIRE(std::system(compress_cmd.c_str()) == 0);
+  run_spring(compress_cmd);
 
   fs::create_directories(extract_dir);
   REQUIRE(std::system(
@@ -179,7 +179,7 @@ TEST_CASE("Paired gzip outputs preserve per-stream compression profile") {
                           .c_str()) == 0);
   fs::rename(fs::path(extract_dir) / "_repack_tmp.tar", archive_path);
 
-  REQUIRE(std::system(decompress_cmd.c_str()) == 0);
+  run_spring(decompress_cmd);
 
   CHECK(fs::file_size(baseline_r2) < fs::file_size(baseline_r1));
   CHECK(fs::file_size(out_r2) < fs::file_size(out_r1));

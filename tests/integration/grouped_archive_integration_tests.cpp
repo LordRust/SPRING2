@@ -44,9 +44,9 @@ TEST_CASE(
   const std::string audit_cmd =
       std::string(SPRING2_EXECUTABLE) + " -p -a " + archive_path;
 
-  REQUIRE(std::system(compress_cmd.c_str()) == 0);
+  run_spring(compress_cmd);
   REQUIRE(std::system(preview_cmd.c_str()) == 0);
-  REQUIRE(std::system(audit_cmd.c_str()) == 0);
+  run_spring(audit_cmd);
 
   {
     std::ifstream preview_in(preview_log, std::ios::binary);
@@ -129,8 +129,8 @@ TEST_CASE("Grouped decompression accepts five explicit output files") {
                                      out_r1 + " " + out_r2 + " " + out_r3 +
                                      " " + out_i1 + " " + out_i2 + " -t 1";
 
-  REQUIRE(std::system(compress_cmd.c_str()) == 0);
-  REQUIRE(std::system(decompress_cmd.c_str()) == 0);
+  run_spring(compress_cmd);
+  run_spring(decompress_cmd);
 
   for (const auto &[original_path, restored_path] :
        {std::pair{r1_fastq, out_r1}, std::pair{r2_fastq, out_r2},
@@ -167,13 +167,13 @@ TEST_CASE("Grouped decompression derives unique default output names") {
                                    " -c --R1 " + r1_fastq + " --R2 " +
                                    r2_fastq + " --R3 " + r3_fastq + " --I1 " +
                                    i1_fastq + " -o " + archive_path + " -t 1";
-  REQUIRE(std::system(compress_cmd.c_str()) == 0);
+  run_spring(compress_cmd);
 
   {
     ScopedCurrentPath cwd_guard(test_dir);
     const std::string decompress_cmd =
         std::string(SPRING2_EXECUTABLE) + " -d -i " + archive_path + " -t 1";
-    REQUIRE(std::system(decompress_cmd.c_str()) == 0);
+    run_spring(decompress_cmd);
   }
 
   check_bytes_equal(read_file_binary(test_dir + "/same.R1.fastq"),
@@ -209,8 +209,8 @@ TEST_CASE("Grouped aliased R3 output honors requested target format") {
       std::string(SPRING2_EXECUTABLE) + " -d -i " + archive_path + " -o " +
       out_r1 + " " + out_r2 + " " + out_r3 + " -t 1";
 
-  REQUIRE(std::system(compress_cmd.c_str()) == 0);
-  REQUIRE(std::system(decompress_cmd.c_str()) == 0);
+  run_spring(compress_cmd);
+  run_spring(decompress_cmd);
 
   uint8_t flg = 0;
   uint32_t mtime = 0;
@@ -250,7 +250,7 @@ TEST_CASE("Grouped decompression rejects invalid read3 alias metadata") {
   const std::string compress_cmd =
       std::string(SPRING2_EXECUTABLE) + " -c --R1 " + r1_fastq + " --R2 " +
       r2_fastq + " --R3 " + r1_fastq + " -o " + archive_path + " -t 1";
-  REQUIRE(std::system(compress_cmd.c_str()) == 0);
+  run_spring(compress_cmd);
 
   fs::create_directories(extract_dir);
   REQUIRE(std::system(
@@ -290,7 +290,7 @@ TEST_CASE(
   const std::string compress_cmd =
       std::string(SPRING2_EXECUTABLE) + " -c --R1 " + r1_fastq + " --R2 " +
       r2_fastq + " --I1 " + i1_fastq + " -o " + archive_path + " -t 1";
-  REQUIRE(std::system(compress_cmd.c_str()) == 0);
+  run_spring(compress_cmd);
 
   fs::create_directories(extract_dir);
   REQUIRE(std::system(
