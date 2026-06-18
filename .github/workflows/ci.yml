@@ -237,11 +237,11 @@ jobs:
           # The WinLibs cppcheck pre-installed on the runner image was compiled
           # with FILESDIR=R:/winlibs64ucrt_stage/... which does not exist on CI
           # runners, causing it to fail immediately with "Failed to load std.cfg".
-          # Use the MSYS2 UCRT64 cppcheck (properly configured) instead, and
-          # prepend its bin directory to PATH so it shadows the broken binary.
+          # Install the MSYS2 UCRT64 cppcheck (properly configured) so it can be
+          # used directly in the cppcheck run step. Do NOT write to GITHUB_PATH
+          # here — adding MSYS2 to PATH globally shadows the cmake venv installed
+          # by "Install CMake on Windows" and breaks the configure step.
           & 'C:\msys64\usr\bin\bash.exe' -lc 'pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-cppcheck'
-          Add-Content -Path $env:GITHUB_PATH -Value 'C:\msys64\ucrt64\bin'
-          Add-Content -Path $env:GITHUB_PATH -Value 'C:\msys64\usr\bin'
 
       - name: Resolve Visual Studio environment
         if: matrix.windows_toolchain == 'msvc' || matrix.windows_toolchain == 'clangcl' || matrix.windows_toolchain == 'msvc-arm64'
@@ -546,7 +546,15 @@ jobs:
       - name: Run cppcheck on Windows
         if: success() && runner.os == 'Windows' && matrix.windows_toolchain != 'msvc-arm64'
         shell: powershell
-        run: py -3 .\tools\dev\lint\cppcheck.py
+        run: |
+          # For msvc and clangcl the MSYS2 cppcheck is pre-installed in the
+          # "Install cppcheck via MSYS2 for MSVC analysis" step above but NOT
+          # added to PATH globally (to avoid shadowing the cmake venv). Prepend
+          # it here, scoped only to this step's process.
+          if ('${{ matrix.windows_toolchain }}' -eq 'msvc' -or '${{ matrix.windows_toolchain }}' -eq 'clangcl') {
+            $env:PATH = "C:\msys64\ucrt64\bin;C:\msys64\usr\bin;$env:PATH"
+          }
+          py -3 .\tools\dev\lint\cppcheck.py
 
       - name: Run valgrind smoke test on Linux x64
         if: matrix.name == 'Linux x64 GCC'
