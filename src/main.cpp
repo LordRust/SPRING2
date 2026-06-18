@@ -581,6 +581,14 @@ void log_options_for_debugging(const command_line_options &options) {
 
 } // namespace
 
+#if defined(_OPENMP) && defined(__clang__)
+// omp_set_stacksize() is OpenMP 3.0; MSVC's omp.h covers only OpenMP 2.0 and
+// does not declare it. ClangCL uses LLVM libomp (OpenMP 3.0+), which does.
+// Forward-declare here so the call compiles regardless of which omp.h is
+// resolved by the compiler or language server.
+extern "C" void omp_set_stacksize(size_t size);
+#endif
+
 void signalHandler(int signum) {
   std::cout << "Interrupt signal (" << signum << ") received.\n";
   std::cout << "Program terminated unexpectedly\n";
@@ -589,6 +597,21 @@ void signalHandler(int signum) {
 
 int main(int argc, char **argv) {
   signal(SIGINT, signalHandler);
+
+#if defined(_OPENMP) && defined(__clang__)
+  // libsais (suffix array construction used by libbsc) contains internal
+  // #pragma omp parallel regions. On Windows with LLVM libomp (ClangCL), the
+  // default OpenMP worker thread stack is 4 MB. With /Od (no inlining), every
+  // call frame in the SA-IS recursion is full-size, causing the worker stack
+  // to overflow on real genomic data (25 MB blocks, complex sequences) while
+  // synthetic cycling data never triggers deep enough recursion to crash.
+  // Raise the thread stack to 64 MB before the first parallel region so all
+  // worker threads are created with sufficient stack.
+  // MSVC vcomp.dll worker threads inherit the /STACK PE-header value, so
+  // this call is only needed for LLVM libomp (ClangCL builds).
+  omp_set_stacksize(size_t{64} * 1024 * 1024);
+#endif
+
   command_line_options options;
   const std::string options_description = build_options_description();
 
