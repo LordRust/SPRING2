@@ -903,6 +903,49 @@ if(
     endif()
 endif()
 
+# Workaround for MSVC ARM64 miscompilation on Windows.
+# MSVC ARM64 with /O2 miscompiles gzip-related code paths in the main application
+# (io_utils.cpp and related), causing access violations (0xC0000005) when reading
+# gzip-compressed input files. Vendor libraries (cloudflare_zlib, libbsc) already
+# have their own per-directory /Od overrides; this global override extends the same
+# protection to the main spring2 application code and any other targets in scope.
+if(
+    WIN32
+    AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC"
+    AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|aarch64)$"
+)
+    foreach(cfg RELEASE RELWITHDEBINFO MINSIZEREL)
+        string(
+            REGEX REPLACE "/O[0-9dtx]"
+            "/Od"
+            CMAKE_C_FLAGS_${cfg}
+            "${CMAKE_C_FLAGS_${cfg}}"
+        )
+        string(
+            REGEX REPLACE "/O[0-9dtx]"
+            "/Od"
+            CMAKE_CXX_FLAGS_${cfg}
+            "${CMAKE_CXX_FLAGS_${cfg}}"
+        )
+        string(
+            REGEX REPLACE "/Ob[0-9]"
+            ""
+            CMAKE_C_FLAGS_${cfg}
+            "${CMAKE_C_FLAGS_${cfg}}"
+        )
+        string(
+            REGEX REPLACE "/Ob[0-9]"
+            ""
+            CMAKE_CXX_FLAGS_${cfg}
+            "${CMAKE_CXX_FLAGS_${cfg}}"
+        )
+    endforeach()
+    message(
+        NOTICE
+        "Using /Od (no optimization) globally for MSVC ARM64 to avoid access violations"
+    )
+endif()
+
 add_vendor_subdirectory_no_install("${PTHASH_DIR}" "${CMAKE_BINARY_DIR}/pthash-build")
 
 # Zstd build configuration
