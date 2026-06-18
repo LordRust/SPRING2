@@ -879,7 +879,7 @@ set(include_dir ${CMAKE_SOURCE_DIR}/src)
 # (e.g., reads >80bp, varied quality, complex IDs), causing access violations
 # (0xC0000005). The issue affects both vendor libraries and the main application.
 # We override the Release-build optimization flags globally in this scope so
-# that all targets � including spring2.exe and the test executables � compile
+# that all targets -- including spring2.exe and the test executables -- compile
 # with /Od. Vendor subdirectories that already apply this override locally
 # (libbsc, cloudflare_zlib) will continue to work correctly.
 if(
