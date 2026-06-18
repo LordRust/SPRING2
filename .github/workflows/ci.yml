@@ -230,6 +230,19 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value 'C:\msys64\ucrt64\bin'
           Add-Content -Path $env:GITHUB_PATH -Value 'C:\msys64\usr\bin'
 
+      - name: Install cppcheck via MSYS2 for MSVC analysis
+        if: runner.os == 'Windows' && (matrix.windows_toolchain == 'msvc' || matrix.windows_toolchain == 'clangcl')
+        shell: powershell
+        run: |
+          # The WinLibs cppcheck pre-installed on the runner image was compiled
+          # with FILESDIR=R:/winlibs64ucrt_stage/... which does not exist on CI
+          # runners, causing it to fail immediately with "Failed to load std.cfg".
+          # Use the MSYS2 UCRT64 cppcheck (properly configured) instead, and
+          # prepend its bin directory to PATH so it shadows the broken binary.
+          & 'C:\msys64\usr\bin\bash.exe' -lc 'pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-cppcheck'
+          Add-Content -Path $env:GITHUB_PATH -Value 'C:\msys64\ucrt64\bin'
+          Add-Content -Path $env:GITHUB_PATH -Value 'C:\msys64\usr\bin'
+
       - name: Resolve Visual Studio environment
         if: matrix.windows_toolchain == 'msvc' || matrix.windows_toolchain == 'clangcl' || matrix.windows_toolchain == 'msvc-arm64'
         shell: powershell
