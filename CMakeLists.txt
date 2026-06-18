@@ -1178,7 +1178,20 @@ if(WIN32)
     )
 endif()
 
-# On Windows with GNU toolchain: support static linking of GCC runtimes
+# On Windows with MSVC-frontend compilers (MSVC and ClangCL), the default
+# thread stack size is 1 MB. libsais.c (suffix array construction inside
+# libbsc) is recursively implemented and the recursion depth is proportional
+# to the entropy/complexity of the input. Real FASTQ data with varied
+# sequences and Illumina-style IDs drives significantly deeper recursion than
+# synthetic cycling test data. When /Od disables inlining, every call frame
+# is full size, further increasing stack consumption. Exceeding the stack
+# limit on Windows produces an access violation (0xC0000005) rather than
+# STATUS_STACK_OVERFLOW (0xC00000FD) because the guard page triggers first.
+# Raise the committed stack to 8 MB (8 * 1024 * 1024 = 8388608 bytes) to
+# provide headroom for worst-case recursion depths.
+if(WIN32 AND MSVC)
+    target_link_options(spring2 PRIVATE /STACK:8388608)
+endif()
 if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # Base GCC runtime set. OpenMP runtime is additionally resolved below from
     # compiler/OpenMP metadata to support toolchain variations.
