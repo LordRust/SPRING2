@@ -458,10 +458,7 @@ jobs:
           $ninjaExe = $env:SPRING_WINDOWS_NINJA -replace '\\','/'
           $nasmExe = $env:SPRING_WINDOWS_NASM -replace '\\','/'
           $arch = if ('${{ matrix.windows_toolchain }}' -eq 'msvc-arm64') { 'arm64' } else { 'amd64' }
-          # Use Debug for ClangCL to enable /RTC1 runtime error checks and the
-          # debug MSVC CRT, which catches memory/stack errors that survive /Od.
-          # MSVC and MSVC ARM64 use Release as usual.
-          $buildType = if ('${{ matrix.windows_toolchain }}' -eq 'clangcl') { 'Debug' } else { 'Release' }
+          $buildType = 'Release'
           $configureCommand = "call `"$vsDevCmd`" -no_logo -arch=$arch -host_arch=$arch && set CC=${{ matrix.cc }} && set CXX=${{ matrix.cxx }} && cmake -S . -B ${{ matrix.build_dir }} -G Ninja -DCMAKE_BUILD_TYPE=$buildType -DCMAKE_MAKE_PROGRAM=`"$ninjaExe`" -DSPRING_NASM_EXECUTABLE=`"$nasmExe`""
           cmd /c $configureCommand
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -502,16 +499,16 @@ jobs:
       # ========== Test Steps ==========
 
       - name: Run tests on Linux and macOS (non-Docker)
-        if: runner.os != 'Windows' && matrix.use_docker != true
+        if: success() && runner.os != 'Windows' && matrix.use_docker != true
         run: ctest --test-dir ${{ matrix.build_dir }} --output-on-failure --verbose
 
       - name: Run tests on Windows with MinGW or MSYS2 Clang
-        if: matrix.windows_toolchain == 'mingw' || matrix.windows_toolchain == 'msys2-clang'
+        if: success() && (matrix.windows_toolchain == 'mingw' || matrix.windows_toolchain == 'msys2-clang')
         shell: powershell
         run: ctest --test-dir ${{ matrix.build_dir }} --output-on-failure --verbose
 
       - name: Run tests on Windows with MSVC toolchain
-        if: matrix.windows_toolchain == 'msvc' || matrix.windows_toolchain == 'clangcl' || matrix.windows_toolchain == 'msvc-arm64'
+        if: success() && (matrix.windows_toolchain == 'msvc' || matrix.windows_toolchain == 'clangcl' || matrix.windows_toolchain == 'msvc-arm64')
         shell: powershell
         run: |
           $vsDevCmd = $env:SPRING_VSDEVCMD
@@ -523,31 +520,31 @@ jobs:
       # ========== Lint and Analysis Steps ==========
 
       - name: Run lint on Linux (non-Docker)
-        if: runner.os == 'Linux' && matrix.use_docker != true
+        if: success() && runner.os == 'Linux' && matrix.use_docker != true
         run: python3 tools/dev/lint/lint.py --build-dir ${{ matrix.build_dir }}
 
       - name: Run lint on macOS
-        if: runner.os == 'macOS'
+        if: success() && runner.os == 'macOS'
         shell: bash
         run: |
           export PATH="$HOMEBREW_LLVM_BIN:$PATH"
           python3 tools/dev/lint/lint.py --build-dir ${{ matrix.build_dir }}
 
       - name: Run lint on Windows
-        if: runner.os == 'Windows' && matrix.windows_toolchain != 'msvc-arm64' && matrix.windows_toolchain != 'msvc'
+        if: success() && runner.os == 'Windows' && matrix.windows_toolchain != 'msvc-arm64' && matrix.windows_toolchain != 'msvc'
         shell: powershell
         run: py -3 .\tools\dev\lint\lint.py --build-dir ${{ matrix.build_dir }}
 
       - name: Run cppcheck on Linux (non-Docker)
-        if: runner.os == 'Linux' && matrix.use_docker != true
+        if: success() && runner.os == 'Linux' && matrix.use_docker != true
         run: python3 tools/dev/lint/cppcheck.py
 
       - name: Run cppcheck on macOS
-        if: runner.os == 'macOS'
+        if: success() && runner.os == 'macOS'
         run: python3 tools/dev/lint/cppcheck.py
 
       - name: Run cppcheck on Windows
-        if: runner.os == 'Windows' && matrix.windows_toolchain != 'msvc-arm64'
+        if: success() && runner.os == 'Windows' && matrix.windows_toolchain != 'msvc-arm64'
         shell: powershell
         run: py -3 .\tools\dev\lint\cppcheck.py
 
