@@ -178,6 +178,9 @@ void encode(std::bitset<bitset_size> *reads, bbhashdict *dictionaries,
                    ", threads=" + std::to_string(eg.num_thr) +
                    ", num_dict=" + std::to_string(eg.numdict_s));
   std::vector<std::string> open_stream_errors(static_cast<size_t>(eg.num_thr));
+  // Declared outside the parallel block so the shared data-sharing rule
+  // applies cleanly and to avoid a static local inside an outlined function.
+  std::atomic<uint32_t> total_reads_encoded{0};
 #pragma omp parallel
   {
     bool done = false;
@@ -218,7 +221,6 @@ void encode(std::bitset<bitset_size> *reads, bbhashdict *dictionaries,
     uint64_t thread_forced_break_count = 0;
     uint64_t thread_singleton_absorbed = 0;
 
-    static std::atomic<uint32_t> total_reads_encoded{0};
     while (!done) {
       if (flag_cursor >= input_shard->flag_bytes.size()) {
         done = true;

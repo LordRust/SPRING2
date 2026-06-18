@@ -601,11 +601,35 @@ void signalHandler(int signum) {
 }
 
 #ifdef _WIN32
-// Unhandled exception filter: runs in the faulting thread before the process
-// terminates due to an unhandled SEH exception (including ACCESS_VIOLATION
-// from any thread, including OpenMP worker threads). Writes the exception code
-// and fault address to stderr so the smoke-test log captures them even when
-// the process exits before producing any other output.
+// Vectored Exception Handler: fires in the faulting thread before the normal
+// SEH / unhandled-exception chain.  Using WriteFile (no CRT) ensures the
+// diagnostic is written even if per-thread CRT state is uninitialised (e.g.
+// in an OpenMP worker thread created via raw CreateThread).  Priority 1
+// inserts this at the head of the VEH list so it runs before any handler
+// installed by libomp or other DLLs at startup.
+static LONG WINAPI spring2_veh_handler(PEXCEPTION_POINTERS ep) {
+  const DWORD code = ep->ExceptionRecord->ExceptionCode;
+  // Skip non-fatal / continuable / C++ exception codes.
+  if ((code & 0x80000000u) == 0)
+    return EXCEPTION_CONTINUE_SEARCH;
+  if (code == 0xE06D7363u)
+    return EXCEPTION_CONTINUE_SEARCH; // C++ throw
+  void *const addr = ep->ExceptionRecord->ExceptionAddress;
+  char buf[256];
+  int n = std::snprintf(buf, sizeof(buf),
+                        "[VEH-CRASH] code=0x%08lX addr=%p tid=%lu\n",
+                        static_cast<unsigned long>(code), addr,
+                        static_cast<unsigned long>(GetCurrentThreadId()));
+  if (n > 0) {
+    DWORD written;
+    WriteFile(GetStdHandle(STD_ERROR_HANDLE), buf, static_cast<DWORD>(n),
+              &written, nullptr);
+  }
+  return EXCEPTION_CONTINUE_SEARCH;
+}
+
+// Unhandled exception filter: second line of defence, runs after the SEH
+// chain is exhausted.  Writes the exception code and fault address to stderr.
 static LONG WINAPI spring2_crash_filter(PEXCEPTION_POINTERS ep) {
   const DWORD code = ep->ExceptionRecord->ExceptionCode;
   void *const addr = ep->ExceptionRecord->ExceptionAddress;
@@ -629,10 +653,15 @@ int main(int argc, char **argv) {
   setvbuf(stderr, nullptr, _IONBF, 0);
   std::cout << std::unitbuf;
   std::cerr << std::unitbuf;
-  // Install an unhandled exception filter that logs the fault address to
-  // stderr before the process is torn down.  This captures crashes in any
-  // thread (main or OpenMP workers) and the output ends up in the smoke-test
-  // capture file for diagnosis.
+  // Set the LLVM libomp worker-thread stack size via the Windows env API.
+  // libomp reads env vars through GetEnvironmentVariableW (not the CRT's
+  // getenv), so _putenv_s has no effect; SetEnvironmentVariableA must be
+  // used.  64 MiB gives ample headroom when /Od enlarges stack frames.
+  SetEnvironmentVariableA("KMP_STACKSIZE", "67108864");
+  // Vectored Exception Handler: fires in any thread before the SEH chain,
+  // using WriteFile (no CRT) for robustness in uninitialised worker threads.
+  AddVectoredExceptionHandler(1, spring2_veh_handler);
+  // Unhandled exception filter as a second line of defence.
   SetUnhandledExceptionFilter(spring2_crash_filter);
 #endif
 

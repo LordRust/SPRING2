@@ -105,17 +105,42 @@ if(WIN32)
 endif()
 
 if(MSVC)
-    # Use the static CRT (/MT, /MTd) project-wide.
     # CMAKE_MSVC_RUNTIME_LIBRARY is also passed as a -D cache argument from
     # bld.bat (conda) and analogous build scripts. The CACHE+FORCE here
     # ensures it also takes effect for local/IDE builds where the -D arg is
     # not provided.
-    set(CMAKE_MSVC_RUNTIME_LIBRARY
-        "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-        CACHE STRING
-        "MSVC runtime library"
-        FORCE
-    )
+    #
+    # ClangCL uses LLVM libomp, which creates OMP worker threads via the raw
+    # Win32 CreateThread() API rather than _beginthreadex(). With the static
+    # CRT (/MT), the MSVC per-thread runtime state (_tiddata) is not
+    # initialised via DllMain(DLL_THREAD_ATTACH) for those worker threads,
+    # because static CRT code lives in the EXE rather than a DLL. Clang's
+    # C++ exception-handling frames interact with that uninitialised state in
+    # a way that causes 0xC0000005 (ACCESS_VIOLATION) crashes inside OMP
+    # parallel regions. The dynamic CRT (/MD) avoids this because
+    # vcruntime140.dll's DllMain fires DLL_THREAD_ATTACH for every thread,
+    # including CreateThread-created worker threads, and fully initialises
+    # per-thread state before any user code runs.
+    #
+    # MSVC uses vcomp.dll for OpenMP, which calls _beginthreadex() and
+    # therefore initialises per-thread CRT state correctly even with /MT.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        # ClangCL: dynamic CRT (/MD, /MDd)
+        set(CMAKE_MSVC_RUNTIME_LIBRARY
+            "MultiThreadedDLL$<$<CONFIG:Debug>:Debug>"
+            CACHE STRING
+            "MSVC runtime library"
+            FORCE
+        )
+    else()
+        # MSVC: static CRT (/MT, /MTd)
+        set(CMAKE_MSVC_RUNTIME_LIBRARY
+            "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+            CACHE STRING
+            "MSVC runtime library"
+            FORCE
+        )
+    endif()
 endif()
 
 option(
