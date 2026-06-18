@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 import shutil
 import subprocess
@@ -93,11 +94,18 @@ def print_error(message: str) -> None:
 
 
 def require_cppcheck() -> str:
-    """Return the cppcheck executable name or fail if it is unavailable."""
+    """Return the cppcheck executable path or fail if it is unavailable."""
 
+    # Allow the caller to pin an exact binary via env var, bypassing PATH
+    # discovery entirely.  This is used in CI to avoid broken pre-installed
+    # WinLibs cppcheck binaries that may appear earlier in PATH than the
+    # MSYS2-managed one.
+    env_bin = os.environ.get("CPPCHECK")
+    if env_bin:
+        return env_bin
     resolved = shutil.which("cppcheck")
     if resolved:
-        return "cppcheck"
+        return resolved
     print_error("Missing required command: cppcheck")
     raise SystemExit(1)
 

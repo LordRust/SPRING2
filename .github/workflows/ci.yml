@@ -549,13 +549,15 @@ jobs:
         run: |
           # The WinLibs cppcheck pre-installed on the runner image is broken
           # (FILESDIR points to a non-existent staging path). Ensure the MSYS2
-          # cppcheck is always first in PATH for this step. Use clang64 for the
-          # MSYS2 Clang toolchain and ucrt64 for everything else.
+          # cppcheck is used regardless of PATH ordering by setting CPPCHECK to
+          # its absolute path. Use clang64 for the MSYS2 Clang toolchain and
+          # ucrt64 for everything else.
           $msys2Dir = if ('${{ matrix.windows_toolchain }}' -eq 'msys2-clang') {
             'C:\msys64\clang64\bin'
           } else {
             'C:\msys64\ucrt64\bin'
           }
+          $env:CPPCHECK = "$msys2Dir\cppcheck.exe"
           $env:PATH = "$msys2Dir;C:\msys64\usr\bin;$env:PATH"
           py -3 .\tools\dev\lint\cppcheck.py
 

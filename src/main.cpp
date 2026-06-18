@@ -636,21 +636,6 @@ int main(int argc, char **argv) {
   SetUnhandledExceptionFilter(spring2_crash_filter);
 #endif
 
-#if defined(_WIN32) && defined(__clang__) && defined(_OPENMP)
-  // LLVM libomp (used by ClangCL) creates OpenMP worker threads with a default
-  // 4 MB stack. libsais uses #pragma omp parallel internally; with /Od (no
-  // inlining) every SA-IS call frame is full-size and real genomic data drives
-  // the recursion deep enough to overflow 4 MB (crash: 0xC0000005 on guard
-  // page hit). omp_set_stacksize() is OpenMP 3.0 but MSVC's omp.h only covers
-  // 2.0, causing linker errors. Use _putenv_s instead: LLVM libomp reads
-  // KMP_STACKSIZE during thread pool initialization (first parallel region),
-  // so setting it here in main() before any parallel work takes effect.
-  // Respect user-provided overrides if they've set the env var themselves.
-  if (!getenv("KMP_STACKSIZE") && !getenv("OMP_STACKSIZE")) {
-    _putenv_s("KMP_STACKSIZE", "67108864"); // 64 MB
-  }
-#endif
-
   command_line_options options;
   const std::string options_description = build_options_description();
 

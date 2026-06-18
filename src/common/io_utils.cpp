@@ -74,8 +74,6 @@ std::runtime_error gzip_runtime_error(gzFile file_handle,
   return std::runtime_error(prefix + ": " + message);
 }
 
-thread_local std::string tl_plain_buffer;
-
 uint64_t count_gzip_uncompressed_bytes(const std::string &path) {
   gzFile file_handle = gzopen(path.c_str(), "rb");
   if (file_handle == nullptr) {
@@ -537,13 +535,15 @@ void write_fastq_block(std::ofstream &output_stream, std::string *id_array,
 #pragma omp parallel num_threads(num_thr)
     {
       const int tid = omp_get_thread_num();
-      tl_plain_buffer.clear();
+      // Declare local (not thread_local) to avoid TLS initialization issues
+      // with LLVM libomp worker threads under ClangCL (Clang's dynamic
+      // thread_local wrapper is not triggered for threads created by libomp).
+      std::string local_buf;
       const read_range &range = thread_ranges[static_cast<size_t>(tid)];
-      append_fastq_records_range(tl_plain_buffer, id_array, read_array,
-                                 quality_array, range.start, range.end,
-                                 use_crlf, fasta_mode, quality_header_has_id);
-      compressed[tid] =
-          gzip_compress_string(tl_plain_buffer, compression_level);
+      append_fastq_records_range(local_buf, id_array, read_array, quality_array,
+                                 range.start, range.end, use_crlf, fasta_mode,
+                                 quality_header_has_id);
+      compressed[tid] = gzip_compress_string(local_buf, compression_level);
     }
     uint64_t total_compressed_bytes = 0;
     for (int i = 0; i < num_thr; i++)
@@ -587,12 +587,14 @@ void write_bgzf_fastq_block(std::ofstream &output_stream, std::string *id_array,
 #pragma omp parallel num_threads(num_thr)
   {
     const int tid = omp_get_thread_num();
-    tl_plain_buffer.clear();
+    // Declare local (not thread_local) to avoid TLS initialization issues
+    // with LLVM libomp worker threads under ClangCL.
+    std::string local_buf;
     const read_range &range = thread_ranges[static_cast<size_t>(tid)];
-    append_fastq_records_range(tl_plain_buffer, id_array, read_array,
-                               quality_array, range.start, range.end, use_crlf,
-                               fasta_mode, quality_header_has_id);
-    bgzf_blocks[tid] = bgzf_compress_buffer(tl_plain_buffer, compression_level);
+    append_fastq_records_range(local_buf, id_array, read_array, quality_array,
+                               range.start, range.end, use_crlf, fasta_mode,
+                               quality_header_has_id);
+    bgzf_blocks[tid] = bgzf_compress_buffer(local_buf, compression_level);
   }
 
   for (int i = 0; i < num_thr; i++) {
