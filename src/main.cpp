@@ -581,14 +581,6 @@ void log_options_for_debugging(const command_line_options &options) {
 
 } // namespace
 
-#if defined(_OPENMP) && defined(__clang__)
-// omp_set_stacksize() is OpenMP 3.0; MSVC's omp.h covers only OpenMP 2.0 and
-// does not declare it. ClangCL uses LLVM libomp (OpenMP 3.0+), which does.
-// Forward-declare here so the call compiles regardless of which omp.h is
-// resolved by the compiler or language server.
-extern "C" void omp_set_stacksize(size_t size);
-#endif
-
 void signalHandler(int signum) {
   std::cout << "Interrupt signal (" << signum << ") received.\n";
   std::cout << "Program terminated unexpectedly\n";
@@ -598,18 +590,19 @@ void signalHandler(int signum) {
 int main(int argc, char **argv) {
   signal(SIGINT, signalHandler);
 
-#if defined(_OPENMP) && defined(__clang__)
-  // libsais (suffix array construction used by libbsc) contains internal
-  // #pragma omp parallel regions. On Windows with LLVM libomp (ClangCL), the
-  // default OpenMP worker thread stack is 4 MB. With /Od (no inlining), every
-  // call frame in the SA-IS recursion is full-size, causing the worker stack
-  // to overflow on real genomic data (25 MB blocks, complex sequences) while
-  // synthetic cycling data never triggers deep enough recursion to crash.
-  // Raise the thread stack to 64 MB before the first parallel region so all
-  // worker threads are created with sufficient stack.
-  // MSVC vcomp.dll worker threads inherit the /STACK PE-header value, so
-  // this call is only needed for LLVM libomp (ClangCL builds).
-  omp_set_stacksize(size_t{64} * 1024 * 1024);
+#if defined(_WIN32) && defined(__clang__) && defined(_OPENMP)
+  // LLVM libomp (used by ClangCL) creates OpenMP worker threads with a default
+  // 4 MB stack. libsais uses #pragma omp parallel internally; with /Od (no
+  // inlining) every SA-IS call frame is full-size and real genomic data drives
+  // the recursion deep enough to overflow 4 MB (crash: 0xC0000005 on guard
+  // page hit). omp_set_stacksize() is OpenMP 3.0 but MSVC's omp.h only covers
+  // 2.0, causing linker errors. Use _putenv_s instead: LLVM libomp reads
+  // KMP_STACKSIZE during thread pool initialization (first parallel region),
+  // so setting it here in main() before any parallel work takes effect.
+  // Respect user-provided overrides if they've set the env var themselves.
+  if (!getenv("KMP_STACKSIZE") && !getenv("OMP_STACKSIZE")) {
+    _putenv_s("KMP_STACKSIZE", "67108864"); // 64 MB
+  }
 #endif
 
   command_line_options options;
