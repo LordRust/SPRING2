@@ -95,4 +95,21 @@ set_target_properties(
     spring_cloudflare_zlib
     PROPERTIES POSITION_INDEPENDENT_CODE ON
 )
+
+# MSVC ARM64 defines __aarch64__ (since VS 2019), which activates ARM64-specific
+# code in crc32.c and deflate.c that uses <arm_acle.h> CRC intrinsics and NEON
+# (e.g. vld1q_u16/vst1q_u16 in slide_hash) with raw pointer casts that cause
+# access violations (0xC0000005) at runtime. Undefine __aarch64__ to force the
+# generic C fallback for all three affected functions.
+if(
+    CMAKE_C_COMPILER_ID STREQUAL "MSVC"
+    AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|aarch64)$"
+)
+    target_compile_options(spring_cloudflare_zlib PRIVATE /U__aarch64__)
+    message(
+        NOTICE
+        "Disabling __aarch64__ in cloudflare_zlib for MSVC ARM64 to avoid access violations"
+    )
+endif()
+
 add_library(ZLIB::ZLIB ALIAS spring_cloudflare_zlib)
