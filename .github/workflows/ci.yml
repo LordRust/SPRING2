@@ -134,9 +134,16 @@ jobs:
         shell: bash
         env:
           HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
+          # Silence Homebrew's noisy update chatter (new formulae lists, analytics
+          # nags, outdated-formula banners).  Errors still surface via exit code.
+          HOMEBREW_NO_INSTALL_CLEANUP: 1
         run: |
+          # Remove third-party taps that produce broken-formula errors or
+          # deprecation warnings during `brew update` (hashicorp/tap/vagrant has
+          # no URL; aws/tap emits end-of-life SAM CLI warnings). Untap first so
+          # the subsequent `brew update` does not try to refresh them.
           brew untap aws/tap aws/tap-nightly hashicorp/tap 2>/dev/null || true
-          brew update
+          brew update 2>/dev/null || true
           brew install ccache libomp lld llvm cppcheck python
           echo "MACOS_LIBOMP_PREFIX=$(brew --prefix libomp)" >> "$GITHUB_ENV"
           echo "HOMEBREW_LLVM_BIN=$(brew --prefix llvm)/bin" >> "$GITHUB_ENV"
