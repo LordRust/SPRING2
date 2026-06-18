@@ -10,6 +10,7 @@
 #include <cmath>
 #include <csignal>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -19,6 +20,18 @@
 #include <string>
 #include <thread>
 #include <vector>
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+// omp.h (in pch.h) may pull in <windows.h> without NOMINMAX, defining
+// min/max as macros.  Undefine them here so std::min/std::max work normally.
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
+#endif
 
 namespace {
 
@@ -587,8 +600,41 @@ void signalHandler(int signum) {
   std::exit(signum);
 }
 
+#ifdef _WIN32
+// Unhandled exception filter: runs in the faulting thread before the process
+// terminates due to an unhandled SEH exception (including ACCESS_VIOLATION
+// from any thread, including OpenMP worker threads). Writes the exception code
+// and fault address to stderr so the smoke-test log captures them even when
+// the process exits before producing any other output.
+static LONG WINAPI spring2_crash_filter(PEXCEPTION_POINTERS ep) {
+  const DWORD code = ep->ExceptionRecord->ExceptionCode;
+  void *const addr = ep->ExceptionRecord->ExceptionAddress;
+  char buf[128];
+  std::snprintf(buf, sizeof(buf),
+                "[CRASH] ExceptionCode=0x%08lX FaultAddress=%p\n",
+                static_cast<unsigned long>(code), addr);
+  std::fputs(buf, stderr);
+  std::fflush(stderr);
+  return EXCEPTION_CONTINUE_SEARCH; // let WER / debugger handle it normally
+}
+#endif
+
 int main(int argc, char **argv) {
   signal(SIGINT, signalHandler);
+
+#ifdef _WIN32
+  // Make stdout/stderr fully unbuffered so every write is immediately
+  // committed to the file handle before any potential crash.
+  setvbuf(stdout, nullptr, _IONBF, 0);
+  setvbuf(stderr, nullptr, _IONBF, 0);
+  std::cout << std::unitbuf;
+  std::cerr << std::unitbuf;
+  // Install an unhandled exception filter that logs the fault address to
+  // stderr before the process is torn down.  This captures crashes in any
+  // thread (main or OpenMP workers) and the output ends up in the smoke-test
+  // capture file for diagnosis.
+  SetUnhandledExceptionFilter(spring2_crash_filter);
+#endif
 
 #if defined(_WIN32) && defined(__clang__) && defined(_OPENMP)
   // LLVM libomp (used by ClangCL) creates OpenMP worker threads with a default
