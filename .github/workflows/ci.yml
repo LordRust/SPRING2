@@ -573,7 +573,8 @@ jobs:
             Where-Object { $_.Source -notmatch 'WinGet|WinLibs|winlibs' } |
             Select-Object -ExpandProperty Source -First 1
           if (-not $cppcheckExe) {
-            $cppcheckExe = (Get-Command cppcheck.exe -ErrorAction SilentlyContinue)?.Source
+            $cmd = Get-Command cppcheck.exe -ErrorAction SilentlyContinue
+            if ($cmd) { $cppcheckExe = $cmd.Source }
           }
           if (-not $cppcheckExe) {
             Write-Error 'cppcheck.exe not found in PATH'
