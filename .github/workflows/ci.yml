@@ -483,6 +483,10 @@ jobs:
             magick docs/assets/icons/logo.png `
               -define icon:auto-resize=16,32,48,64,128,256 `
               docs/assets/icons/logo.ico
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "ImageMagick failed (exit $LASTEXITCODE); skipping icon conversion."
+              $global:LASTEXITCODE = 0
+            }
           }
           $env:CC='${{ matrix.cc }}'
           $env:CXX='${{ matrix.cxx }}'
@@ -496,6 +500,10 @@ jobs:
             magick docs/assets/icons/logo.png `
               -define icon:auto-resize=16,32,48,64,128,256 `
               docs/assets/icons/logo.ico
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "ImageMagick failed (exit $LASTEXITCODE); skipping icon conversion."
+              $global:LASTEXITCODE = 0
+            }
           }
           $vsDevCmd = $env:SPRING_VSDEVCMD
           $arch = if ('${{ matrix.windows_toolchain }}' -eq 'msvc-arm64') { 'arm64' } else { 'amd64' }
