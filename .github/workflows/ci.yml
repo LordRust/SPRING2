@@ -565,16 +565,21 @@ jobs:
         if: success() && runner.os == 'Windows' && matrix.windows_toolchain != 'msvc-arm64'
         shell: powershell
         run: |
-          # The WinLibs cppcheck pre-installed on the runner image is broken
-          # (FILESDIR points to a non-existent staging path).  Find the MSYS2
-          # cppcheck from PATH — setup-msys2 has already added the correct
-          # bin directory — while skipping any WinGet/WinLibs binary.
-          $cppcheckExe = Get-Command cppcheck.exe -All -ErrorAction SilentlyContinue |
-            Where-Object { $_.Source -notmatch 'WinGet|WinLibs|winlibs' } |
-            Select-Object -ExpandProperty Source -First 1
+          # For MSVC/ClangCL builds, setup-msys2 is not run, so MSYS2 is not
+          # in PATH. The "Install cppcheck via MSYS2" step uses pacman to
+          # install cppcheck into C:\msys64\ucrt64\bin — check that first.
+          # For MinGW/MSYS2-Clang builds, setup-msys2 adds the correct bin
+          # dir to PATH, so PATH discovery works. Either way, skip broken
+          # pre-installed binaries from WinLibs and Strawberry Perl.
+          $cppcheckExe = $null
+          $msys2Fixed = 'C:\msys64\ucrt64\bin\cppcheck.exe'
+          if (Test-Path $msys2Fixed) {
+            $cppcheckExe = $msys2Fixed
+          }
           if (-not $cppcheckExe) {
-            $cmd = Get-Command cppcheck.exe -ErrorAction SilentlyContinue
-            if ($cmd) { $cppcheckExe = $cmd.Source }
+            $cppcheckExe = Get-Command cppcheck.exe -All -ErrorAction SilentlyContinue |
+              Where-Object { $_.Source -notmatch 'WinGet|WinLibs|winlibs|Strawberry' } |
+              Select-Object -ExpandProperty Source -First 1
           }
           if (-not $cppcheckExe) {
             Write-Error 'cppcheck.exe not found in PATH'
