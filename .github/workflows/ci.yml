@@ -227,15 +227,21 @@ jobs:
         if: matrix.windows_toolchain == 'msys2-clang'
         shell: powershell
         run: |
-          Add-Content -Path $env:GITHUB_PATH -Value 'C:\msys64\clang64\bin'
-          Add-Content -Path $env:GITHUB_PATH -Value 'C:\msys64\usr\bin'
+          $msys2Root = @('C:\msys64', 'D:\msys64') | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($msys2Root) {
+            Add-Content -Path $env:GITHUB_PATH -Value "$msys2Root\clang64\bin"
+            Add-Content -Path $env:GITHUB_PATH -Value "$msys2Root\usr\bin"
+          }
 
       - name: Expose MSYS2 UCRT64 tools on PATH for analysis
         if: runner.os == 'Windows' && matrix.windows_toolchain == 'mingw'
         shell: powershell
         run: |
-          Add-Content -Path $env:GITHUB_PATH -Value 'C:\msys64\ucrt64\bin'
-          Add-Content -Path $env:GITHUB_PATH -Value 'C:\msys64\usr\bin'
+          $msys2Root = @('C:\msys64', 'D:\msys64') | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($msys2Root) {
+            Add-Content -Path $env:GITHUB_PATH -Value "$msys2Root\ucrt64\bin"
+            Add-Content -Path $env:GITHUB_PATH -Value "$msys2Root\usr\bin"
+          }
 
       - name: Install cppcheck via MSYS2 for MSVC analysis
         if: runner.os == 'Windows' && (matrix.windows_toolchain == 'msvc' || matrix.windows_toolchain == 'clangcl')
@@ -245,10 +251,12 @@ jobs:
           # with FILESDIR=R:/winlibs64ucrt_stage/... which does not exist on CI
           # runners, causing it to fail immediately with "Failed to load std.cfg".
           # Install the MSYS2 UCRT64 cppcheck (properly configured) so it can be
-          # used directly in the cppcheck run step. Do NOT write to GITHUB_PATH
-          # here — adding MSYS2 to PATH globally shadows the cmake venv installed
-          # by "Install CMake on Windows" and breaks the configure step.
-          & 'C:\msys64\usr\bin\bash.exe' -lc 'pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-cppcheck'
+          # used directly in the cppcheck run step. Try both C: and D: since
+          # the MSYS2 root varies across runner images.
+          $bashExe = @('C:\msys64\usr\bin\bash.exe', 'D:\msys64\usr\bin\bash.exe') |
+            Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $bashExe) { Write-Error 'MSYS2 bash.exe not found'; exit 1 }
+          & $bashExe -lc 'pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-cppcheck'
 
       - name: Resolve Visual Studio environment
         if: matrix.windows_toolchain == 'msvc' || matrix.windows_toolchain == 'clangcl' || matrix.windows_toolchain == 'msvc-arm64'
@@ -565,16 +573,18 @@ jobs:
         if: success() && runner.os == 'Windows' && matrix.windows_toolchain != 'msvc-arm64'
         shell: powershell
         run: |
-          # For MSVC/ClangCL builds, setup-msys2 is not run, so MSYS2 is not
-          # in PATH. The "Install cppcheck via MSYS2" step uses pacman to
-          # install cppcheck into C:\msys64\ucrt64\bin — check that first.
-          # For MinGW/MSYS2-Clang builds, setup-msys2 adds the correct bin
-          # dir to PATH, so PATH discovery works. Either way, skip broken
-          # pre-installed binaries from WinLibs and Strawberry Perl.
+          # Search all common MSYS2 installation roots (C: and D:) and both
+          # ucrt64 and clang64 subsystems for a working cppcheck, skipping
+          # broken pre-installed binaries from WinLibs and Strawberry Perl.
           $cppcheckExe = $null
-          $msys2Fixed = 'C:\msys64\ucrt64\bin\cppcheck.exe'
-          if (Test-Path $msys2Fixed) {
-            $cppcheckExe = $msys2Fixed
+          $msys2Candidates = @(
+            'C:\msys64\ucrt64\bin\cppcheck.exe',
+            'C:\msys64\clang64\bin\cppcheck.exe',
+            'D:\msys64\ucrt64\bin\cppcheck.exe',
+            'D:\msys64\clang64\bin\cppcheck.exe'
+          )
+          foreach ($candidate in $msys2Candidates) {
+            if (Test-Path $candidate) { $cppcheckExe = $candidate; break }
           }
           if (-not $cppcheckExe) {
             $cppcheckExe = Get-Command cppcheck.exe -All -ErrorAction SilentlyContinue |
@@ -582,7 +592,7 @@ jobs:
               Select-Object -ExpandProperty Source -First 1
           }
           if (-not $cppcheckExe) {
-            Write-Error 'cppcheck.exe not found in PATH'
+            Write-Error 'cppcheck.exe not found in any known MSYS2 location or PATH'
             exit 1
           }
           Write-Host "Using cppcheck: $cppcheckExe"
