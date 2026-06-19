@@ -495,11 +495,22 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
   std::vector<std::string> singleton_order_buffers(
       static_cast<size_t>(rg.num_thr));
   artifact.aligned_shards.assign(static_cast<size_t>(rg.num_thr), {});
-#pragma omp parallel default(none)                                             \
-    shared(rg, read, read_lengths, dict, dict_locks, read_locks,               \
-               remaining_read_lock, length_masks_ptrs, index_masks,            \
-               remaining_reads, unmatched_counts, singleton_order_buffers,     \
-               artifact, std::cerr, std::cout, first_read, deterministic_mode)
+  // Extract raw data pointers from all vector shared vars before the OMP
+  // parallel region.  Clang's OMP outlined-function closure mishandles
+  // complex template types (e.g. vector<bitset<N>>), returning a garbage
+  // data() pointer inside worker threads.  Plain raw pointers are safe.
+  auto *const index_masks_data = index_masks.data();
+  auto *const length_masks_data = length_masks_ptrs.data();
+  auto *const dict_locks_data = dict_locks.data();
+  auto *const read_locks_data = read_locks.data();
+  auto *const remaining_read_lock_data = remaining_read_lock.data();
+  auto *const unmatched_counts_data = unmatched_counts.data();
+  auto *const singleton_order_buffers_data = singleton_order_buffers.data();
+#pragma omp parallel default(none) shared(                                     \
+        rg, read, read_lengths, dict, remaining_reads, artifact, first_read,   \
+            deterministic_mode, index_masks_data, length_masks_data,           \
+            dict_locks_data, read_locks_data, remaining_read_lock_data,        \
+            unmatched_counts_data, singleton_order_buffers_data)
   {
     bool done = false;
     int thread_id = omp_get_thread_num();
@@ -520,7 +531,7 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
       done = true;
     }
 
-    unmatched_counts[thread_id] = 0;
+    unmatched_counts_data[thread_id] = 0;
     std::bitset<bitset_size> reference_read, reverse_reference_read,
         masked_read_bits;
 
@@ -570,19 +581,22 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
       current_read_id = scan_slot;
 
       omp_set_lock(
-          remaining_read_lock[detail::lock_shard(current_read_id)].get());
-      omp_set_lock(read_locks[detail::lock_shard(current_read_id)].get());
+          remaining_read_lock_data[detail::lock_shard(current_read_id)].get());
+      omp_set_lock(read_locks_data[detail::lock_shard(current_read_id)].get());
       if (remaining_reads[current_read_id]) {
         remaining_reads[current_read_id] = 0;
-        unmatched_counts[thread_id]++;
-        omp_unset_lock(read_locks[detail::lock_shard(current_read_id)].get());
+        unmatched_counts_data[thread_id]++;
         omp_unset_lock(
-            remaining_read_lock[detail::lock_shard(current_read_id)].get());
+            read_locks_data[detail::lock_shard(current_read_id)].get());
+        omp_unset_lock(
+            remaining_read_lock_data[detail::lock_shard(current_read_id)]
+                .get());
         break;
       }
-      omp_unset_lock(read_locks[detail::lock_shard(current_read_id)].get());
       omp_unset_lock(
-          remaining_read_lock[detail::lock_shard(current_read_id)].get());
+          read_locks_data[detail::lock_shard(current_read_id)].get());
+      omp_unset_lock(
+          remaining_read_lock_data[detail::lock_shard(current_read_id)].get());
     }
     if (!done) {
       updaterefcount<bitset_size>(read[current_read_id], reference_read,
@@ -620,7 +634,8 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
           uint32_t read_id = (*pending_delete_it).first;
           uint64_t pending_bucket_start = (*pending_delete_it).second;
           if (!omp_test_lock(
-                  dict_locks[detail::lock_shard(pending_bucket_start)].get())) {
+                  dict_locks_data[detail::lock_shard(pending_bucket_start)]
+                      .get())) {
             ++pending_delete_it;
             continue;
           }
@@ -631,7 +646,8 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
             pending_delete_it = pending_bin_deletions[dictionary_index].erase(
                 pending_delete_it);
             omp_unset_lock(
-                dict_locks[detail::lock_shard(pending_bucket_start)].get());
+                dict_locks_data[detail::lock_shard(pending_bucket_start)]
+                    .get());
             continue;
           }
           dict[dictionary_index].remove(bucket_range, pending_bucket_start,
@@ -639,7 +655,7 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
           pending_delete_it =
               pending_bin_deletions[dictionary_index].erase(pending_delete_it);
           omp_unset_lock(
-              dict_locks[detail::lock_shard(pending_bucket_start)].get());
+              dict_locks_data[detail::lock_shard(pending_bucket_start)].get());
         }
       }
 
@@ -649,7 +665,7 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
           if (read_lengths[current_read_id] <= dict[dictionary_index].end)
             continue;
           masked_read_bits =
-              read[current_read_id] & index_masks[dictionary_index];
+              read[current_read_id] & index_masks_data[dictionary_index];
           lookup_key = (masked_read_bits >> 2 * dict[dictionary_index].start)
                            .to_ullong();
           if (rg.depleted_base == 'C') {
@@ -662,7 +678,8 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
               dict[dictionary_index].empty_bin[bucket_start_index])
             continue;
           if (!omp_test_lock(
-                  dict_locks[detail::lock_shard(bucket_start_index)].get())) {
+                  dict_locks_data[detail::lock_shard(bucket_start_index)]
+                      .get())) {
             pending_bin_deletions[dictionary_index].push_back(
                 std::pair<uint32_t, uint64_t>{
                     static_cast<uint32_t>(current_read_id),
@@ -674,13 +691,13 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
                                           bucket_range)) {
             dict[dictionary_index].empty_bin[bucket_start_index] = true;
             omp_unset_lock(
-                dict_locks[detail::lock_shard(bucket_start_index)].get());
+                dict_locks_data[detail::lock_shard(bucket_start_index)].get());
             continue;
           }
           dict[dictionary_index].remove(bucket_range, bucket_start_index,
                                         current_read_id);
           omp_unset_lock(
-              dict_locks[detail::lock_shard(bucket_start_index)].get());
+              dict_locks_data[detail::lock_shard(bucket_start_index)].get());
         }
       } else {
         left_search_start = false;
@@ -691,10 +708,9 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
           (reference_position < MAX_CONTIG_GROWTH - 2 * rg.max_readlen))
         for (int shift = 0; shift < rg.maxshift; shift++) {
           found_match = detail::search_match<bitset_size>(
-              reference_read, index_masks.data(), dict_locks.data(),
-              read_locks.data(), length_masks_ptrs.data(), read_lengths,
-              remaining_reads, read, dict, matched_read_id, false, shift,
-              reference_length, rg);
+              reference_read, index_masks_data, dict_locks_data,
+              read_locks_data, length_masks_data, read_lengths, remaining_reads,
+              read, dict, matched_read_id, false, shift, reference_length, rg);
           if (found_match == 1) {
             current_read_id = matched_read_id;
             int previous_reference_length = reference_length;
@@ -737,10 +753,9 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
 
           // find reverse match
           found_match = detail::search_match<bitset_size>(
-              reverse_reference_read, index_masks.data(), dict_locks.data(),
-              read_locks.data(), length_masks_ptrs.data(), read_lengths,
-              remaining_reads, read, dict, matched_read_id, true, shift,
-              reference_length, rg);
+              reverse_reference_read, index_masks_data, dict_locks_data,
+              read_locks_data, length_masks_data, read_lengths, remaining_reads,
+              read, dict, matched_read_id, true, shift, reference_length, rg);
           if (found_match == 1) {
             current_read_id = matched_read_id;
             int previous_reference_length = reference_length;
@@ -803,18 +818,18 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
           for (int64_t read_id = remaining_read_scan; read_id >= 0;
                read_id -= scan_stride) {
             omp_set_lock(
-                remaining_read_lock[detail::lock_shard(read_id)].get());
-            omp_set_lock(read_locks[detail::lock_shard(read_id)].get());
+                remaining_read_lock_data[detail::lock_shard(read_id)].get());
+            omp_set_lock(read_locks_data[detail::lock_shard(read_id)].get());
             if (remaining_reads[read_id]) {
               current_read_id = read_id;
               remaining_read_scan = read_id - scan_stride;
               remaining_reads[read_id] = 0;
               found_match = 1;
-              unmatched_counts[thread_id]++;
+              unmatched_counts_data[thread_id]++;
             }
-            omp_unset_lock(read_locks[detail::lock_shard(read_id)].get());
+            omp_unset_lock(read_locks_data[detail::lock_shard(read_id)].get());
             omp_unset_lock(
-                remaining_read_lock[detail::lock_shard(read_id)].get());
+                remaining_read_lock_data[detail::lock_shard(read_id)].get());
             if (found_match == 1)
               break;
           }
@@ -852,7 +867,7 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
         std::move(order_output);
     artifact.aligned_shards[static_cast<size_t>(thread_id)].read_length_bytes =
         std::move(read_length_output);
-    singleton_order_buffers[static_cast<size_t>(thread_id)] =
+    singleton_order_buffers_data[static_cast<size_t>(thread_id)] =
         std::move(singleton_order_output);
     // base_counts_storage RAII will free the per-thread buffers
   }
@@ -863,14 +878,14 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
     for (uint32_t read_id = 0; read_id < rg.numreads; read_id++) {
       if (!remaining_reads[read_id])
         continue;
-      detail::append_binary(singleton_order_buffers[0], read_id);
+      detail::append_binary(singleton_order_buffers_data[0], read_id);
       remaining_reads[read_id] = false;
       recovered_singletons++;
     }
   }
 
   if (recovered_singletons > 0) {
-    unmatched_counts[0] += recovered_singletons;
+    unmatched_counts_data[0] += recovered_singletons;
     SPRING_LOG_DEBUG("Recovered leftover reorder reads as singletons: " +
                      std::to_string(recovered_singletons));
   }

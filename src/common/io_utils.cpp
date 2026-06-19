@@ -8,7 +8,6 @@
 #include "libbsc/bsc.h"
 #include "libbsc/filters.h"
 #include "libbsc/libbsc.h"
-#include "omp.h"
 #include "parse_utils.h"
 #include "progress.h"
 #include "qvz/qvz.h"
@@ -532,12 +531,13 @@ void write_fastq_block(std::ofstream &output_stream, std::string *id_array,
     std::vector<std::string> compressed(static_cast<size_t>(num_thr));
     const std::vector<read_range> thread_ranges =
         compute_read_ranges(num_reads, num_thr);
-#pragma omp parallel num_threads(num_thr)
-    {
-      const int tid = omp_get_thread_num();
+    // Use parallel for so every iteration executes even when OMP creates
+    // fewer threads than requested (e.g. ClangCL/libomp on Windows).  Each
+    // iteration writes to a distinct compressed[tid] slot (thread-safe).
+#pragma omp parallel for num_threads(num_thr) schedule(static, 1)
+    for (int tid = 0; tid < num_thr; ++tid) {
       // Declare local (not thread_local) to avoid TLS initialization issues
-      // with LLVM libomp worker threads under ClangCL (Clang's dynamic
-      // thread_local wrapper is not triggered for threads created by libomp).
+      // with LLVM libomp worker threads under ClangCL.
       std::string local_buf;
       const read_range &range = thread_ranges[static_cast<size_t>(tid)];
       append_fastq_records_range(local_buf, id_array, read_array, quality_array,
@@ -583,10 +583,10 @@ void write_bgzf_fastq_block(std::ofstream &output_stream, std::string *id_array,
   const std::vector<read_range> thread_ranges =
       compute_read_ranges(num_reads, num_thr);
   std::vector<std::vector<std::string>> bgzf_blocks(num_thr);
-
-#pragma omp parallel num_threads(num_thr)
-  {
-    const int tid = omp_get_thread_num();
+  // Use parallel for so every iteration executes even when OMP creates
+  // fewer threads than requested (e.g. ClangCL/libomp on Windows).
+#pragma omp parallel for num_threads(num_thr) schedule(static, 1)
+  for (int tid = 0; tid < num_thr; ++tid) {
     // Declare local (not thread_local) to avoid TLS initialization issues
     // with LLVM libomp worker threads under ClangCL.
     std::string local_buf;

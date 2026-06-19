@@ -45,7 +45,11 @@ public:
   uint32_t dict_numreads; // Number of reads long enough to participate here.
   std::unique_ptr<uint32_t[]> startpos;
   std::unique_ptr<uint32_t[]> read_id;
-  std::vector<bool> empty_bin;
+  // std::vector<bool> packs bits into shared words which is not safe for
+  // concurrent read/write on different elements (they share the same byte).
+  // Use uint8_t so each element has its own byte and threads can safely
+  // access adjacent entries with different dict_locks shards.
+  std::vector<uint8_t> empty_bin;
   void findpos(int64_t *dictidx, const uint64_t &startposidx);
   void remove(const int64_t *dictidx, const uint64_t &startposidx,
               const int64_t read_id_to_remove);
@@ -91,7 +95,10 @@ inline thread_range split_thread_range(const uint64_t item_count,
 
 inline bool valid_bucket_range(const bbhashdict &dictionary,
                                const int64_t *dictidx) {
-  if (dictidx[0] < 0 || dictidx[1] < dictidx[0])
+  // dictidx[1] <= dictidx[0] covers both empty ranges (==) and inverted ones
+  // (<).  An empty range means the bucket has no live elements; the tail
+  // marker at dictidx[0] must not be used as a read index.
+  if (dictidx[0] < 0 || dictidx[1] <= dictidx[0])
     return false;
 
   const uint64_t begin = static_cast<uint64_t>(dictidx[0]);
@@ -310,7 +317,7 @@ inline void count_bucket_sizes(bbhashdict &dictionary,
 }
 
 inline void finalize_bucket_offsets(bbhashdict &dictionary) {
-  dictionary.empty_bin.assign(dictionary.numkeys, false);
+  dictionary.empty_bin.assign(dictionary.numkeys, 0);
   bbhashdict *local_dictionary = &dictionary;
 
 #pragma omp parallel for schedule(static) default(none) shared(local_dictionary)
@@ -318,7 +325,7 @@ inline void finalize_bucket_offsets(bbhashdict &dictionary) {
        key_index < static_cast<int64_t>(local_dictionary->numkeys);
        key_index++) {
     if (local_dictionary->startpos[key_index + 1] == 0)
-      local_dictionary->empty_bin[key_index] = true;
+      local_dictionary->empty_bin[key_index] = 1;
   }
 
   const uint32_t scan_length =

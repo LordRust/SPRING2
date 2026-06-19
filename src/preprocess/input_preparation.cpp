@@ -850,15 +850,15 @@ preprocess(const std::string &infile_1, const std::string &infile_2,
         cp.encoding.cb_prefix_len = cp.encoding.cb_len;
       }
 
-        std::string preprocess_step_log;
-        preprocess_step_log.reserve(96);
-        preprocess_step_log.append("Preprocess step: stream=");
-        preprocess_step_log.append(std::to_string(stream_index + 1));
-        preprocess_step_log.append(", reads_in_step=");
-        preprocess_step_log.append(std::to_string(reads_in_step));
-        preprocess_step_log.append(", blocks_done=");
-        preprocess_step_log.append(std::to_string(num_blocks_done));
-        SPRING_LOG_DEBUG(preprocess_step_log);
+      std::string preprocess_step_log;
+      preprocess_step_log.reserve(96);
+      preprocess_step_log.append("Preprocess step: stream=");
+      preprocess_step_log.append(std::to_string(stream_index + 1));
+      preprocess_step_log.append(", reads_in_step=");
+      preprocess_step_log.append(std::to_string(reads_in_step));
+      preprocess_step_log.append(", blocks_done=");
+      preprocess_step_log.append(std::to_string(num_blocks_done));
+      SPRING_LOG_DEBUG(preprocess_step_log);
       if (reads_in_step < num_reads_per_step)
         done[stream_index] = true;
       if (reads_in_step == 0)
@@ -870,10 +870,14 @@ preprocess(const std::string &infile_1, const std::string &infile_2,
       }
       std::vector<std::unordered_map<std::string, std::string>>
           thread_archive_members(static_cast<size_t>(cp.encoding.num_thr));
-#pragma omp parallel
-      {
+      // Use parallel for so every thread_id slot is processed even when
+      // ClangCL/libomp on Windows creates fewer threads than requested inside
+      // a bare #pragma omp parallel region.
+#pragma omp parallel for schedule(static, 1)
+      for (int thread_id_int = 0; thread_id_int < cp.encoding.num_thr;
+           ++thread_id_int) {
+        uint64_t thread_id = static_cast<uint64_t>(thread_id_int);
         bool thread_done = false;
-        uint64_t thread_id = omp_get_thread_num();
         if (stream_index == 1)
           paired_id_match_array[thread_id] = paired_id_match ? 1 : 0;
         if (thread_id * num_reads_per_block >= reads_in_step)
