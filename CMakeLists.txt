@@ -125,9 +125,21 @@ if(MSVC)
     # MSVC uses vcomp.dll for OpenMP, which calls _beginthreadex() and
     # therefore initialises per-thread CRT state correctly even with /MT.
     if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        # ClangCL: dynamic CRT (/MD, /MDd)
+        # ClangCL: dynamic CRT (/MD, /MDd).
+        # Avoid a generator expression here: CMake 4.x's try_compile for
+        # indexed_bzip2's find_package(Threads) runs in Debug config and
+        # evaluates "MultiThreadedDLL$<$<CONFIG:Debug>:Debug>" to
+        # "MultiThreadedDLLDebug", which is not accepted for the clang-cl
+        # C compiler in that context.  A plain conditional on CMAKE_BUILD_TYPE
+        # works correctly for the Ninja single-config generator used on CI and
+        # for local builds.
+        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+            set(_spring_clangcl_crt "MultiThreadedDLLDebug")
+        else()
+            set(_spring_clangcl_crt "MultiThreadedDLL")
+        endif()
         set(CMAKE_MSVC_RUNTIME_LIBRARY
-            "MultiThreadedDLL$<$<CONFIG:Debug>:Debug>"
+            "${_spring_clangcl_crt}"
             CACHE STRING
             "MSVC runtime library"
             FORCE
