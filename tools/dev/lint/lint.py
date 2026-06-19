@@ -498,6 +498,29 @@ def discover_linux_system_include_dirs() -> list[str]:
     return includes
 
 
+def _is_clangcl_compile_db() -> bool:
+    """Return True if the current build's compile_commands.json uses clang-cl."""
+
+    if not BUILD_COMPILE_COMMANDS.exists():
+        return False
+    try:
+        entries = json.loads(BUILD_COMPILE_COMMANDS.read_text(encoding="utf-8"))
+        if not entries:
+            return False
+        # Check both "command" (string) and "arguments" (list) forms.
+        first = entries[0]
+        if isinstance(first.get("arguments"), list) and first["arguments"]:
+            compiler = pathlib.Path(first["arguments"][0]).name.lower()
+            return "clang-cl" in compiler
+        command = first.get("command", "")
+        if command:
+            first_token = pathlib.Path(split_command(command)[0]).name.lower()
+            return "clang-cl" in first_token
+    except Exception:  # noqa: BLE001
+        pass
+    return False
+
+
 def build_clang_tidy_common_args() -> list[str]:
     """Build the host-specific clang-tidy argument prefix."""
 
@@ -509,9 +532,17 @@ def build_clang_tidy_common_args() -> list[str]:
     ]
 
     if IS_WINDOWS:
+        if _is_clangcl_compile_db():
+            # ClangCL compile commands use MSVC-style /std:c++20 flags.  Under
+            # the MinGW GNU triple those flags are not mapped to a C++ standard,
+            # so C++20 features (starts_with, ranges, …) appear missing.  Use
+            # the MSVC triple so clang-tidy interprets /std:c++20 correctly.
+            target = "x86_64-pc-windows-msvc"
+        else:
+            target = "x86_64-w64-windows-gnu"
         args.extend(
             [
-                "--extra-arg-before=--target=x86_64-w64-windows-gnu",
+                f"--extra-arg-before=--target={target}",
                 f"--extra-arg=-I{LINT_INCLUDE_DIR}",
                 "--extra-arg=-fopenmp",
                 "--extra-arg=-w",
