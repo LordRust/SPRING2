@@ -73,7 +73,8 @@ jobs:
         uses: conda-incubator/setup-miniconda@v4
         with:
           miniforge-version: latest
-          auto-activate-base: false
+          auto-activate: false
+          conda-remove-defaults: true
           use-mamba: true
 
       - name: Create spring_v1 environment with bioconda::spring
