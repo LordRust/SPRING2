@@ -194,6 +194,10 @@ TIDY_CHECKS = (
     ",-clang-analyzer-valist.Uninitialized"
     ",-bugprone-non-zero-enum-to-bool-conversion"
     ",-bugprone-sizeof-expression,-bugprone-not-null-terminated-result"
+    # MSVC STL _BITMASK_OPS macro combines valid enum flags via bitwise OR,
+    # producing combined values not listed as named enumerators.  This is a
+    # known false positive with MSVC's <filesystem> / <xfilesystem_abi.h>.
+    ",-clang-analyzer-optin.core.EnumCastOutOfRange"
 )
 
 

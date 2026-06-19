@@ -13,6 +13,7 @@ outputs:
     build:
       ignore_run_exports:
         - vc14_runtime # [win]
+        - libcxx # [osx]
       script:
         - bash "${RECIPE_DIR}/build.sh" # [unix]
         - call "%RECIPE_DIR%\\bld.bat" # [win]
