@@ -348,7 +348,7 @@ jobs:
             dnf install -y --setopt=install_weak_deps=False epel-release dnf-plugins-core && \
             (dnf config-manager --set-enabled powertools || \
               dnf config-manager --set-enabled crb) && \
-            dnf install -y --setopt=install_weak_deps=False gcc-toolset-12-gcc-c++ libomp-devel \
+            dnf install -y --setopt=install_weak_deps=False --setopt=tsflags=noscripts gcc-toolset-12-gcc-c++ libomp-devel \
               python39 python39-pip cppcheck && \
             source /opt/rh/gcc-toolset-12/enable && \
             python3.9 -m venv .cmake-venv && \
