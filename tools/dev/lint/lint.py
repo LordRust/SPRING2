@@ -553,6 +553,23 @@ def build_clang_tidy_common_args() -> list[str]:
                 "--extra-arg=-fconstexpr-steps=4194304",
             ]
         )
+        # MSYS2 CLANG64 uses libc++ whose headers live under clang64/include/c++/v1/.
+        # clang-tidy cannot find them automatically when the x86_64-w64-windows-gnu
+        # target is active because that target normally implies GCC's libstdc++.
+        # Detect CLANG64 by resolving clang++ to a path that contains "clang64"
+        # and add the libc++ directory as an explicit system include.
+        clangxx_path = shutil.which("clang++") or shutil.which("clang")
+        if clangxx_path:
+            clangxx_resolved = pathlib.Path(clangxx_path).resolve()
+            if "clang64" in clangxx_resolved.as_posix().lower():
+                libcxx_dir = clangxx_resolved.parent.parent / "include" / "c++" / "v1"
+                if libcxx_dir.is_dir():
+                    args.extend(
+                        [
+                            "--extra-arg-before=-isystem",
+                            f"--extra-arg-before={libcxx_dir}",
+                        ]
+                    )
         return args
 
     if IS_MACOS:
