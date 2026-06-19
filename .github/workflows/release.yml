@@ -157,7 +157,7 @@ jobs:
           # Remove preinstalled third-party taps that are unrelated to this build.
           for tap in aws/tap azure/bicep hashicorp/tap; do
             if brew tap | grep -qx "$tap"; then
-              brew untap "$tap"
+              brew untap "$tap" 2>/dev/null || true
             fi
           done
           brew update
@@ -432,14 +432,9 @@ jobs:
         if: matrix.name == 'windows' && matrix.arch == 'arm64'
         shell: powershell
         run: |
-          $magickExists = Get-Command magick -ErrorAction SilentlyContinue
-          if ($magickExists) {
-            magick docs/assets/icons/logo.png `
-              -define icon:auto-resize=16,32,48,64,128,256 `
-              docs/assets/icons/logo.ico
-          } else {
-            Write-Host "ImageMagick not available; skipping icon generation"
-          }
+          # ARM64 runners ship an x64 ImageMagick that cannot locate its
+          # CoderModulesPath registry key under an ARM64 process, so skip
+          # icon conversion entirely on this platform.
           $vsDevCmd = $env:SPRING_VSDEVCMD
           $buildCommand = "call `"$vsDevCmd`" -no_logo -arch=arm64 -host_arch=arm64 && cmake --build out/build --parallel && cmake --install out/build --prefix out"
           cmd /c $buildCommand
