@@ -215,6 +215,7 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value $gcc.DirectoryName
 
       - name: Set up MSYS2 for Windows Clang or analysis
+        id: setup-msys2
         if: matrix.windows_toolchain == 'msys2-clang' || (runner.os == 'Windows' && matrix.windows_toolchain == 'mingw')
         uses: msys2/setup-msys2@v2
         with:
@@ -227,20 +228,30 @@ jobs:
         if: matrix.windows_toolchain == 'msys2-clang'
         shell: powershell
         run: |
-          $msys2Root = @('C:\msys64', 'D:\msys64') | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $msys2Root = '${{ steps.setup-msys2.outputs.msys2-location }}'
+          if (-not $msys2Root -or -not (Test-Path $msys2Root)) {
+            $msys2Root = @('C:\msys64', 'D:\msys64') | Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
           if ($msys2Root) {
             Add-Content -Path $env:GITHUB_PATH -Value "$msys2Root\clang64\bin"
             Add-Content -Path $env:GITHUB_PATH -Value "$msys2Root\usr\bin"
+            Add-Content -Path $env:GITHUB_ENV -Value "SPRING_MSYS2_ROOT=$msys2Root"
+            Write-Host "MSYS2 root: $msys2Root"
           }
 
       - name: Expose MSYS2 UCRT64 tools on PATH for analysis
         if: runner.os == 'Windows' && matrix.windows_toolchain == 'mingw'
         shell: powershell
         run: |
-          $msys2Root = @('C:\msys64', 'D:\msys64') | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $msys2Root = '${{ steps.setup-msys2.outputs.msys2-location }}'
+          if (-not $msys2Root -or -not (Test-Path $msys2Root)) {
+            $msys2Root = @('C:\msys64', 'D:\msys64') | Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
           if ($msys2Root) {
             Add-Content -Path $env:GITHUB_PATH -Value "$msys2Root\ucrt64\bin"
             Add-Content -Path $env:GITHUB_PATH -Value "$msys2Root\usr\bin"
+            Add-Content -Path $env:GITHUB_ENV -Value "SPRING_MSYS2_ROOT=$msys2Root"
+            Write-Host "MSYS2 root: $msys2Root"
           }
 
       - name: Install cppcheck via MSYS2 for MSVC analysis
@@ -573,11 +584,17 @@ jobs:
         if: success() && runner.os == 'Windows' && matrix.windows_toolchain != 'msvc-arm64'
         shell: powershell
         run: |
-          # Search all common MSYS2 installation roots (C: and D:) and both
+          # Search the MSYS2 root detected during setup (saved to SPRING_MSYS2_ROOT),
+          # then fall back to the common MSYS2 installation roots (C: and D:) and both
           # ucrt64 and clang64 subsystems for a working cppcheck, skipping
           # broken pre-installed binaries from WinLibs and Strawberry Perl.
           $cppcheckExe = $null
-          $msys2Candidates = @(
+          $msys2Candidates = @()
+          if ($env:SPRING_MSYS2_ROOT) {
+            $msys2Candidates += "$env:SPRING_MSYS2_ROOT\ucrt64\bin\cppcheck.exe"
+            $msys2Candidates += "$env:SPRING_MSYS2_ROOT\clang64\bin\cppcheck.exe"
+          }
+          $msys2Candidates += @(
             'C:\msys64\ucrt64\bin\cppcheck.exe',
             'C:\msys64\clang64\bin\cppcheck.exe',
             'D:\msys64\ucrt64\bin\cppcheck.exe',
