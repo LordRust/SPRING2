@@ -21,7 +21,9 @@
 #include <thread>
 #include <vector>
 #ifdef _WIN32
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 // omp.h (in pch.h) may pull in <windows.h> without NOMINMAX, defining
 // min/max as macros.  Undefine them here so std::min/std::max work normally.

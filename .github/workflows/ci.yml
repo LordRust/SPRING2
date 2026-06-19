@@ -566,17 +566,21 @@ jobs:
         shell: powershell
         run: |
           # The WinLibs cppcheck pre-installed on the runner image is broken
-          # (FILESDIR points to a non-existent staging path). Ensure the MSYS2
-          # cppcheck is used regardless of PATH ordering by setting CPPCHECK to
-          # its absolute path. Use clang64 for the MSYS2 Clang toolchain and
-          # ucrt64 for everything else.
-          $msys2Dir = if ('${{ matrix.windows_toolchain }}' -eq 'msys2-clang') {
-            'C:\msys64\clang64\bin'
-          } else {
-            'C:\msys64\ucrt64\bin'
+          # (FILESDIR points to a non-existent staging path).  Find the MSYS2
+          # cppcheck from PATH — setup-msys2 has already added the correct
+          # bin directory — while skipping any WinGet/WinLibs binary.
+          $cppcheckExe = Get-Command cppcheck.exe -All -ErrorAction SilentlyContinue |
+            Where-Object { $_.Source -notmatch 'WinGet|WinLibs|winlibs' } |
+            Select-Object -ExpandProperty Source -First 1
+          if (-not $cppcheckExe) {
+            $cppcheckExe = (Get-Command cppcheck.exe -ErrorAction SilentlyContinue)?.Source
           }
-          $env:CPPCHECK = "$msys2Dir\cppcheck.exe"
-          $env:PATH = "$msys2Dir;C:\msys64\usr\bin;$env:PATH"
+          if (-not $cppcheckExe) {
+            Write-Error 'cppcheck.exe not found in PATH'
+            exit 1
+          }
+          Write-Host "Using cppcheck: $cppcheckExe"
+          $env:CPPCHECK = $cppcheckExe
           py -3 .\tools\dev\lint\cppcheck.py
 
       - name: Run valgrind smoke test on Linux x64
