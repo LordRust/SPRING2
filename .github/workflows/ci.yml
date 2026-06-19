@@ -496,7 +496,10 @@ jobs:
         if: matrix.windows_toolchain == 'msvc' || matrix.windows_toolchain == 'clangcl' || matrix.windows_toolchain == 'msvc-arm64'
         shell: powershell
         run: |
-          if (Test-Path 'docs/assets/icons/logo.png') {
+          # ARM64 runners ship an x64 ImageMagick that cannot locate its
+          # CoderModulesPath registry key under an ARM64 process, so skip
+          # icon conversion there entirely.
+          if ('${{ matrix.windows_toolchain }}' -ne 'msvc-arm64' -and (Test-Path 'docs/assets/icons/logo.png')) {
             magick docs/assets/icons/logo.png `
               -define icon:auto-resize=16,32,48,64,128,256 `
               docs/assets/icons/logo.ico
