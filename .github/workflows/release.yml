@@ -158,12 +158,13 @@ jobs:
           HOMEBREW_NO_INSTALL_CLEANUP: 1
         run: |
           # Remove preinstalled third-party taps that are unrelated to this build.
+          # Use --force so taps with installed formulae are removed without error.
           for tap in aws/tap azure/bicep hashicorp/tap; do
             if brew tap | grep -qx "$tap"; then
-              brew untap "$tap" 2>/dev/null || true
+              brew untap --force "$tap" 2>/dev/null || true
             fi
           done
-          brew update
+          brew update 2>/dev/null || true
           brew install libomp
           echo "MACOS_LIBOMP_PREFIX=$(brew --prefix libomp)" >> "$GITHUB_ENV"
           CMAKE_VENV="$RUNNER_TEMP/cmake-venv"
