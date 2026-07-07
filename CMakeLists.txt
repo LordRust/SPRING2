@@ -222,6 +222,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 include(CheckLinkerFlag)
 include(CheckIPOSupported)
 include(CheckSymbolExists)
+include(GNUInstallDirs)
 
 function(replace_in_file_if_needed file_path old_text new_text)
     if(NOT EXISTS "${file_path}")
@@ -1413,13 +1414,16 @@ endif()
 set(INSTALL_TARGETS spring2)
 install(
     TARGETS ${INSTALL_TARGETS}
-    RUNTIME DESTINATION bin
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
 if((APPLE OR (UNIX AND NOT WIN32)) AND SPRING_OPENMP_RUNTIME_LIB)
-    install(FILES "${SPRING_OPENMP_RUNTIME_LIB}" DESTINATION lib)
+    install(
+        FILES "${SPRING_OPENMP_RUNTIME_LIB}"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
 elseif(APPLE OR (UNIX AND NOT WIN32))
     message(
         NOTICE
@@ -1430,7 +1434,7 @@ endif()
 if(WIN32 AND NOT SPRING_STATIC_RUNTIMES)
     foreach(_src IN LISTS SPRING_RUNTIME_DLL_PATHS)
         if(EXISTS "${_src}")
-            install(FILES "${_src}" DESTINATION bin)
+            install(FILES "${_src}" DESTINATION ${CMAKE_INSTALL_BINDIR})
         endif()
     endforeach()
 endif()
