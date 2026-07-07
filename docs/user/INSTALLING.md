@@ -82,8 +82,3 @@ Windows releases provide standalone executables per architecture.
     ```powershell
     spring2 --version
     ```
-
-## Notes on Trust and Security
-
-- macOS app bundles may still trigger Gatekeeper warnings if they are not Apple-signed and notarized.
-- Linux AppImages are portable artifacts and do not require system-wide installation.

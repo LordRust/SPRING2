@@ -5,7 +5,7 @@ This guide is for developers who want to contribute to SPRING2 or maintain the b
 ## Project Structure
 
 - `src/`: Core C++20 source files and headers.
-- `conda/recipe/`: Conda build recipe and platform build scripts for package publishing.
+- `tools/conda/recipe/`: Conda build recipe and platform build scripts for package publishing.
 - `vendor/`: Bundled third-party dependencies as `.tar.xz` archives.
 - `docs/user/`, `docs/dev/`, `docs/assays/`: User, developer, and assay-specific documentation.
 - `tools/dev/`: Developer workflow entrypoints for linting, smoke checks, and Docker environments.
