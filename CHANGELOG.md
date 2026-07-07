@@ -2,6 +2,20 @@
 
 # Changelog
 
+## V1.0.1
+
+### Changed
+
+- Moved the in-repo conda recipe from `conda/recipe/` to `tools/conda/recipe/` to consolidate all developer tooling under `tools/`.
+- Converted the conda recipe from the legacy conda-build format (`meta.yaml`) to the rattler-build v1 format (`recipe.yaml`), aligning the in-repo recipe with the conda-forge staged-recipes submission.
+- Replaced `conda-build` with `rattler-build` in the `conda-build-and-test` CI job. The CI now patches the recipe's `source` block at build time to use a local path (`../../..`) instead of the tagged tarball URL, so every push is tested against the current checkout rather than the last release. The built package is installed from a local `file://` channel and tested with `conda run`.
+- Renamed `conda/recipe/bld.bat` to `build.bat` (rattler-build looks for `build.bat`, not `bld.bat`, on Windows).
+
+### Fixed
+
+- Fixed Windows conda package test failure (exit code 9009 — "command not found") caused by `spring2.exe` being installed to `%PREFIX%\bin`, which is not on PATH in conda's Windows test environment. The `install(TARGETS)` call used a hardcoded `DESTINATION bin` that silently ignored the `CMAKE_INSTALL_BINDIR=Library\bin` passed by the conda build script. Added `include(GNUInstallDirs)` and replaced all hardcoded `bin`/`lib` install destinations with `${CMAKE_INSTALL_BINDIR}`/`${CMAKE_INSTALL_LIBDIR}` so the override takes effect.
+- Fixed GitHub Actions CI failures on Linux caused by Microsoft APT repositories (`azure-cli`, `microsoft-prod`) serving invalid InRelease files ("NOSPLIT" error). Both the `ci` and `sanitizers` jobs now remove the broken Microsoft source files before running `apt-get update`.
+
 ## V1.0.0
 
 ### Added

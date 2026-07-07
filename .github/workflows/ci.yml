@@ -114,6 +114,7 @@ jobs:
       - name: Install Linux dependencies
         if: runner.os == 'Linux' && matrix.use_docker != true
         run: |
+          sudo rm -f /etc/apt/sources.list.d/*microsoft* /etc/apt/sources.list.d/*azure*
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
@@ -649,26 +650,66 @@ jobs:
           channels: conda-forge
           channel-priority: strict
           conda-remove-defaults: true
-          activate-environment: conda-build-env
           python-version: "3.11"
 
-      - name: Install conda build tools
+      - name: Install rattler-build
         shell: bash -l {0}
         run: |
-          conda install -y -n base conda-build
-          conda --version
-          conda build --version
+          conda install -y rattler-build
+          rattler-build --version
 
-      - name: Build conda package
+      - name: Prepare CI recipe (replace URL source with local path)
         shell: bash -l {0}
         run: |
-          conda build conda/recipe
+          python3 - <<'EOF'
+          import re, shutil, pathlib
 
-      - name: Smoke test conda package install
+          src = pathlib.Path('tools/conda/recipe')
+          dst = pathlib.Path('tools/conda/recipe-ci')
+          dst.mkdir(exist_ok=True)
+
+          text = (src / 'recipe.yaml').read_text()
+          # Replace the source block (url + sha256) with a path pointing at
+          # the repo root so CI builds from the current checkout, not the
+          # tagged tarball.
+          text = re.sub(
+              r'^source:\n(  \S[^\n]*\n)+',
+              'source:\n  path: ../../..\n',
+              text,
+              flags=re.MULTILINE,
+          )
+          # stdlib('c') requires a c_stdlib variant config supplied by
+          # conda-forge infrastructure; remove it for local CI builds.
+          text = re.sub(r"^\s*- \$\{\{ stdlib\('c'\) \}\}\n", '', text, flags=re.MULTILINE)
+          (dst / 'recipe.yaml').write_text(text)
+
+          for script in ('build.sh', 'build.bat'):
+              s = src / script
+              if s.exists():
+                  shutil.copy(s, dst / script)
+          print((dst / 'recipe.yaml').read_text())
+          EOF
+
+      - name: Build conda package with rattler-build
         shell: bash -l {0}
         run: |
-          conda create -y -n spring2-conda-test python=3.11
-          conda install -y -n spring2-conda-test --use-local spring2
+          rattler-build build \
+            --recipe-dir tools/conda/recipe-ci \
+            --output-dir output/conda \
+            -c conda-forge
+
+      - name: Install and smoke test conda package
+        shell: bash -l {0}
+        run: |
+          LOCAL_CHANNEL=$(python3 -c "
+          import pathlib
+          print(pathlib.Path('output/conda').resolve().as_uri())
+          ")
+          conda create -y -n spring2-conda-test
+          conda install -y -n spring2-conda-test \
+            -c "$LOCAL_CHANNEL" \
+            -c conda-forge \
+            spring2
           conda run -n spring2-conda-test spring2 --version
           conda run -n spring2-conda-test spring2 --help
 
@@ -676,35 +717,35 @@ jobs:
         shell: bash -l {0}
         run: |
           set -e
-          conda activate spring2-conda-test
-
           DATA="$GITHUB_WORKSPACE/tests/data"
           TMP="$GITHUB_WORKSPACE/tmp_conda_roundtrip"
           mkdir -p "$TMP"
 
+          run() { conda run -n spring2-conda-test "$@"; }
+
           echo "--- single-end FASTQ round-trip ---"
-          spring2 -c --R1 "$DATA/test_1.fastq" -o "$TMP/single.sp"
-          spring2 -d -i "$TMP/single.sp" -o "$TMP/single_out.fastq"
+          run spring2 -c --R1 "$DATA/test_1.fastq" -o "$TMP/single.sp"
+          run spring2 -d -i "$TMP/single.sp" -o "$TMP/single_out.fastq"
           diff "$DATA/test_1.fastq" "$TMP/single_out.fastq"
 
           echo "--- paired-end FASTQ round-trip ---"
-          spring2 -c --R1 "$DATA/test_1.fastq" --R2 "$DATA/test_2.fastq" -o "$TMP/paired.sp"
-          spring2 -d -i "$TMP/paired.sp" -o "$TMP/paired_out"
+          run spring2 -c --R1 "$DATA/test_1.fastq" --R2 "$DATA/test_2.fastq" -o "$TMP/paired.sp"
+          run spring2 -d -i "$TMP/paired.sp" -o "$TMP/paired_out"
           diff "$DATA/test_1.fastq" "$TMP/paired_out.1"
           diff "$DATA/test_2.fastq" "$TMP/paired_out.2"
 
           echo "--- single-end FASTA round-trip ---"
-          spring2 -c --R1 "$DATA/test_1.fasta" -o "$TMP/fasta.sp"
-          spring2 -d -i "$TMP/fasta.sp" -o "$TMP/fasta_out.fasta"
+          run spring2 -c --R1 "$DATA/test_1.fasta" -o "$TMP/fasta.sp"
+          run spring2 -d -i "$TMP/fasta.sp" -o "$TMP/fasta_out.fasta"
           diff "$DATA/test_1.fasta" "$TMP/fasta_out.fasta"
 
           echo "--- gzipped FASTQ input round-trip ---"
-          spring2 -c --R1 "$DATA/test_1.fastq.gz" -o "$TMP/gz.sp"
-          spring2 -d -i "$TMP/gz.sp" -o "$TMP/gz_out.fastq" -u
+          run spring2 -c --R1 "$DATA/test_1.fastq.gz" -o "$TMP/gz.sp"
+          run spring2 -d -i "$TMP/gz.sp" -o "$TMP/gz_out.fastq" -u
           diff "$DATA/test_1.fastq" "$TMP/gz_out.fastq"
 
           echo "--- archive preview ---"
-          spring2 -p -i "$TMP/single.sp"
+          run spring2 -p -i "$TMP/single.sp"
 
           rm -rf "$TMP"
           echo "All round-trip tests passed."
@@ -746,6 +787,7 @@ jobs:
 
       - name: Install build dependencies
         run: |
+          sudo rm -f /etc/apt/sources.list.d/*microsoft* /etc/apt/sources.list.d/*azure*
           sudo apt-get update
           sudo apt-get install -y build-essential libomp-dev python3 python3-pip python3-venv
 
