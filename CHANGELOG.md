@@ -2,6 +2,12 @@
 
 # Changelog
 
+## V1.0.2
+
+### Added
+
+- Added explicit redistribution permission notice.
+
 ## V1.0.1
 
 ### Changed
