@@ -66,6 +66,34 @@ TEST_CASE("Smoke memory capping round-trip") {
   expect_text_match(output, asset_path("test_1.fastq"));
 }
 
+TEST_CASE("Smoke disk-path paired round-trip (approach B/C)") {
+  // Forces disk-backed compression path via -m 0.1 on paired-end input,
+  // exercising the B/C decision block for both R1 and R2 streams.
+  SmokeWorkspace workspace("disk_path_paired_roundtrip");
+  const auto archive = workspace.path("archive.sp");
+  const auto output_prefix = workspace.path("tmp");
+
+  run_spring({"-m", "0.1", "-c", "--R1", asset_path("test_1.fastq"), "--R2",
+              asset_path("test_2.fastq"), "-o", archive});
+  run_spring({"-m", "0.1", "-d", "-i", archive, "-o", output_prefix});
+  expect_text_match(workspace.path("tmp.1"), asset_path("test_1.fastq"));
+  expect_text_match(workspace.path("tmp.2"), asset_path("test_2.fastq"));
+}
+
+TEST_CASE("Smoke disk-path quality/ID reorder round-trip (approach E)") {
+  // Forces disk-backed compression with -m 0.1 and strips read order (-s o)
+  // so that quality and ID streams must be reordered via the disk-backed
+  // streaming path (reorder_compress_quality_id from file).
+  SmokeWorkspace workspace("disk_path_sorted_roundtrip");
+  const auto archive = workspace.path("archive.sp");
+  const auto output = workspace.path("tmp.fastq");
+
+  run_spring({"-m", "0.1", "-c", "--R1", asset_path("test_1.fastq"), "-s", "o",
+              "-o", archive});
+  run_spring({"-m", "0.1", "-d", "-i", archive, "-o", output});
+  expect_sorted_match(output, asset_path("test_1.fastq"));
+}
+
 TEST_CASE("Smoke preview preserves archive notes and filenames") {
   SmokeWorkspace workspace("preview_validation");
   const auto archive = workspace.path("archive.sp");
