@@ -173,7 +173,7 @@ TEST_CASE(
     std::string name;
     std::string compress_extra_flags;
     std::string decompress_extra_flags;
-    bool sorted;
+    bool sorted = false;
     std::string expected_log_fragment; // empty means no log check
   };
 
