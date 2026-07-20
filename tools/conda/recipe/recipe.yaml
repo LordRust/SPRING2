@@ -29,7 +29,7 @@ requirements:
       then: llvm-openmp
   run:
     - if: linux
-      then: _openmp_mutex * *_gnu
+      then: libgomp
     - if: osx or win
       then: llvm-openmp
 
