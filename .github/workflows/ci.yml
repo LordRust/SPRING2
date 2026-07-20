@@ -644,7 +644,7 @@ jobs:
           GIT_CONFIG_VALUE_0: main
 
       - name: Set up Miniconda
-        uses: conda-incubator/setup-miniconda@v3
+        uses: conda-incubator/setup-miniconda@v4
         with:
           auto-update-conda: true
           channels: conda-forge
