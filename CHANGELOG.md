@@ -11,7 +11,7 @@
 
 ### Removed
 
-- Removed `tools/conda/` (rattler-build conda recipe template used to bootstrap the conda-forge submission) and `tools/dev/docker/` (per-platform Docker dev-environment templates). Both were one-time scaffolding that has already been used; retaining them in the repo added noise without value.
+- Removed `tools/dev/docker/` (per-platform Docker dev-environment templates).
 
 ### Fixed
 

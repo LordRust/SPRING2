@@ -1,5 +1,6 @@
 #include "integration_test_support.h"
 
+#include <algorithm>
 #include <filesystem>
 
 namespace fs = std::filesystem;
