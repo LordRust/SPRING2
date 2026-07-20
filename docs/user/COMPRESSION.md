@@ -87,6 +87,27 @@ spring2 -c --R1 reads.fastq --R2 reads_2.fastq -o reads.sp --memory 8
 
 Set `--memory 0` to disable this safety knob.
 
+### Adaptive Memory and Disk Routing
+
+SPRING2 selects a compression route at runtime based on the available memory
+and disk budget:
+
+- **Memory path**: when the estimated peak working set fits within the budget,
+  all intermediates are kept in RAM. This is the fastest route.
+- **Disk path**: when memory is tight, preprocessing intermediates are spilled
+  to a temporary workspace on disk. Within the disk path, SPRING2 further
+  adapts:
+  - **External-MPHF mode**: if the work directory has sufficient
+    free space (roughly 40 bytes × read count), the hash-function builder
+    offloads its sort structures to disk, reducing peak RAM by several GB.
+  - **Thread-capping mode**: if disk space is also limited,
+    SPRING2 automatically reduces the encoding thread count so that per-thread
+    buffer overhead stays within the available memory budget.
+
+In practice, passing `--memory 8` on a machine with 8 GB free lets SPRING2
+pick the right route automatically. Lower values increase the chance of
+triggering disk-path routing; very low values also trigger thread capping.
+
 ### Compression Level
 
 Use `--level 1..9` to change the archive compression level used for gzip-style

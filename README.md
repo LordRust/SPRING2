@@ -24,6 +24,7 @@ SPRING2 is a compressor for FASTQ and FASTA sequencing data, including paired-en
 - Automatic FASTQ versus FASTA detection, plain-text versus gzipped input handling, and gzip-aware output restoration
 - Support for grouped archives with `R1`/`R2` plus optional `R3`, `I1`, and `I2` lanes
 - Automatic and explicit assay handling for `dna`, `rna`, `atac`, `bisulfite`, `sc-rna`, `sc-atac`, and `sc-bisulfite`
+- Adaptive memory and disk routing: selects in-memory, disk-backed with external MPHF, or thread-capped mode automatically based on available memory and disk budget
 - Preview mode for archive inspection and audit mode for dry-run integrity verification without full decompression
 - Record-level CRC32 verification for lossless archives during decompression and optional post-compression auditing
 - Cross-platform builds and CI coverage for Linux, macOS, and native Windows toolchains
@@ -148,12 +149,14 @@ spring2 --preview --audit archive.sp
 Example:
 
 ```text
+SPRING2 Archive Metadata Preview:
 --------------------------------
+Archive Version:   1.1.0
 Original Input 1:  file.fastq.gz
 Note:              My Note
 Assay Type:        sc-rna
 Mode:              Single-end
-Reads Processed:   321055
+Total Read Records:    321055
 Compression Ratio: 5.81x (2312 / 398 MB)
 Max Read Length:   301 (using short-read encoder)
 Preserve Order:    Yes
@@ -163,7 +166,7 @@ Quality Mode:      Lossless
 Compression Level: 6
 Use CRLF:          No
 --------------------------------
-Input 1 Original Compression:
+file.fastq.gz Original Compression:
   Profile:         BGZF (Default)
   Format:          BGZF (Block Gzip)
   Block Size:      2185
@@ -172,7 +175,6 @@ Input 1 Original Compression:
   Member Count:    102860
   Original Ratio:  5.53x (6382 / 1154 MB)
   Likely Origin:   htslib/samtools/clib
---------------------------------
 ```
 
 For a comprehensive list of all options, quality modes, and multi-threaded examples, see the **[Usage Guide](docs/user/USAGE.md)** and **[CLI Reference](docs/user/CLI_REFERENCE.md)**.

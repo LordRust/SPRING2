@@ -9,6 +9,10 @@
 - Added disk-path memory reduction via external-memory MPHF construction: when disk-backed compression is selected and the work directory has sufficient free space (estimated as 40 bytes × total clean reads), SPRING2 now calls pthash's `build_in_external_memory` instead of `build_in_internal_memory`, offloading the key-sort/search structures to temp files and reducing peak RAM during MPHF construction by ~4–8 GB.
 - Added disk-path memory reduction via thread-count capping: when disk-backed compression is selected but the work directory lacks sufficient space for external MPHF temp files, SPRING2 automatically reduces the encoding thread count to `floor(available_memory / 2 / 4 GiB)`, trimming per-thread encoder buffer overhead to help stay within the user's memory budget.
 
+### Removed
+
+- Removed `tools/conda/` (rattler-build conda recipe template used to bootstrap the conda-forge submission) and `tools/dev/docker/` (per-platform Docker dev-environment templates). Both were one-time scaffolding that has already been used; retaining them in the repo added noise without value.
+
 ### Fixed
 
 - Fixed an MSVC-specific private-member access error in the vendored pthash `mm_file.hpp`: `file_source::open()` accessed `base::m_data` and `base::m_size` directly, which GCC/Clang allow through a base-class qualifier but MSVC rejects. Changed both accesses to use the protected accessor methods `base::data()` and `base::bytes()`.
