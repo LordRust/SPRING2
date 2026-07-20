@@ -7,7 +7,6 @@
 #include "mm_file.hpp"
 #include "search.hpp"
 
-
 namespace pthash {
 
 template <typename Hasher, typename Bucketer>
@@ -659,8 +658,9 @@ private:
       for (uint64_t i = 0; i != MAX_BUCKET_SIZE; ++i) {
         if (m_used_bucket_sizes[i]) {
           uint64_t bucket_size = i + 1;
-          sizes_filenames.emplace_back(bucket_size,
-                                       get_buckets_filename(bucket_size));
+          sizes_filenames.emplace_back(
+              static_cast<bucket_size_type>(bucket_size),
+              get_buckets_filename(bucket_size));
         }
       }
       assert(sizes_filenames.size() > 0);
