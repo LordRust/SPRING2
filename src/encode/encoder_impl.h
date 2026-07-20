@@ -692,7 +692,8 @@ encoder_main(const reorder_encoder_artifact &reorder_artifact,
                     std::to_string(singleton_pool_size) + " singletons...");
     constructdictionary<bitset_size>(
         read.data(), dict.data(), read_lengths_s.data(), eg.numdict_s,
-        singleton_pool_size, 3, eg.basedir, eg.num_thr);
+        singleton_pool_size, 3, eg.basedir, eg.num_thr, /*depleted_base=*/'N',
+        cp.encoding.use_external_mphf, cp.encoding.mphf_tmp_dir);
   }
   SPRING_LOG_INFO("Starting main encoding loop...");
 

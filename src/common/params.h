@@ -93,6 +93,10 @@ struct compression_params {
     bool index_id_suffix_reconstructed =
         false; // True when grouped sc-RNA index IDs omit the trailing I1/I2
                // token and restore it from decoded index reads.
+    // disk_path memory reduction: use pthash external-memory builder for MPHF
+    // construction (approach B).  When true, mphf_tmp_dir must be set.
+    bool use_external_mphf = false;
+    std::string mphf_tmp_dir;
   } encoding;
 
   struct QualityConfig {

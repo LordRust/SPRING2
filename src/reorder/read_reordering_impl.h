@@ -1013,7 +1013,8 @@ reorder_main(const reorder_input_artifact &input_artifact,
     SPRING_LOG_INFO("Constructing dictionaries");
     constructdictionary<bitset_size>(
         read.data(), dict.data(), read_lengths.data(), rg.numdict, rg.numreads,
-        2, rg.basedir, deterministic_mode ? 1 : rg.num_thr, rg.depleted_base);
+        2, rg.basedir, deterministic_mode ? 1 : rg.num_thr, rg.depleted_base,
+        cp.encoding.use_external_mphf, cp.encoding.mphf_tmp_dir);
   }
   SPRING_LOG_INFO("Reordering reads");
   reorder<bitset_size>(read.data(), dict.data(), read_lengths.data(), rg,

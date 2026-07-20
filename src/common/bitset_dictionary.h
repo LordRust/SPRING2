@@ -487,7 +487,9 @@ void constructdictionary(std::bitset<bitset_size> *read, bbhashdict *dict,
                          uint16_t *read_lengths, const int numdict,
                          const uint32_t numreads, const int bpb,
                          const std::string &basedir, const int num_thr,
-                         const char depleted_base = 'N') {
+                         const char depleted_base = 'N',
+                         const bool use_external_mphf = false,
+                         const std::string &mphf_tmp_dir = "") {
   auto index_masks = std::make_unique<std::bitset<bitset_size>[]>(
       static_cast<size_t>(numdict));
   generateindexmasks<bitset_size>(index_masks.get(), dict, numdict, bpb);
@@ -525,8 +527,20 @@ void constructdictionary(std::bitset<bitset_size> *read, bbhashdict *dict,
     config.verbose = false;
     current_dict.bphf = std::make_unique<boophf_t>();
     SPRING_LOG_INFO("  Building MPHF...");
-    current_dict.bphf->build_in_internal_memory(dictionary_keys_data,
-                                                current_dict.numkeys, config);
+    // The pthash external-memory builder is designed for large key sets.
+    // For small sets, the internal builder is both faster and more reliable.
+    constexpr uint64_t kExternalMphfMinKeys = 1'000'000;
+    const bool use_external =
+        use_external_mphf && !mphf_tmp_dir.empty() &&
+        current_dict.numkeys >= kExternalMphfMinKeys;
+    if (use_external) {
+      config.tmp_dir = mphf_tmp_dir;
+      current_dict.bphf->build_in_external_memory(dictionary_keys_data,
+                                                  current_dict.numkeys, config);
+    } else {
+      current_dict.bphf->build_in_internal_memory(dictionary_keys_data,
+                                                  current_dict.numkeys, config);
+    }
     current_dict.numkeys = current_dict.bphf->table_size();
     SPRING_LOG_INFO(std::string("Done. (T=") +
                     std::to_string(current_dict.numkeys) + ")");

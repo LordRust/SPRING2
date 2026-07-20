@@ -331,7 +331,8 @@ void compress_standard(const string_list &input_paths,
                        const std::string &cb_source_path, uint32_t cb_len,
                        std::string *archive_bytes_output = nullptr,
                        const compression_storage_path storage_path =
-                           compression_storage_path::memory_path) {
+                           compression_storage_path::memory_path,
+                       const uint64_t available_memory_bytes = 0) {
   const auto compression_start = clock_type::now();
 
   const compression_io_config io_config =
@@ -660,6 +661,59 @@ void compress_standard(const string_list &input_paths,
           spill_post_encode_side_stream_artifact(
               post_encode_side_streams, side_stream_artifact_dir.string());
           release_post_encode_side_stream_artifact(post_encode_side_streams);
+        }
+      }
+
+      // disk_path memory reduction: choose between external-MPHF (B) and
+      // thread reduction (C) based on available temp-disk capacity.
+      if (use_disk_workspace) {
+        const uint64_t total_clean_reads =
+            static_cast<uint64_t>(cp.read_info.num_reads_clean[0]) +
+            static_cast<uint64_t>(cp.read_info.num_reads_clean[1]);
+        // Conservative disk-space estimate for pthash external builder:
+        // peak ≈ num_keys × (sizeof(bucket_payload_pair)=16 +
+        // sizeof(uint64_t)=8) plus bucket-count overhead (~10 bytes/key).  Use
+        // 40 bytes/key overall.
+        const uint64_t external_mphf_disk_needed = total_clean_reads * 40;
+        std::error_code space_ec;
+        const auto disk_info =
+            std::filesystem::space(standard_work_dir, space_ec);
+        const bool disk_ok =
+            !space_ec && disk_info.available >= external_mphf_disk_needed;
+        if (disk_ok) {
+          // Approach B: off-load MPHF key data to disk temp files so the
+          // in-memory sort/search structures never materialise simultaneously.
+          cp.encoding.use_external_mphf = true;
+          cp.encoding.mphf_tmp_dir = standard_work_dir.string();
+          SPRING_LOG_INFO(
+              "disk_path: using external-memory MPHF builder (available=" +
+              std::to_string(disk_info.available >> 20) + " MiB, needed=" +
+              std::to_string(external_mphf_disk_needed >> 20) + " MiB)");
+        } else {
+          // Approach C: insufficient temp-disk for external MPHF — reduce
+          // thread count to keep per-thread encoder buffers within budget.
+          // Assume half the available memory is available for thread buffers;
+          // allow ~4 GiB per thread.
+          constexpr uint64_t kBytesPerThread = 4ULL << 30;
+          const uint64_t thread_budget =
+              available_memory_bytes > 0 ? available_memory_bytes / 2 : 0;
+          const int safe_threads =
+              thread_budget > 0
+                  ? static_cast<int>(
+                        std::max(uint64_t{1}, thread_budget / kBytesPerThread))
+                  : cp.encoding.num_thr;
+          if (safe_threads < cp.encoding.num_thr) {
+            SPRING_LOG_INFO(
+                "disk_path: insufficient temp-disk for external MPHF "
+                "(available=" +
+                std::to_string(space_ec ? 0 : disk_info.available >> 20) +
+                " MiB, needed=" +
+                std::to_string(external_mphf_disk_needed >> 20) +
+                " MiB); reducing encoding threads " +
+                std::to_string(cp.encoding.num_thr) + " -> " +
+                std::to_string(safe_threads));
+            cp.encoding.num_thr = safe_threads;
+          }
         }
       }
 
@@ -1042,11 +1096,11 @@ void compress(const std::vector<std::string> &input_paths,
     return;
   }
 
-  compress_standard(input_paths, output_paths, num_thr, pairing_only_flag,
-                    no_quality_flag, no_ids_flag, quality_options,
-                    compression_level, note, verbosity_level, audit_flag,
-                    r3_path, i1_path, i2_path, assay_type, cb_source_path,
-                    cb_len, nullptr, storage_plan.selected_path);
+  compress_standard(
+      input_paths, output_paths, num_thr, pairing_only_flag, no_quality_flag,
+      no_ids_flag, quality_options, compression_level, note, verbosity_level,
+      audit_flag, r3_path, i1_path, i2_path, assay_type, cb_source_path, cb_len,
+      nullptr, storage_plan.selected_path, storage_plan.available_memory_bytes);
 }
 
 } // namespace spring

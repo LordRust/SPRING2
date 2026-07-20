@@ -29,6 +29,9 @@ template <typename Range, typename T> void fill(Range &r, T const &v) {
 template <typename Range> void sort(Range &r) {
   std::sort(std::begin(r), std::end(r));
 }
+template <typename Range, typename Compare> void sort(Range &r, Compare comp) {
+  std::sort(std::begin(r), std::end(r), comp);
+}
 template <typename Range> auto adjacent_find(Range &r) {
   return std::adjacent_find(std::begin(r), std::end(r));
 }

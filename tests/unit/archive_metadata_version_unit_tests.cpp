@@ -268,7 +268,7 @@ TEST_CASE("Archive decompression plan preserves exact current version") {
 
 TEST_CASE("Unsupported archive compressor versions fail explicitly") {
   spring::compression_params cp = make_sample_params();
-  cp.read_info.compressor_version = "1.1.0";
+  cp.read_info.compressor_version = "1.2.0";
 
   CHECK_THROWS_AS(spring::build_archive_decompression_plan(cp),
                   std::runtime_error);

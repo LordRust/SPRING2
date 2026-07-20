@@ -162,7 +162,7 @@ template <typename T> struct file_source : public file<T const> {
     }
     base::set_size(fs.st_size);
     base::set_data(mmap<T const *>(base::fd(), base::bytes(), PROT_READ));
-    if (posix_madvise((void *)base::m_data, base::m_size, adv)) {
+    if (posix_madvise((void *)base::data(), base::bytes(), adv)) {
       throw std::runtime_error("madvise failed");
     }
   }

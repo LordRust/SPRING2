@@ -2,6 +2,18 @@
 
 # Changelog
 
+## V1.1.0
+
+### Added
+
+- Added disk-path memory reduction via external-memory MPHF construction: when disk-backed compression is selected and the work directory has sufficient free space (estimated as 40 bytes × total clean reads), SPRING2 now calls pthash's `build_in_external_memory` instead of `build_in_internal_memory`, offloading the key-sort/search structures to temp files and reducing peak RAM during MPHF construction by ~4–8 GB.
+- Added disk-path memory reduction via thread-count capping: when disk-backed compression is selected but the work directory lacks sufficient space for external MPHF temp files, SPRING2 automatically reduces the encoding thread count to `floor(available_memory / 2 / 4 GiB)`, trimming per-thread encoder buffer overhead to help stay within the user's memory budget.
+
+### Fixed
+
+- Fixed an MSVC-specific private-member access error in the vendored pthash `mm_file.hpp`: `file_source::open()` accessed `base::m_data` and `base::m_size` directly, which GCC/Clang allow through a base-class qualifier but MSVC rejects. Changed both accesses to use the protected accessor methods `base::data()` and `base::bytes()`.
+- Fixed missing comparator overload in the vendored pthash `essentials.hpp` `boost::range` compatibility shim: the `sort` wrapper only provided the single-argument form, causing a compile error when `external_memory_builder_single_phf` called `boost::range::sort(range, comparator)`. Added `template <typename Range, typename Compare> void sort(Range &r, Compare comp)`.
+
 ## V1.0.2
 
 ### Added
