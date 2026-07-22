@@ -24,12 +24,12 @@ requirements:
       then: make
   host:
     - if: linux
-      then: _openmp_mutex * *_gnu
+      then: libgomp
     - if: osx
       then: llvm-openmp
   run:
     - if: linux
-      then: _openmp_mutex >=4.5
+      then: libgomp
     - if: osx or win
       then: llvm-openmp
 
