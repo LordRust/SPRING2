@@ -180,20 +180,34 @@ void spill_reorder_encoder_artifact(const reorder_encoder_artifact &artifact,
 }
 
 reorder_encoder_artifact
-load_reorder_encoder_artifact(const std::string &root_dir) {
+load_reorder_encoder_artifact(const std::string &root_dir,
+                              bool stream_singletons_from_disk = false) {
   reorder_encoder_artifact artifact;
   artifact.singleton_count = static_cast<uint32_t>(std::stoul(read_binary_file(
       resolve_archive_entry_disk_path(root_dir, "meta/singleton_count.txt"))));
   const size_t shard_count = static_cast<size_t>(std::stoull(read_binary_file(
       resolve_archive_entry_disk_path(root_dir, "meta/shard_count.txt"))));
-  artifact.singleton_read_bytes = read_binary_file(
-      resolve_archive_entry_disk_path(root_dir, "singleton_read_bytes.bin"));
-  artifact.singleton_order_bytes = read_binary_file(
-      resolve_archive_entry_disk_path(root_dir, "singleton_order_bytes.bin"));
-  artifact.n_read_bytes = read_binary_file(
-      resolve_archive_entry_disk_path(root_dir, "n_read_bytes.bin"));
-  artifact.n_read_order_bytes = read_binary_file(
-      resolve_archive_entry_disk_path(root_dir, "n_read_order_bytes.bin"));
+  if (stream_singletons_from_disk) {
+    // Record file paths so readsingletons() can stream directly — avoids
+    // loading the full raw singleton bytes into RAM.
+    artifact.singleton_read_file =
+        resolve_archive_entry_disk_path(root_dir, "singleton_read_bytes.bin");
+    artifact.singleton_order_file =
+        resolve_archive_entry_disk_path(root_dir, "singleton_order_bytes.bin");
+    artifact.n_read_file =
+        resolve_archive_entry_disk_path(root_dir, "n_read_bytes.bin");
+    artifact.n_read_order_file =
+        resolve_archive_entry_disk_path(root_dir, "n_read_order_bytes.bin");
+  } else {
+    artifact.singleton_read_bytes = read_binary_file(
+        resolve_archive_entry_disk_path(root_dir, "singleton_read_bytes.bin"));
+    artifact.singleton_order_bytes = read_binary_file(
+        resolve_archive_entry_disk_path(root_dir, "singleton_order_bytes.bin"));
+    artifact.n_read_bytes = read_binary_file(
+        resolve_archive_entry_disk_path(root_dir, "n_read_bytes.bin"));
+    artifact.n_read_order_bytes = read_binary_file(
+        resolve_archive_entry_disk_path(root_dir, "n_read_order_bytes.bin"));
+  }
   artifact.aligned_shards.resize(shard_count);
   for (size_t index = 0; index < shard_count; ++index) {
     const std::string prefix = "aligned_shards/" + std::to_string(index) + "/";
@@ -681,8 +695,9 @@ void compress_standard(const string_list &input_paths,
         const bool disk_ok =
             !space_ec && disk_info.available >= external_mphf_disk_needed;
         if (disk_ok) {
-          // Approach B: off-load MPHF key data to disk temp files so the
-          // in-memory sort/search structures never materialise simultaneously.
+          // External-memory MPHF: off-load MPHF key data to disk temp files
+          // so the in-memory sort/search structures never materialise
+          // simultaneously.
           cp.encoding.use_external_mphf = true;
           cp.encoding.mphf_tmp_dir = standard_work_dir.string();
           SPRING_LOG_INFO(
@@ -690,7 +705,7 @@ void compress_standard(const string_list &input_paths,
               std::to_string(disk_info.available >> 20) + " MiB, needed=" +
               std::to_string(external_mphf_disk_needed >> 20) + " MiB)");
         } else {
-          // Approach C: insufficient temp-disk for external MPHF — reduce
+          // Thread capping: insufficient temp-disk for external MPHF — reduce
           // thread count to keep per-thread encoder buffers within budget.
           // Assume half the available memory is available for thread buffers;
           // allow ~4 GiB per thread.
@@ -731,8 +746,14 @@ void compress_standard(const string_list &input_paths,
       run_timed_step("Encoding ...", "Encoding", [&] {
         progress.set_stage("Encoding", 0.50F, 0.85F);
         if (use_disk_workspace) {
+          // stream_singletons_from_disk=true: file paths are recorded in the
+          // artifact instead of loading raw bytes into RAM, so readsingletons()
+          // can stream directly from disk and avoid the ~27+ GB singleton
+          // buffer peak present in the memory-path.
           reorder_encoder_artifact encoder_input =
-              load_reorder_encoder_artifact(reorder_artifact_dir.string());
+              load_reorder_encoder_artifact(
+                  reorder_artifact_dir.string(),
+                  /*stream_singletons_from_disk=*/true);
           reordered_streams_artifact = call_encoder(encoder_input, cp);
           release_reorder_encoder_artifact(encoder_input);
           std::error_code cleanup_ec;

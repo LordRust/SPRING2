@@ -108,7 +108,7 @@ parse_archive_semantic_version(const std::string &version_text) {
 bool is_supported_archive_decompression_version(
     const archive_semantic_version &version) {
   return version.valid && version.major == 1 &&
-         (version.minor == 0 || version.minor == 1);
+         (version.minor == 0 || version.minor == 1 || version.minor == 2);
 }
 
 bool looks_like_legacy_spring_archive(

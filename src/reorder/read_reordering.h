@@ -35,6 +35,14 @@ struct reorder_encoder_artifact {
   std::string n_read_bytes;
   std::string n_read_order_bytes;
   uint32_t singleton_count = 0;
+
+  // When non-empty, these paths point to the spilled singleton stream files on
+  // disk. readsingletons() uses them to stream directly from disk, avoiding
+  // loading the full raw bytes into RAM (disk-path only).
+  std::string singleton_read_file;
+  std::string singleton_order_file;
+  std::string n_read_file;
+  std::string n_read_order_file;
 };
 
 // Forward declarations to keep this header thin.

@@ -268,10 +268,23 @@ TEST_CASE("Archive decompression plan preserves exact current version") {
 
 TEST_CASE("Unsupported archive compressor versions fail explicitly") {
   spring::compression_params cp = make_sample_params();
-  cp.read_info.compressor_version = "1.2.0";
+  cp.read_info.compressor_version = "2.0.0";
 
   CHECK_THROWS_AS(spring::build_archive_decompression_plan(cp),
                   std::runtime_error);
+}
+
+TEST_CASE("Version 1.2.x archives are accepted for decompression") {
+  spring::compression_params cp = make_sample_params();
+  cp.read_info.compressor_version = "1.2.0";
+
+  const spring::archive_decompression_plan plan =
+      spring::build_archive_decompression_plan(cp);
+  CHECK(plan.archive_version.valid);
+  CHECK(plan.archive_version.major == 1);
+  CHECK(plan.archive_version.minor == 2);
+  CHECK(plan.archive_version.patch == 0);
+  CHECK(spring::archive_decompression_route_name(plan) == "1.2.0");
 }
 
 TEST_CASE("Legacy Spring raw metadata is detected") {

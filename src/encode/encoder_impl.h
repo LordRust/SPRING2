@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <omp.h>
@@ -65,6 +66,21 @@ inline bool read_buffer_record(const std::string &buffer, size_t &offset,
   value.assign(buffer.data() + offset, record_size);
   offset += record_size;
   return true;
+}
+
+// File-based counterparts for streaming singleton data from disk.
+template <typename T> inline bool read_file_value(std::istream &in, T &value) {
+  return static_cast<bool>(
+      in.read(reinterpret_cast<char *>(&value), sizeof(T)));
+}
+
+inline bool read_file_record(std::istream &in, std::string &value) {
+  uint32_t record_size = 0;
+  if (!read_file_value(in, record_size)) {
+    return false;
+  }
+  value.resize(record_size);
+  return static_cast<bool>(in.read(value.data(), record_size));
 }
 
 template <size_t bitset_size>
@@ -563,69 +579,156 @@ void readsingletons(std::bitset<bitset_size> *read, uint32_t *order_s,
   s.reserve(static_cast<size_t>(eg.max_readlen));
   auto **const basemask_ptrs =
       const_cast<std::bitset<bitset_size> **>(egb.basemask_ptrs.data());
-  size_t singleton_cursor = 0;
-  for (uint32_t i = 0; i < eg.numreads_s; i++) {
-    if (!detail::read_buffer_record(reorder_artifact.singleton_read_bytes,
-                                    singleton_cursor, s)) {
-      throw std::runtime_error(
-          "Failed reading singleton read from in-memory reorder artifact.");
-    }
-    read_lengths_s[i] = static_cast<uint16_t>(s.size());
-    stringtobitset<bitset_size>(s, read_lengths_s[i], read[i], basemask_ptrs);
-  }
+
   static constexpr std::array<char, 16> int_to_dna_n = {
       'A', 'G', 'C', 'T', 'N', 'N', 'N', 'N',
       'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N'};
   uint8_t encoded_read_bytes[256];
-  size_t n_read_cursor = 0;
-  for (uint32_t i = eg.numreads_s; i < eg.numreads_s + eg.numreads_N; i++) {
-    uint16_t readlen = 0;
-    if (!detail::read_buffer_value(reorder_artifact.n_read_bytes, n_read_cursor,
-                                   readlen)) {
-      throw std::runtime_error("Failed reading readlen from DNA+N stream.");
-    }
 
-    const uint16_t encoded_byte_count =
-        static_cast<uint16_t>((readlen + 1U) / 2U);
-    if (encoded_byte_count > sizeof(encoded_read_bytes)) {
-      throw std::runtime_error(
-          "Corrupted DNA+N stream: record length exceeds decoder buffer.");
+  // --- Singleton (clean) reads ---
+  if (!reorder_artifact.singleton_read_file.empty()) {
+    // Disk-streaming path: read directly from the spilled file.
+    SPRING_LOG_INFO("Streaming singleton reads from disk (" +
+                    std::to_string(eg.numreads_s) + " reads)...");
+    std::ifstream sin(reorder_artifact.singleton_read_file, std::ios::binary);
+    if (!sin) {
+      throw std::runtime_error("Failed to open singleton read file: " +
+                               reorder_artifact.singleton_read_file);
     }
-    if (n_read_cursor + encoded_byte_count >
-        reorder_artifact.n_read_bytes.size()) {
-      throw std::runtime_error(
-          "Failed reading encoded DNA+N payload from stream.");
+    for (uint32_t i = 0; i < eg.numreads_s; i++) {
+      if (!detail::read_file_record(sin, s)) {
+        throw std::runtime_error(
+            "Failed reading singleton read from file stream.");
+      }
+      read_lengths_s[i] = static_cast<uint16_t>(s.size());
+      stringtobitset<bitset_size>(s, read_lengths_s[i], read[i], basemask_ptrs);
     }
-    std::memcpy(encoded_read_bytes,
-                reorder_artifact.n_read_bytes.data() + n_read_cursor,
-                encoded_byte_count);
-    n_read_cursor += encoded_byte_count;
-
-    s.resize(readlen);
-    for (uint16_t base_index = 0; base_index < readlen; ++base_index) {
-      const uint8_t packed = encoded_read_bytes[base_index / 2];
-      const uint8_t code =
-          (base_index % 2 == 0) ? (packed & 0x0F) : (packed >> 4);
-      s[base_index] = int_to_dna_n[code & 0x0F];
-    }
-
-    read_lengths_s[i] = readlen;
-    stringtobitset<bitset_size>(s, readlen, read[i], basemask_ptrs);
-  }
-  size_t singleton_order_cursor = 0;
-  for (uint32_t i = 0; i < eg.numreads_s; i++) {
-    if (!detail::read_buffer_value(reorder_artifact.singleton_order_bytes,
-                                   singleton_order_cursor, order_s[i])) {
-      throw std::runtime_error(
-          "Failed reading singleton order from in-memory reorder artifact.");
+  } else {
+    size_t singleton_cursor = 0;
+    for (uint32_t i = 0; i < eg.numreads_s; i++) {
+      if (!detail::read_buffer_record(reorder_artifact.singleton_read_bytes,
+                                      singleton_cursor, s)) {
+        throw std::runtime_error(
+            "Failed reading singleton read from in-memory reorder artifact.");
+      }
+      read_lengths_s[i] = static_cast<uint16_t>(s.size());
+      stringtobitset<bitset_size>(s, read_lengths_s[i], read[i], basemask_ptrs);
     }
   }
-  size_t n_order_cursor = 0;
-  for (uint32_t i = eg.numreads_s; i < eg.numreads_s + eg.numreads_N; i++) {
-    if (!detail::read_buffer_value(reorder_artifact.n_read_order_bytes,
-                                   n_order_cursor, order_s[i])) {
-      throw std::runtime_error(
-          "Failed reading N-read order from in-memory reorder artifact.");
+
+  // --- N-reads ---
+  if (!reorder_artifact.n_read_file.empty()) {
+    std::ifstream nin(reorder_artifact.n_read_file, std::ios::binary);
+    if (!nin) {
+      throw std::runtime_error("Failed to open n_read file: " +
+                               reorder_artifact.n_read_file);
+    }
+    for (uint32_t i = eg.numreads_s; i < eg.numreads_s + eg.numreads_N; i++) {
+      uint16_t readlen = 0;
+      if (!detail::read_file_value(nin, readlen)) {
+        throw std::runtime_error("Failed reading readlen from DNA+N file.");
+      }
+      const uint16_t encoded_byte_count =
+          static_cast<uint16_t>((readlen + 1U) / 2U);
+      if (encoded_byte_count > sizeof(encoded_read_bytes)) {
+        throw std::runtime_error(
+            "Corrupted DNA+N stream: record length exceeds decoder buffer.");
+      }
+      if (!nin.read(reinterpret_cast<char *>(encoded_read_bytes),
+                    encoded_byte_count)) {
+        throw std::runtime_error(
+            "Failed reading encoded DNA+N payload from file.");
+      }
+      s.resize(readlen);
+      for (uint16_t base_index = 0; base_index < readlen; ++base_index) {
+        const uint8_t packed = encoded_read_bytes[base_index / 2];
+        const uint8_t code =
+            (base_index % 2 == 0) ? (packed & 0x0F) : (packed >> 4);
+        s[base_index] = int_to_dna_n[code & 0x0F];
+      }
+      read_lengths_s[i] = readlen;
+      stringtobitset<bitset_size>(s, readlen, read[i], basemask_ptrs);
+    }
+  } else {
+    size_t n_read_cursor = 0;
+    for (uint32_t i = eg.numreads_s; i < eg.numreads_s + eg.numreads_N; i++) {
+      uint16_t readlen = 0;
+      if (!detail::read_buffer_value(reorder_artifact.n_read_bytes,
+                                     n_read_cursor, readlen)) {
+        throw std::runtime_error("Failed reading readlen from DNA+N stream.");
+      }
+      const uint16_t encoded_byte_count =
+          static_cast<uint16_t>((readlen + 1U) / 2U);
+      if (encoded_byte_count > sizeof(encoded_read_bytes)) {
+        throw std::runtime_error(
+            "Corrupted DNA+N stream: record length exceeds decoder buffer.");
+      }
+      if (n_read_cursor + encoded_byte_count >
+          reorder_artifact.n_read_bytes.size()) {
+        throw std::runtime_error(
+            "Failed reading encoded DNA+N payload from stream.");
+      }
+      std::memcpy(encoded_read_bytes,
+                  reorder_artifact.n_read_bytes.data() + n_read_cursor,
+                  encoded_byte_count);
+      n_read_cursor += encoded_byte_count;
+      s.resize(readlen);
+      for (uint16_t base_index = 0; base_index < readlen; ++base_index) {
+        const uint8_t packed = encoded_read_bytes[base_index / 2];
+        const uint8_t code =
+            (base_index % 2 == 0) ? (packed & 0x0F) : (packed >> 4);
+        s[base_index] = int_to_dna_n[code & 0x0F];
+      }
+      read_lengths_s[i] = readlen;
+      stringtobitset<bitset_size>(s, readlen, read[i], basemask_ptrs);
+    }
+  }
+
+  // --- Singleton order ---
+  if (!reorder_artifact.singleton_order_file.empty()) {
+    std::ifstream soin(reorder_artifact.singleton_order_file, std::ios::binary);
+    if (!soin) {
+      throw std::runtime_error("Failed to open singleton order file: " +
+                               reorder_artifact.singleton_order_file);
+    }
+    for (uint32_t i = 0; i < eg.numreads_s; i++) {
+      if (!detail::read_file_value(soin, order_s[i])) {
+        throw std::runtime_error(
+            "Failed reading singleton order from file stream.");
+      }
+    }
+  } else {
+    size_t singleton_order_cursor = 0;
+    for (uint32_t i = 0; i < eg.numreads_s; i++) {
+      if (!detail::read_buffer_value(reorder_artifact.singleton_order_bytes,
+                                     singleton_order_cursor, order_s[i])) {
+        throw std::runtime_error(
+            "Failed reading singleton order from in-memory reorder artifact.");
+      }
+    }
+  }
+
+  // --- N-read order ---
+  if (!reorder_artifact.n_read_order_file.empty()) {
+    std::ifstream noin(reorder_artifact.n_read_order_file, std::ios::binary);
+    if (!noin) {
+      throw std::runtime_error("Failed to open n_read order file: " +
+                               reorder_artifact.n_read_order_file);
+    }
+    for (uint32_t i = eg.numreads_s; i < eg.numreads_s + eg.numreads_N; i++) {
+      if (!detail::read_file_value(noin, order_s[i])) {
+        throw std::runtime_error(
+            "Failed reading N-read order from file stream.");
+      }
+    }
+  } else {
+    size_t n_order_cursor = 0;
+    for (uint32_t i = eg.numreads_s; i < eg.numreads_s + eg.numreads_N; i++) {
+      if (!detail::read_buffer_value(reorder_artifact.n_read_order_bytes,
+                                     n_order_cursor, order_s[i])) {
+        throw std::runtime_error(
+            "Failed reading N-read order from in-memory reorder artifact.");
+      }
     }
   }
 }

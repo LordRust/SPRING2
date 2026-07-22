@@ -1,6 +1,6 @@
 // Unit tests for disk-path memory reduction:
-//   B - external MPHF (build_in_external_memory) when temp disk is available.
-//   C - thread-count capping when temp disk is insufficient.
+//   external MPHF  - build_in_external_memory when temp disk is available.
+//   thread capping - reduce thread count when temp disk is insufficient.
 
 #include "../support/doctest.h"
 
@@ -20,7 +20,7 @@ uint64_t estimate_external_mphf_disk_bytes(uint64_t total_clean_reads) {
   return total_clean_reads * kExternalMphfBytesPerKey;
 }
 
-// Replicates the thread-capping formula from compress_standard (approach C).
+// Replicates the thread-capping formula from compress_standard.
 int compute_safe_thread_count(uint64_t available_memory_bytes,
                               int current_threads) {
   if (available_memory_bytes == 0) {
@@ -35,7 +35,7 @@ int compute_safe_thread_count(uint64_t available_memory_bytes,
 } // namespace
 
 // ---------------------------------------------------------------------------
-// Approach B: external MPHF disk-space estimate
+// External-memory MPHF: disk-space estimate
 // ---------------------------------------------------------------------------
 
 TEST_CASE("External MPHF disk estimate scales linearly with read count") {
@@ -48,24 +48,24 @@ TEST_CASE("External MPHF disk estimate scales linearly with read count") {
   CHECK(estimate_external_mphf_disk_bytes(0) == 0);
 }
 
-TEST_CASE("External MPHF approach B is selected when disk estimate is met") {
+TEST_CASE("External MPHF is selected when disk estimate is met") {
   // If 100 GiB (107,374,182,400 bytes) is available, and 500M reads need
-  // 20 GB, approach B should be selected (20 GB < 107 GB).
+  // 20 GB, external MPHF should be selected (20 GB < 107 GB).
   const uint64_t available = 100ULL * 1024 * 1024 * 1024;
   const uint64_t needed = estimate_external_mphf_disk_bytes(500'000'000ULL);
   CHECK(available >= needed);
 }
 
-TEST_CASE("External MPHF approach B is skipped when disk estimate is not met") {
-  // If only 10 GiB is free but 1B reads need 40 GB, approach B must not be
-  // selected.
+TEST_CASE("External MPHF is skipped when disk estimate is not met") {
+  // If only 10 GiB is free but 1B reads need 40 GB, external MPHF must not
+  // be selected.
   const uint64_t available = 10ULL * 1024 * 1024 * 1024;
   const uint64_t needed = estimate_external_mphf_disk_bytes(1'000'000'000ULL);
   CHECK(available < needed);
 }
 
 // ---------------------------------------------------------------------------
-// Approach C: thread-count capping formula
+// Thread-count capping formula
 // ---------------------------------------------------------------------------
 
 TEST_CASE("Thread count capping is proportional to available memory") {

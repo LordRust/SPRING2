@@ -2,6 +2,12 @@
 
 # Changelog
 
+## V1.2.0
+
+### Changed
+
+- Changed disk-path encoding to stream singleton reads directly from disk instead of loading the full raw singleton byte buffers into RAM before decoding. `load_reorder_encoder_artifact` now accepts a `stream_singletons_from_disk` flag that records file paths for `singleton_read_bytes.bin`, `singleton_order_bytes.bin`, `n_read_bytes.bin`, and `n_read_order_bytes.bin` instead of reading them into memory; `readsingletons` dispatches to `std::ifstream`-based readers when those paths are set. For datasets with many singletons (e.g. ~548 M singletons × 50 bp), this eliminates a ~27+ GB raw-bytes peak that previously coexisted with the bitset array during encoding, resolving OOM failures on constrained disk-path runs.
+
 ## V1.1.0
 
 ### Added

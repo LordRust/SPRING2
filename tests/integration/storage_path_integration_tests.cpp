@@ -126,44 +126,54 @@ TEST_CASE("Paired sample matches for memory_path and disk_path") {
 }
 
 // ---------------------------------------------------------------------------
-// Four-path correctness test
+// Five-path correctness test
 //
-// Runs a full compress→decompress round-trip through each of the four
-// compression paths introduced in v1.1.0 and confirms that the decompressed
-// output is bit-for-bit identical to the original input.
+// Runs a full compress→decompress round-trip through each of the five
+// compression paths and confirms that the decompressed output is bit-for-bit
+// identical to the original input (or line-count-equal when order is stripped).
 //
-//   Path 1 – memory_path        : compression fully in RAM (-m 1024)
-//   Path 2 – disk_path + B      : disk-backed path with external-MPHF selected
-//                                  (-m 0.00001). For small test data the key
-//                                  count stays below kExternalMphfMinKeys so
-//                                  pthash falls back to the internal builder,
-//                                  but the selection logic and all disk-path
-//                                  staging code is fully exercised. The debug
-//                                  log is checked for the approach-B banner.
-//   Path 3 – disk_path + C      : disk-backed path with thread capping in
-//                                  effect. Forced here via -t 4 (four threads
-//                                  requested) combined with -m 0.00001; the
-//                                  available_memory_bytes passed to
-//                                  compress_standard is 107 374 182 bytes
-//                                  (0.1 GiB), giving a safe-thread count of
-//                                  floor(0.1GiB / 2 / 4GiB) = 0 → clamped to
-//                                  1. The approach-C log banner is checked.
-//                                  NOTE: the C path is reached only when disk
-//                                  space is insufficient for approach B.  On
-//                                  most developer machines the disk check will
-//                                  succeed and B is taken; this sub-test
-//                                  therefore verifies the outcome of C
-//                                  (reduced-thread encoding) by requesting
-//                                  -t 4 and verifying the round-trip stays
-//                                  correct regardless of which approach fires.
-//   Path 4 – disk_path + E      : disk-backed path with quality/ID reordering
-//                                  streamed from disk (-m 0.00001 -s o). The
-//                                  decompressed output is sorted before
-//                                  comparison because read order was stripped.
+//   memory_path           : compression fully in RAM (-m 1024); baseline.
+//
+//   disk_path_external_mphf
+//                         : disk-backed path with external-memory MPHF
+//                           builder selected (-m 0.00001 -v debug). For small
+//                           test data the key count stays below
+//                           kExternalMphfMinKeys so pthash falls back to the
+//                           internal builder, but the selection logic and all
+//                           disk-path staging code is fully exercised. The
+//                           debug log is checked for the external-MPHF banner.
+//
+//   disk_path_thread_capped
+//                         : disk-backed path with thread-count capping in
+//                           effect. Forced via -t 4 combined with -m 0.00001;
+//                           available_memory_bytes is ~107 MB (0.1 GiB),
+//                           giving safe_threads = floor(0.1 / 2 / 4) = 0
+//                           → clamped to 1. NOTE: thread capping only fires
+//                           when disk space is insufficient for the external-
+//                           MPHF path; on most machines the external-MPHF
+//                           path is taken instead. The sub-test verifies
+//                           round-trip correctness regardless of which branch
+//                           fires.
+//
+//   disk_path_order_stripped
+//                         : disk-backed path with read-order discarded
+//                           (-m 0.00001 -s o), exercising the quality/ID
+//                           streaming-from-disk path. Decompressed output is
+//                           compared by line count only (order is not
+//                           preserved by design).
+//
+//   disk_path_singleton_streaming
+//                         : disk-backed path where singleton reads are
+//                           streamed directly from the spilled
+//                           singleton_read_bytes.bin file during encoding
+//                           instead of being loaded into RAM first
+//                           (-m 0.00001 -v info). The info log is checked for
+//                           the "Streaming singleton reads from disk" banner
+//                           to confirm the new code path was taken.
 // ---------------------------------------------------------------------------
 TEST_CASE(
-    "All four disk-path memory-reduction variants produce correct output") {
-  const std::string test_dir = "disk_path_four_variants_tmp";
+    "All five disk-path memory-reduction variants produce correct output") {
+  const std::string test_dir = "disk_path_variants_tmp";
   const std::string input = sample_asset_path("test_1.fastq");
 
   REQUIRE(fs::exists(input));
@@ -179,13 +189,15 @@ TEST_CASE(
 
   const std::vector<Variant> variants = {
       {"memory_path", "-m 1024", "", false, ""},
-      {"disk_path_B", "-m 0.00001 -v debug", "", false,
+      {"disk_path_external_mphf", "-m 0.00001 -v debug", "", false,
        "disk_path: using external-memory MPHF builder"},
-      {"disk_path_C", "-m 0.00001 -t 4 -v debug", "", false,
-       // On most machines approach B fires; the correctness of reduced-thread
-       // encoding is still verified regardless of which branch is taken.
+      {"disk_path_thread_capped", "-m 0.00001 -t 4 -v debug", "", false,
+       // On most machines the external-MPHF path fires instead of thread
+       // capping; round-trip correctness is verified regardless.
        ""},
-      {"disk_path_E", "-m 0.00001 -s o", "", true, ""},
+      {"disk_path_order_stripped", "-m 0.00001 -s o", "", true, ""},
+      {"disk_path_singleton_streaming", "-m 0.00001 -v info", "", false,
+       "Streaming singleton reads from disk"},
   };
 
   for (const auto &v : variants) {
@@ -232,12 +244,18 @@ TEST_CASE(
   // Cross-check: all non-sorted paths must produce identical output.
   const std::string memory_out =
       read_file_binary(test_dir + "/memory_path.fastq");
-  const std::string disk_b_out =
-      read_file_binary(test_dir + "/disk_path_B.fastq");
-  const std::string disk_c_out =
-      read_file_binary(test_dir + "/disk_path_C.fastq");
-  check_bytes_equal(disk_b_out, memory_out, "disk_B == memory_path");
-  check_bytes_equal(disk_c_out, memory_out, "disk_C == memory_path");
+  const std::string disk_ext_mphf_out =
+      read_file_binary(test_dir + "/disk_path_external_mphf.fastq");
+  const std::string disk_thread_capped_out =
+      read_file_binary(test_dir + "/disk_path_thread_capped.fastq");
+  const std::string disk_singleton_streaming_out =
+      read_file_binary(test_dir + "/disk_path_singleton_streaming.fastq");
+  check_bytes_equal(disk_ext_mphf_out, memory_out,
+                    "disk_external_mphf == memory_path");
+  check_bytes_equal(disk_thread_capped_out, memory_out,
+                    "disk_thread_capped == memory_path");
+  check_bytes_equal(disk_singleton_streaming_out, memory_out,
+                    "disk_singleton_streaming == memory_path");
 
   fs::remove_all(test_dir);
 }

@@ -66,9 +66,11 @@ TEST_CASE("Smoke memory capping round-trip") {
   expect_text_match(output, asset_path("test_1.fastq"));
 }
 
-TEST_CASE("Smoke disk-path paired round-trip (approach B/C)") {
+TEST_CASE(
+    "Smoke disk-path paired round-trip (external MPHF / thread capping)") {
   // Forces disk-backed compression path via -m 0.1 on paired-end input,
-  // exercising the B/C decision block for both R1 and R2 streams.
+  // exercising the external-MPHF / thread-capping decision block for both R1
+  // and R2 streams.
   SmokeWorkspace workspace("disk_path_paired_roundtrip");
   const auto archive = workspace.path("archive.sp");
   const auto output_prefix = workspace.path("tmp");
@@ -80,7 +82,8 @@ TEST_CASE("Smoke disk-path paired round-trip (approach B/C)") {
   expect_text_match(workspace.path("tmp.2"), asset_path("test_2.fastq"));
 }
 
-TEST_CASE("Smoke disk-path quality/ID reorder round-trip (approach E)") {
+TEST_CASE("Smoke disk-path quality/ID reorder round-trip (order-stripped "
+          "streaming)") {
   // Forces disk-backed compression with -m 0.1 and strips read order (-s o)
   // so that quality and ID streams must be reordered via the disk-backed
   // streaming path (reorder_compress_quality_id from file).
