@@ -103,6 +103,20 @@ and disk budget:
   - **Thread-capping mode**: if disk space is also limited,
     SPRING2 automatically reduces the encoding thread count so that per-thread
     buffer overhead stays within the available memory budget.
+  - **Early clean-read stream release**: raw clean-read byte streams are freed
+    immediately after the bitset array is decoded during reordering, rather
+    than held live throughout MPHF construction and read reordering, eliminating
+    a multi-GB intermediate peak.
+  - **Singleton streaming**: singleton and N-read raw byte buffers are streamed
+    from disk at encode time rather than loaded into RAM before decoding,
+    eliminating a further multi-GB peak for datasets with many singletons.
+  - **Aligned-shard streaming**: aligned read shards are streamed from disk
+    per encoder thread rather than loaded into RAM before encoding begins,
+    eliminating a multi-GB shard-buffer peak.
+  - **Metadata spill**: per-thread encoder metadata (positions, orientations,
+    read orders, noise) is written incrementally to disk during encoding and
+    merged after the encoding loop, rather than accumulating in RAM until the
+    loop completes.
 
 In practice, passing `--memory 8` on a machine with 8 GB free lets SPRING2
 pick the right route automatically. Lower values increase the chance of
