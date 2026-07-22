@@ -7,6 +7,7 @@
 #include "bitset_dictionary.h"
 #include "dna_utils.h"
 #include "encoder.h"
+#include "fs_utils.h"
 #include "progress.h"
 #include <algorithm>
 #include <array>
@@ -15,6 +16,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -119,6 +121,70 @@ uint32_t write_unaligned_range(
 
   return aligned_read_count;
 }
+
+} // namespace detail
+
+// ---------------------------------------------------------------------------
+// Disk-path helpers: flush per-thread metadata to disk during encoding, then
+// stream-merge per-thread files into final artifact files after the OMP loop.
+// ---------------------------------------------------------------------------
+namespace detail {
+
+// Per-thread flush: append accumulated metadata (except sequence_bytes) to the
+// six open per-thread binary files and clear the in-memory vectors/strings.
+// Called periodically from within the OMP loop to cap per-thread RAM usage.
+inline void flush_thread_metadata_to_disk(encoded_metadata_buffer &metadata,
+                                          std::ofstream &pos_out,
+                                          std::ofstream &noise_out,
+                                          std::ofstream &noisepos_out,
+                                          std::ofstream &orient_out,
+                                          std::ofstream &readlen_out,
+                                          std::ofstream &readorder_out) {
+  if (!metadata.position_entries.empty()) {
+    pos_out.write(
+        reinterpret_cast<const char *>(metadata.position_entries.data()),
+        static_cast<std::streamsize>(metadata.position_entries.size() *
+                                     sizeof(uint64_t)));
+    metadata.position_entries.clear();
+  }
+  if (!metadata.noise_serialized.empty()) {
+    noise_out.write(
+        metadata.noise_serialized.data(),
+        static_cast<std::streamsize>(metadata.noise_serialized.size()));
+    metadata.noise_serialized.clear();
+  }
+  if (!metadata.noise_positions.empty()) {
+    noisepos_out.write(
+        reinterpret_cast<const char *>(metadata.noise_positions.data()),
+        static_cast<std::streamsize>(metadata.noise_positions.size() *
+                                     sizeof(uint16_t)));
+    metadata.noise_positions.clear();
+  }
+  if (!metadata.orientation_entries.empty()) {
+    orient_out.write(
+        metadata.orientation_entries.data(),
+        static_cast<std::streamsize>(metadata.orientation_entries.size()));
+    metadata.orientation_entries.clear();
+  }
+  if (!metadata.read_length_entries.empty()) {
+    readlen_out.write(
+        reinterpret_cast<const char *>(metadata.read_length_entries.data()),
+        static_cast<std::streamsize>(metadata.read_length_entries.size() *
+                                     sizeof(uint16_t)));
+    metadata.read_length_entries.clear();
+  }
+  if (!metadata.read_order_entries.empty()) {
+    readorder_out.write(
+        reinterpret_cast<const char *>(metadata.read_order_entries.data()),
+        static_cast<std::streamsize>(metadata.read_order_entries.size() *
+                                     sizeof(uint32_t)));
+    metadata.read_order_entries.clear();
+  }
+}
+
+// Number of read_order entries to accumulate per thread before flushing to
+// disk.  Limits per-thread peak to ~(threshold × ~15 bytes) ≈ 7 MB.
+static constexpr size_t kMetadataFlushThreshold = 500'000;
 
 } // namespace detail
 
@@ -246,6 +312,40 @@ void encode(std::bitset<bitset_size> *reads, bbhashdict *dictionaries,
     size_t order_cursor = 0;
     size_t orientation_cursor = 0;
     size_t read_length_cursor = 0;
+    // Disk-flush file handles (disk-path only; kept open for the thread's
+    // lifetime to avoid repeated open/close overhead).
+    const bool flush_metadata = !eg.metadata_spill_dir.empty();
+    std::ofstream flush_pos_out, flush_noise_out, flush_noisepos_out,
+        flush_orient_out, flush_readlen_out, flush_readorder_out;
+    if (flush_metadata && !done) {
+      const std::string tdir =
+          eg.metadata_spill_dir + "/threads/" + std::to_string(thread_id) + "/";
+      std::error_code mkdir_ec;
+      std::filesystem::create_directories(tdir, mkdir_ec);
+      if (mkdir_ec) {
+        open_stream_errors[static_cast<size_t>(thread_id)] =
+            std::string("Thread ") + std::to_string(thread_id) +
+            ": Failed to create metadata spill dir: " + mkdir_ec.message();
+        done = true;
+      } else {
+        flush_pos_out.open(tdir + "position_entries.bin", std::ios::binary);
+        flush_noise_out.open(tdir + "noise_serialized.bin", std::ios::binary);
+        flush_noisepos_out.open(tdir + "noise_positions.bin", std::ios::binary);
+        flush_orient_out.open(tdir + "orientation_entries.bin",
+                              std::ios::binary);
+        flush_readlen_out.open(tdir + "read_length_entries.bin",
+                               std::ios::binary);
+        flush_readorder_out.open(tdir + "read_order_entries.bin",
+                                 std::ios::binary);
+        if (!flush_pos_out || !flush_noise_out || !flush_noisepos_out ||
+            !flush_orient_out || !flush_readlen_out || !flush_readorder_out) {
+          open_stream_errors[static_cast<size_t>(thread_id)] =
+              std::string("Thread ") + std::to_string(thread_id) +
+              ": Failed to open metadata flush files.";
+          done = true;
+        }
+      }
+    }
     int64_t bucket_range[2];
     uint64_t bucket_start_index;
     uint64_t lookup_key;
@@ -561,6 +661,15 @@ void encode(std::bitset<bitset_size> *reads, bbhashdict *dictionaries,
           });
           writecontig(reference_contig, current_contig, thread_metadata, eg,
                       abs_pos);
+          // Disk-path: flush accumulated metadata to per-thread files once
+          // the threshold is reached, keeping per-thread peak RAM < ~7 MB.
+          if (flush_metadata && thread_metadata.read_order_entries.size() >=
+                                    detail::kMetadataFlushThreshold) {
+            detail::flush_thread_metadata_to_disk(
+                thread_metadata, flush_pos_out, flush_noise_out,
+                flush_noisepos_out, flush_orient_out, flush_readlen_out,
+                flush_readorder_out);
+          }
         }
         if (!done) {
           current_contig = {{current_read, relative_position, orientation,
@@ -573,6 +682,19 @@ void encode(std::bitset<bitset_size> *reads, bbhashdict *dictionaries,
                                   read_order, read_length});
         contig_read_count++;
       }
+    }
+    // Disk-path: final flush of any remaining metadata + close per-thread
+    // files.
+    if (flush_metadata) {
+      detail::flush_thread_metadata_to_disk(
+          thread_metadata, flush_pos_out, flush_noise_out, flush_noisepos_out,
+          flush_orient_out, flush_readlen_out, flush_readorder_out);
+      flush_pos_out.close();
+      flush_noise_out.close();
+      flush_noisepos_out.close();
+      flush_orient_out.close();
+      flush_readlen_out.close();
+      flush_readorder_out.close();
     }
     thread_metadata_outputs[static_cast<size_t>(thread_id)] =
         std::move(thread_metadata);
@@ -828,6 +950,7 @@ encoder_main(const reorder_encoder_artifact &reorder_artifact,
 
   eg.max_readlen = cp.read_info.max_readlen;
   eg.num_thr = cp.encoding.num_thr;
+  eg.metadata_spill_dir = cp.encoding.encoder_metadata_spill_dir;
 
   omp_set_num_threads(eg.num_thr);
   getDataParams(eg, cp, reorder_artifact); // populate numreads
@@ -908,86 +1031,235 @@ encoder_main(const reorder_encoder_artifact &reorder_artifact,
     abs_pos += file_len_seq_thr[static_cast<size_t>(tid)];
   }
 
-  for (int tid = 0; tid < eg.num_thr; tid++) {
-    const encoded_metadata_buffer &thread_output =
-        thread_metadata_outputs[static_cast<size_t>(tid)];
-    const uint64_t thread_base =
-        thread_sequence_bases[static_cast<size_t>(tid)];
-    for (const uint64_t position : thread_output.position_entries) {
-      artifact.position_entries.push_back(position + thread_base);
+  if (!eg.metadata_spill_dir.empty()) {
+    // ------------------------------------------------------------------
+    // Disk-path: stream-merge per-thread metadata files into final files,
+    // applying the per-thread position base offset during the merge.
+    // Per-thread temp dirs are removed as each is consumed.
+    // ------------------------------------------------------------------
+    SPRING_LOG_INFO("Merging encoder metadata to disk...");
+    const std::string &spill = eg.metadata_spill_dir;
+
+    // Helper: open a binary output file, creating parent dirs as needed.
+    auto open_bin_out = [&](const std::string &rel) -> std::ofstream {
+      const auto p = std::filesystem::path(spill) / rel;
+      std::error_code ec;
+      std::filesystem::create_directories(p.parent_path(), ec);
+      std::ofstream f(p, std::ios::binary | std::ios::trunc);
+      if (!f)
+        throw std::runtime_error("encoder_main: cannot open output file: " +
+                                 p.string());
+      return f;
+    };
+    // Helper: stream-copy one binary file's content into an output stream.
+    // NOTE: operator<<(streambuf*) sets failbit when the source has zero chars,
+    // so we clear the failbit afterward — subsequent writes must still succeed.
+    auto concat_file = [](std::ofstream &out, const std::string &path) {
+      std::ifstream in(path, std::ios::binary);
+      if (!in)
+        return; // empty / missing files are valid (zero entries for a thread)
+      out << in.rdbuf();
+      if (out.fail() && !out.bad())
+        out.clear(); // empty source: clear harmless failbit, preserve badbit
+    };
+
+    auto pos_out = open_bin_out("position_entries.bin");
+    auto noise_out = open_bin_out("noise_serialized.bin");
+    auto noisepos_out = open_bin_out("noise_positions.bin");
+    auto orient_out = open_bin_out("orientation_entries.bin");
+    auto readlen_out = open_bin_out("read_length_entries.bin");
+    auto readorder_out = open_bin_out("read_order_entries.bin");
+
+    for (int tid = 0; tid < eg.num_thr; tid++) {
+      const uint64_t thread_base =
+          thread_sequence_bases[static_cast<size_t>(tid)];
+      const std::string tdir = spill + "/threads/" + std::to_string(tid) + "/";
+      // Positions: read thread-local values, add base offset, write.
+      {
+        std::ifstream in(tdir + "position_entries.bin", std::ios::binary);
+        uint64_t pos;
+        while (detail::read_file_value(in, pos)) {
+          pos += thread_base;
+          pos_out.write(reinterpret_cast<const char *>(&pos), sizeof(uint64_t));
+        }
+      }
+      concat_file(noise_out, tdir + "noise_serialized.bin");
+      concat_file(noisepos_out, tdir + "noise_positions.bin");
+      concat_file(orient_out, tdir + "orientation_entries.bin");
+      concat_file(readlen_out, tdir + "read_length_entries.bin");
+      concat_file(readorder_out, tdir + "read_order_entries.bin");
+      std::error_code ec;
+      std::filesystem::remove_all(tdir, ec);
     }
-    artifact.noise_serialized.insert(artifact.noise_serialized.end(),
-                                     thread_output.noise_serialized.begin(),
-                                     thread_output.noise_serialized.end());
-    artifact.noise_positions.insert(artifact.noise_positions.end(),
-                                    thread_output.noise_positions.begin(),
-                                    thread_output.noise_positions.end());
-    artifact.orientation_entries.insert(
-        artifact.orientation_entries.end(),
-        thread_output.orientation_entries.begin(),
-        thread_output.orientation_entries.end());
-    artifact.read_length_entries.insert(
-        artifact.read_length_entries.end(),
-        thread_output.read_length_entries.begin(),
-        thread_output.read_length_entries.end());
-    artifact.read_order_entries.insert(artifact.read_order_entries.end(),
-                                       thread_output.read_order_entries.begin(),
-                                       thread_output.read_order_entries.end());
-  }
-
-  uint64_t len_unaligned = 0;
-
-  const uint32_t remaining_singleton_reads = detail::write_unaligned_range(
-      artifact, read.data(), order_s.data(), read_lengths_s.data(),
-      remaining_reads, egb, 0, eg.numreads_s, len_unaligned, eg);
-  const uint32_t remaining_n_reads = detail::write_unaligned_range(
-      artifact, read.data(), order_s.data(), read_lengths_s.data(),
-      remaining_reads, egb, eg.numreads_s, eg.numreads_s + eg.numreads_N,
-      len_unaligned, eg);
-  artifact.unaligned_char_count = len_unaligned;
-  SPRING_LOG_DEBUG(
-      "block_id=enc-main, Encoder residual unaligned writes: singleton_reads=" +
-      std::to_string(remaining_singleton_reads) +
-      ", N_reads=" + std::to_string(remaining_n_reads) +
-      ", unaligned_bases=" + std::to_string(len_unaligned));
-  for (int tid = 0; tid < cp.encoding.num_thr; tid++) {
-    if (static_cast<size_t>(tid) >=
-        compression_params::ReadMetadata::kFileLenThrSize) {
-      throw std::runtime_error(
-          std::string("Exceeded maximum supported thread count (") +
-          std::to_string(compression_params::ReadMetadata::kFileLenThrSize) +
-          "). Increase array size in params.h.");
+    {
+      std::error_code ec;
+      std::filesystem::remove_all(spill + "/threads", ec);
     }
-    cp.read_info.file_len_seq_thr[tid] = file_len_seq_thr[tid];
-  }
 
-  uint64_t total_seq_bases = 0;
-  for (int tid = 0; tid < cp.encoding.num_thr; tid++) {
-    total_seq_bases += file_len_seq_thr[tid];
-  }
-  SPRING_LOG_DEBUG(
-      "block_id=enc-main, Encoder sequence packing summary: threads=" +
-      std::to_string(cp.encoding.num_thr) +
-      ", total_seq_bases=" + std::to_string(total_seq_bases));
+    // Unaligned reads: small in-memory accumulation then append to files.
+    reordered_stream_artifact unaligned_temp;
+    uint64_t len_unaligned = 0;
+    const uint32_t remaining_singleton_reads = detail::write_unaligned_range(
+        unaligned_temp, read.data(), order_s.data(), read_lengths_s.data(),
+        remaining_reads, egb, 0, eg.numreads_s, len_unaligned, eg);
+    const uint32_t remaining_n_reads = detail::write_unaligned_range(
+        unaligned_temp, read.data(), order_s.data(), read_lengths_s.data(),
+        remaining_reads, egb, eg.numreads_s, eg.numreads_s + eg.numreads_N,
+        len_unaligned, eg);
+    readorder_out.write(
+        reinterpret_cast<const char *>(
+            unaligned_temp.read_order_entries.data()),
+        static_cast<std::streamsize>(unaligned_temp.read_order_entries.size() *
+                                     sizeof(uint32_t)));
+    readlen_out.write(
+        reinterpret_cast<const char *>(
+            unaligned_temp.read_length_entries.data()),
+        static_cast<std::streamsize>(unaligned_temp.read_length_entries.size() *
+                                     sizeof(uint16_t)));
+    pos_out.close();
+    noise_out.close();
+    noisepos_out.close();
+    orient_out.close();
+    readlen_out.close();
+    readorder_out.close();
 
-  if (total_seq_bases == 0) {
-    SPRING_LOG_DEBUG("block_id=enc-main, Skipping sequence packing: no "
-                     "sequence bases to compress.");
-    artifact.archive_members["read_seq.bin.bsc"] = std::string();
+    // Write unaligned_serialized.bin
+    {
+      auto uout = open_bin_out("unaligned_serialized.bin");
+      uout.write(unaligned_temp.unaligned_serialized.data(),
+                 static_cast<std::streamsize>(
+                     unaligned_temp.unaligned_serialized.size()));
+    }
+    artifact.unaligned_char_count = len_unaligned;
+    SPRING_LOG_DEBUG("block_id=enc-main, Encoder residual unaligned writes: "
+                     "singleton_reads=" +
+                     std::to_string(remaining_singleton_reads) +
+                     ", N_reads=" + std::to_string(remaining_n_reads) +
+                     ", unaligned_bases=" + std::to_string(len_unaligned));
+
+    write_archive_member_file(spill, "meta/unaligned_char_count.txt",
+                              std::to_string(len_unaligned));
+
+    for (int tid = 0; tid < cp.encoding.num_thr; tid++) {
+      if (static_cast<size_t>(tid) >=
+          compression_params::ReadMetadata::kFileLenThrSize)
+        throw std::runtime_error(
+            std::string("Exceeded maximum supported thread count (") +
+            std::to_string(compression_params::ReadMetadata::kFileLenThrSize) +
+            "). Increase array size in params.h.");
+      cp.read_info.file_len_seq_thr[tid] = file_len_seq_thr[tid];
+    }
+
+    uint64_t total_seq_bases_disk = 0;
+    for (int tid = 0; tid < cp.encoding.num_thr; tid++)
+      total_seq_bases_disk += file_len_seq_thr[tid];
+    SPRING_LOG_DEBUG(
+        "block_id=enc-main, Encoder sequence packing summary: threads=" +
+        std::to_string(cp.encoding.num_thr) +
+        ", total_seq_bases=" + std::to_string(total_seq_bases_disk));
+
+    if (total_seq_bases_disk == 0) {
+      SPRING_LOG_DEBUG("block_id=enc-main, Skipping sequence packing: no "
+                       "sequence bases to compress.");
+      write_archive_member_file(spill, "archive_members/read_seq.bin.bsc",
+                                std::string());
+    } else {
+      write_archive_member_file(spill, "archive_members/read_seq.bin.bsc",
+                                pack_compress_seq(eg, thread_metadata_outputs,
+                                                  file_len_seq_thr.data()));
+    }
+    for (int tid = 0; tid < cp.encoding.num_thr; tid++)
+      cp.read_info.file_len_seq_thr[tid] = file_len_seq_thr[tid];
+
+    return artifact; // vectors empty; all data written to spill dir
+
+  } else {
+    // ------------------------------------------------------------------
+    // In-memory path: merge all per-thread metadata into the artifact.
+    // ------------------------------------------------------------------
+    for (int tid = 0; tid < eg.num_thr; tid++) {
+      const encoded_metadata_buffer &thread_output =
+          thread_metadata_outputs[static_cast<size_t>(tid)];
+      const uint64_t thread_base =
+          thread_sequence_bases[static_cast<size_t>(tid)];
+      for (const uint64_t position : thread_output.position_entries) {
+        artifact.position_entries.push_back(position + thread_base);
+      }
+      artifact.noise_serialized.insert(artifact.noise_serialized.end(),
+                                       thread_output.noise_serialized.begin(),
+                                       thread_output.noise_serialized.end());
+      artifact.noise_positions.insert(artifact.noise_positions.end(),
+                                      thread_output.noise_positions.begin(),
+                                      thread_output.noise_positions.end());
+      artifact.orientation_entries.insert(
+          artifact.orientation_entries.end(),
+          thread_output.orientation_entries.begin(),
+          thread_output.orientation_entries.end());
+      artifact.read_length_entries.insert(
+          artifact.read_length_entries.end(),
+          thread_output.read_length_entries.begin(),
+          thread_output.read_length_entries.end());
+      artifact.read_order_entries.insert(
+          artifact.read_order_entries.end(),
+          thread_output.read_order_entries.begin(),
+          thread_output.read_order_entries.end());
+    }
+
+    uint64_t len_unaligned = 0;
+
+    const uint32_t remaining_singleton_reads = detail::write_unaligned_range(
+        artifact, read.data(), order_s.data(), read_lengths_s.data(),
+        remaining_reads, egb, 0, eg.numreads_s, len_unaligned, eg);
+    const uint32_t remaining_n_reads = detail::write_unaligned_range(
+        artifact, read.data(), order_s.data(), read_lengths_s.data(),
+        remaining_reads, egb, eg.numreads_s, eg.numreads_s + eg.numreads_N,
+        len_unaligned, eg);
+    artifact.unaligned_char_count = len_unaligned;
+    SPRING_LOG_DEBUG("block_id=enc-main, Encoder residual unaligned writes: "
+                     "singleton_reads=" +
+                     std::to_string(remaining_singleton_reads) +
+                     ", N_reads=" + std::to_string(remaining_n_reads) +
+                     ", unaligned_bases=" + std::to_string(len_unaligned));
+    for (int tid = 0; tid < cp.encoding.num_thr; tid++) {
+      if (static_cast<size_t>(tid) >=
+          compression_params::ReadMetadata::kFileLenThrSize) {
+        throw std::runtime_error(
+            std::string("Exceeded maximum supported thread count (") +
+            std::to_string(compression_params::ReadMetadata::kFileLenThrSize) +
+            "). Increase array size in params.h.");
+      }
+      cp.read_info.file_len_seq_thr[tid] = file_len_seq_thr[tid];
+    }
+
+    uint64_t total_seq_bases = 0;
+    for (int tid = 0; tid < cp.encoding.num_thr; tid++) {
+      total_seq_bases += file_len_seq_thr[tid];
+    }
+    SPRING_LOG_DEBUG(
+        "block_id=enc-main, Encoder sequence packing summary: threads=" +
+        std::to_string(cp.encoding.num_thr) +
+        ", total_seq_bases=" + std::to_string(total_seq_bases));
+
+    if (total_seq_bases == 0) {
+      SPRING_LOG_DEBUG("block_id=enc-main, Skipping sequence packing: no "
+                       "sequence bases to compress.");
+      artifact.archive_members["read_seq.bin.bsc"] = std::string();
+      return artifact;
+    }
+
+    // Generate per-thread .bsc sequence blocks as expected by the
+    // decompressor.
+    artifact.archive_members["read_seq.bin.bsc"] =
+        pack_compress_seq(eg, thread_metadata_outputs, file_len_seq_thr.data());
+
+    // Update metadata with final exact base counts after packing.
+    for (int tid = 0; tid < cp.encoding.num_thr; tid++) {
+      cp.read_info.file_len_seq_thr[tid] = file_len_seq_thr[tid];
+    }
+
+    // read/order_s/read_lengths_s are RAII-managed (std::vector)
     return artifact;
   }
-
-  // Generate per-thread .bsc sequence blocks as expected by the decompressor.
-  artifact.archive_members["read_seq.bin.bsc"] =
-      pack_compress_seq(eg, thread_metadata_outputs, file_len_seq_thr.data());
-
-  // Update metadata with final exact base counts after packing.
-  for (int tid = 0; tid < cp.encoding.num_thr; tid++) {
-    cp.read_info.file_len_seq_thr[tid] = file_len_seq_thr[tid];
-  }
-
-  // read/order_s/read_lengths_s are RAII-managed (std::vector)
-  return artifact;
 }
 
 } // namespace spring

@@ -1198,6 +1198,17 @@ function(spring_link_windows_system_libraries target_name)
     endif()
 endfunction()
 
+# compression_dispatch_encoder.cpp instantiates encoder_main<> for 24 bitset
+# sizes; each instantiation now includes substantial inline disk-spill logic.
+# On MSVC/ClangCL the resulting object file can exceed the default COFF section
+# limit — raise it with /bigobj.
+if(MSVC)
+    set_source_files_properties(
+        ${source_dir}/encode/compression_dispatch_encoder.cpp
+        PROPERTIES COMPILE_OPTIONS "/bigobj"
+    )
+endif()
+
 # Application target.
 spring_enable_precompiled_headers_if_requested(spring2)
 

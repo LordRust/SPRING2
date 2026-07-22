@@ -776,6 +776,12 @@ void compress_standard(const string_list &input_paths,
           // avoiding the ~27+ GB singleton buffer peak and the ~25 GB
           // aligned-shard peak that would otherwise coexist in memory during
           // encoding.
+          // encoder_metadata_spill_dir: the encoder flushes per-thread
+          // position/orientation/noise/order/length metadata directly to disk
+          // instead of accumulating ~15 GB of vectors in RAM.  The per-thread
+          // files are stream-merged into final artifact files after the loop.
+          cp.encoding.encoder_metadata_spill_dir =
+              encoder_artifact_dir.string();
           reorder_encoder_artifact encoder_input =
               load_reorder_encoder_artifact(reorder_artifact_dir.string(),
                                             /*stream_from_disk=*/true);
@@ -783,8 +789,9 @@ void compress_standard(const string_list &input_paths,
           release_reorder_encoder_artifact(encoder_input);
           std::error_code cleanup_ec;
           std::filesystem::remove_all(reorder_artifact_dir, cleanup_ec);
-          spill_reordered_stream_artifact(reordered_streams_artifact,
-                                          encoder_artifact_dir.string());
+          // encoder_main already wrote all metadata to encoder_artifact_dir;
+          // skip spill_reordered_stream_artifact (it would call
+          // reset_directory and delete the files we just wrote).
           release_reordered_stream_artifact(reordered_streams_artifact);
           reordered_streams_loaded = false;
         } else {

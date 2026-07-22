@@ -4,11 +4,13 @@
 #include "encoder.h"
 #include "io_utils.h"
 #include "progress.h"
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <list>
 #include <omp.h>
@@ -377,15 +379,51 @@ void correct_order(uint32_t *order_s, const encoder_global &eg,
     order_s[i] += cumulative_N_reads[order_s[i]];
 
   for (reorder_encoder_shard &shard : reorder_artifact.aligned_shards) {
-    for (size_t offset = 0; offset < shard.order_bytes.size();
-         offset += sizeof(uint32_t)) {
-      uint32_t read_position = 0;
-      std::memcpy(&read_position, shard.order_bytes.data() + offset,
-                  sizeof(uint32_t));
-      if (read_position < cumulative_N_reads.size()) {
-        read_position += cumulative_N_reads[read_position];
-        std::memcpy(shard.order_bytes.data() + offset, &read_position,
+    if (!shard.order_bytes.empty()) {
+      // In-memory path: adjust order values in-place.
+      for (size_t offset = 0; offset < shard.order_bytes.size();
+           offset += sizeof(uint32_t)) {
+        uint32_t read_position = 0;
+        std::memcpy(&read_position, shard.order_bytes.data() + offset,
                     sizeof(uint32_t));
+        if (read_position < cumulative_N_reads.size()) {
+          read_position += cumulative_N_reads[read_position];
+          std::memcpy(shard.order_bytes.data() + offset, &read_position,
+                      sizeof(uint32_t));
+        }
+      }
+    } else if (!shard.order_file.empty()) {
+      // Disk-path: read all order values from file, adjust, write back.
+      // Skip the round-trip if there are no N-reads (all offsets are zero).
+      const bool any_offset =
+          std::any_of(cumulative_N_reads.begin(), cumulative_N_reads.end(),
+                      [](uint32_t v) { return v != 0; });
+      if (any_offset) {
+        std::vector<uint32_t> order_vals;
+        {
+          std::ifstream in(shard.order_file, std::ios::binary);
+          if (!in)
+            throw std::runtime_error(
+                "correct_order: cannot open shard order file: " +
+                shard.order_file);
+          uint32_t val;
+          while (in.read(reinterpret_cast<char *>(&val), sizeof(uint32_t)))
+            order_vals.push_back(val);
+        }
+        for (uint32_t &rp : order_vals)
+          if (rp < cumulative_N_reads.size())
+            rp += cumulative_N_reads[rp];
+        {
+          std::ofstream out(shard.order_file,
+                            std::ios::binary | std::ios::trunc);
+          if (!out)
+            throw std::runtime_error(
+                "correct_order: cannot write shard order file: " +
+                shard.order_file);
+          out.write(reinterpret_cast<const char *>(order_vals.data()),
+                    static_cast<std::streamsize>(order_vals.size() *
+                                                 sizeof(uint32_t)));
+        }
       }
     }
   }

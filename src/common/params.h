@@ -97,6 +97,11 @@ struct compression_params {
     // construction.  When true, mphf_tmp_dir must be set.
     bool use_external_mphf = false;
     std::string mphf_tmp_dir;
+    // disk_path memory reduction: when non-empty, encoder_main writes all
+    // per-thread metadata (position, orientation, noise, read-length, order)
+    // directly to this directory instead of accumulating in RAM.  The
+    // per-thread files are stream-merged into final files after the OMP loop.
+    std::string encoder_metadata_spill_dir;
   } encoding;
 
   struct QualityConfig {
