@@ -809,6 +809,7 @@ jobs:
           cmake -S . -B $BUILD_DIR -G Ninja \
             -DCMAKE_MAKE_PROGRAM="$GITHUB_WORKSPACE/tools/host/ninja/linux/ninja" \
             -DCMAKE_BUILD_TYPE=Debug \
+            -DSPRING_ENABLE_IPO=OFF \
             -DCMAKE_C_FLAGS="${{ matrix.san_flags }}" -DCMAKE_CXX_FLAGS="${{ matrix.san_flags }}" \
             -DCMAKE_EXE_LINKER_FLAGS="${{ matrix.ld_flags }}" -DCMAKE_SHARED_LINKER_FLAGS="${{ matrix.ld_flags }}"
 
