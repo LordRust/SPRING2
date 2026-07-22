@@ -181,13 +181,13 @@ void spill_reorder_encoder_artifact(const reorder_encoder_artifact &artifact,
 
 reorder_encoder_artifact
 load_reorder_encoder_artifact(const std::string &root_dir,
-                              bool stream_singletons_from_disk = false) {
+                              bool stream_from_disk = false) {
   reorder_encoder_artifact artifact;
   artifact.singleton_count = static_cast<uint32_t>(std::stoul(read_binary_file(
       resolve_archive_entry_disk_path(root_dir, "meta/singleton_count.txt"))));
   const size_t shard_count = static_cast<size_t>(std::stoull(read_binary_file(
       resolve_archive_entry_disk_path(root_dir, "meta/shard_count.txt"))));
-  if (stream_singletons_from_disk) {
+  if (stream_from_disk) {
     // Record file paths so readsingletons() can stream directly — avoids
     // loading the full raw singleton bytes into RAM.
     artifact.singleton_read_file =
@@ -198,6 +198,26 @@ load_reorder_encoder_artifact(const std::string &root_dir,
         resolve_archive_entry_disk_path(root_dir, "n_read_bytes.bin");
     artifact.n_read_order_file =
         resolve_archive_entry_disk_path(root_dir, "n_read_order_bytes.bin");
+    // Record shard file paths so the encoder can stream directly from disk —
+    // avoids loading all aligned shard bytes into RAM simultaneously.
+    artifact.aligned_shards.resize(shard_count);
+    for (size_t index = 0; index < shard_count; ++index) {
+      const std::string prefix =
+          "aligned_shards/" + std::to_string(index) + "/";
+      reorder_encoder_shard &shard = artifact.aligned_shards[index];
+      shard.flag_file =
+          resolve_archive_entry_disk_path(root_dir, prefix + "flag_bytes.bin");
+      shard.read_file =
+          resolve_archive_entry_disk_path(root_dir, prefix + "read_bytes.bin");
+      shard.orientation_file = resolve_archive_entry_disk_path(
+          root_dir, prefix + "orientation_bytes.bin");
+      shard.position_file = resolve_archive_entry_disk_path(
+          root_dir, prefix + "position_bytes.bin");
+      shard.order_file =
+          resolve_archive_entry_disk_path(root_dir, prefix + "order_bytes.bin");
+      shard.read_length_file = resolve_archive_entry_disk_path(
+          root_dir, prefix + "read_length_bytes.bin");
+    }
   } else {
     artifact.singleton_read_bytes = read_binary_file(
         resolve_archive_entry_disk_path(root_dir, "singleton_read_bytes.bin"));
@@ -207,23 +227,26 @@ load_reorder_encoder_artifact(const std::string &root_dir,
         resolve_archive_entry_disk_path(root_dir, "n_read_bytes.bin"));
     artifact.n_read_order_bytes = read_binary_file(
         resolve_archive_entry_disk_path(root_dir, "n_read_order_bytes.bin"));
-  }
-  artifact.aligned_shards.resize(shard_count);
-  for (size_t index = 0; index < shard_count; ++index) {
-    const std::string prefix = "aligned_shards/" + std::to_string(index) + "/";
-    reorder_encoder_shard &shard = artifact.aligned_shards[index];
-    shard.read_bytes = read_binary_file(
-        resolve_archive_entry_disk_path(root_dir, prefix + "read_bytes.bin"));
-    shard.orientation_bytes = read_binary_file(resolve_archive_entry_disk_path(
-        root_dir, prefix + "orientation_bytes.bin"));
-    shard.flag_bytes = read_binary_file(
-        resolve_archive_entry_disk_path(root_dir, prefix + "flag_bytes.bin"));
-    shard.position_bytes = read_binary_file(resolve_archive_entry_disk_path(
-        root_dir, prefix + "position_bytes.bin"));
-    shard.order_bytes = read_binary_file(
-        resolve_archive_entry_disk_path(root_dir, prefix + "order_bytes.bin"));
-    shard.read_length_bytes = read_binary_file(resolve_archive_entry_disk_path(
-        root_dir, prefix + "read_length_bytes.bin"));
+    artifact.aligned_shards.resize(shard_count);
+    for (size_t index = 0; index < shard_count; ++index) {
+      const std::string prefix =
+          "aligned_shards/" + std::to_string(index) + "/";
+      reorder_encoder_shard &shard = artifact.aligned_shards[index];
+      shard.read_bytes = read_binary_file(
+          resolve_archive_entry_disk_path(root_dir, prefix + "read_bytes.bin"));
+      shard.orientation_bytes =
+          read_binary_file(resolve_archive_entry_disk_path(
+              root_dir, prefix + "orientation_bytes.bin"));
+      shard.flag_bytes = read_binary_file(
+          resolve_archive_entry_disk_path(root_dir, prefix + "flag_bytes.bin"));
+      shard.position_bytes = read_binary_file(resolve_archive_entry_disk_path(
+          root_dir, prefix + "position_bytes.bin"));
+      shard.order_bytes = read_binary_file(resolve_archive_entry_disk_path(
+          root_dir, prefix + "order_bytes.bin"));
+      shard.read_length_bytes =
+          read_binary_file(resolve_archive_entry_disk_path(
+              root_dir, prefix + "read_length_bytes.bin"));
+    }
   }
   return artifact;
 }
@@ -747,14 +770,15 @@ void compress_standard(const string_list &input_paths,
       run_timed_step("Encoding ...", "Encoding", [&] {
         progress.set_stage("Encoding", 0.50F, 0.85F);
         if (use_disk_workspace) {
-          // stream_singletons_from_disk=true: file paths are recorded in the
-          // artifact instead of loading raw bytes into RAM, so readsingletons()
-          // can stream directly from disk and avoid the ~27+ GB singleton
-          // buffer peak present in the memory-path.
+          // stream_from_disk=true: file paths are recorded in the artifact
+          // instead of loading raw bytes into RAM, so both readsingletons()
+          // and the aligned-shard encoder loop stream directly from disk —
+          // avoiding the ~27+ GB singleton buffer peak and the ~25 GB
+          // aligned-shard peak that would otherwise coexist in memory during
+          // encoding.
           reorder_encoder_artifact encoder_input =
-              load_reorder_encoder_artifact(
-                  reorder_artifact_dir.string(),
-                  /*stream_singletons_from_disk=*/true);
+              load_reorder_encoder_artifact(reorder_artifact_dir.string(),
+                                            /*stream_from_disk=*/true);
           reordered_streams_artifact = call_encoder(encoder_input, cp);
           release_reorder_encoder_artifact(encoder_input);
           std::error_code cleanup_ec;

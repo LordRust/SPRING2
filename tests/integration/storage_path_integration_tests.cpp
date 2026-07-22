@@ -162,14 +162,14 @@ TEST_CASE("Paired sample matches for memory_path and disk_path") {
 //                           compared by line count only (order is not
 //                           preserved by design).
 //
-//   disk_path_singleton_streaming
-//                         : disk-backed path where singleton reads are
-//                           streamed directly from the spilled
-//                           singleton_read_bytes.bin file during encoding
-//                           instead of being loaded into RAM first
-//                           (-m 0.00001 -v info). The info log is checked for
-//                           the "Streaming singleton reads from disk" banner
-//                           to confirm the new code path was taken.
+//   disk_path_disk_streaming
+//                         : disk-backed path where both the aligned shards
+//                           and singleton reads are streamed directly from
+//                           their spilled files during encoding instead of
+//                           being loaded into RAM first (-m 0.00001 -v info).
+//                           The info log is checked for the
+//                           "Streaming aligned shard" banner to confirm the
+//                           new code path was taken.
 // ---------------------------------------------------------------------------
 TEST_CASE(
     "All five disk-path memory-reduction variants produce correct output") {
@@ -196,8 +196,8 @@ TEST_CASE(
        // capping; round-trip correctness is verified regardless.
        ""},
       {"disk_path_order_stripped", "-m 0.00001 -s o", "", true, ""},
-      {"disk_path_singleton_streaming", "-m 0.00001 -v info", "", false,
-       "Streaming singleton reads from disk"},
+      {"disk_path_disk_streaming", "-m 0.00001 -v info", "", false,
+       "Streaming aligned shard"},
   };
 
   for (const auto &v : variants) {
@@ -248,14 +248,14 @@ TEST_CASE(
       read_file_binary(test_dir + "/disk_path_external_mphf.fastq");
   const std::string disk_thread_capped_out =
       read_file_binary(test_dir + "/disk_path_thread_capped.fastq");
-  const std::string disk_singleton_streaming_out =
-      read_file_binary(test_dir + "/disk_path_singleton_streaming.fastq");
+  const std::string disk_disk_streaming_out =
+      read_file_binary(test_dir + "/disk_path_disk_streaming.fastq");
   check_bytes_equal(disk_ext_mphf_out, memory_out,
                     "disk_external_mphf == memory_path");
   check_bytes_equal(disk_thread_capped_out, memory_out,
                     "disk_thread_capped == memory_path");
-  check_bytes_equal(disk_singleton_streaming_out, memory_out,
-                    "disk_singleton_streaming == memory_path");
+  check_bytes_equal(disk_disk_streaming_out, memory_out,
+                    "disk_disk_streaming == memory_path");
 
   fs::remove_all(test_dir);
 }

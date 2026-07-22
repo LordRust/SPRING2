@@ -208,12 +208,38 @@ void encode(std::bitset<bitset_size> *reads, bbhashdict *dictionaries,
         reorder_artifact.aligned_shards.size()) {
       open_stream_errors[static_cast<size_t>(thread_id)] =
           std::string("Thread ") + std::to_string(thread_id) +
-          ": Missing in-memory reorder shard.";
+          ": Missing reorder shard.";
       done = true;
     }
     const reorder_encoder_shard *input_shard =
         done ? nullptr
              : &reorder_artifact.aligned_shards[static_cast<size_t>(thread_id)];
+    const bool shard_on_disk =
+        (input_shard != nullptr && !input_shard->flag_file.empty());
+    // File streams for the disk-streaming path (one per shard, no contention).
+    std::ifstream shard_flag_in, shard_read_in, shard_orientation_in,
+        shard_position_in, shard_order_in, shard_read_length_in;
+    if (shard_on_disk && !done) {
+      shard_flag_in.open(input_shard->flag_file, std::ios::binary);
+      shard_read_in.open(input_shard->read_file, std::ios::binary);
+      shard_orientation_in.open(input_shard->orientation_file,
+                                std::ios::binary);
+      shard_position_in.open(input_shard->position_file, std::ios::binary);
+      shard_order_in.open(input_shard->order_file, std::ios::binary);
+      shard_read_length_in.open(input_shard->read_length_file,
+                                std::ios::binary);
+      if (!shard_flag_in || !shard_read_in || !shard_orientation_in ||
+          !shard_position_in || !shard_order_in || !shard_read_length_in) {
+        open_stream_errors[static_cast<size_t>(thread_id)] =
+            std::string("Thread ") + std::to_string(thread_id) +
+            ": Failed to open shard files for streaming.";
+        done = true;
+      } else {
+        SPRING_LOG_INFO("Streaming aligned shard " + std::to_string(thread_id) +
+                        " from disk.");
+      }
+    }
+    // Byte-buffer cursors used in the in-memory path only.
     size_t read_cursor = 0;
     size_t flag_cursor = 0;
     size_t position_cursor = 0;
@@ -238,39 +264,50 @@ void encode(std::bitset<bitset_size> *reads, bbhashdict *dictionaries,
     uint64_t thread_singleton_absorbed = 0;
 
     while (!done) {
-      if (flag_cursor >= input_shard->flag_bytes.size()) {
-        done = true;
+      if (shard_on_disk) {
+        char flag_byte;
+        if (!detail::read_file_value(shard_flag_in, flag_byte)) {
+          done = true;
+        } else {
+          read_flag = flag_byte;
+        }
       } else {
-        read_flag = input_shard->flag_bytes[flag_cursor++];
+        if (flag_cursor >= input_shard->flag_bytes.size()) {
+          done = true;
+        } else {
+          read_flag = input_shard->flag_bytes[flag_cursor++];
+        }
       }
       if (!done) {
         contig_read_count++;
-        if (!detail::read_buffer_record(input_shard->read_bytes, read_cursor,
-                                        current_read)) {
-          throw std::runtime_error(
-              "Failed to read reordered read shard at read count " +
-              std::to_string(contig_read_count));
-        }
-        if (orientation_cursor >= input_shard->orientation_bytes.size()) {
-          throw std::runtime_error(
-              "Failed to read orientation from in-memory shard at read count " +
-              std::to_string(contig_read_count));
-        }
-        orientation = input_shard->orientation_bytes[orientation_cursor++];
-        if (!detail::read_buffer_value(input_shard->position_bytes,
-                                       position_cursor, relative_position)) {
-          throw std::runtime_error(
-              "Failed to read position from in-memory shard at read count " +
-              std::to_string(contig_read_count));
-        }
-        if (!detail::read_buffer_value(input_shard->order_bytes, order_cursor,
-                                       read_order)) {
-          throw std::runtime_error(
-              "Failed to read order from in-memory shard at read count " +
-              std::to_string(contig_read_count));
-        }
-        if (detail::read_buffer_value(input_shard->read_length_bytes,
-                                      read_length_cursor, read_length)) {
+        if (shard_on_disk) {
+          if (!detail::read_file_record(shard_read_in, current_read)) {
+            throw std::runtime_error(
+                "Failed to stream read from shard file at read count " +
+                std::to_string(contig_read_count));
+          }
+          char o;
+          if (!detail::read_file_value(shard_orientation_in, o)) {
+            throw std::runtime_error(
+                "Failed to stream orientation from shard file at read count " +
+                std::to_string(contig_read_count));
+          }
+          orientation = o;
+          if (!detail::read_file_value(shard_position_in, relative_position)) {
+            throw std::runtime_error(
+                "Failed to stream position from shard file at read count " +
+                std::to_string(contig_read_count));
+          }
+          if (!detail::read_file_value(shard_order_in, read_order)) {
+            throw std::runtime_error(
+                "Failed to stream order from shard file at read count " +
+                std::to_string(contig_read_count));
+          }
+          if (!detail::read_file_value(shard_read_length_in, read_length)) {
+            throw std::runtime_error(
+                "Failed to stream length from shard file at read count " +
+                std::to_string(contig_read_count));
+          }
           uint32_t total = ++total_reads_encoded;
           if (total % 100000 == 0) {
             if (auto *progress = ProgressBar::GlobalInstance()) {
@@ -278,9 +315,44 @@ void encode(std::bitset<bitset_size> *reads, bbhashdict *dictionaries,
             }
           }
         } else {
-          throw std::runtime_error(
-              "Failed to read length from in-memory shard at read count " +
-              std::to_string(contig_read_count));
+          if (!detail::read_buffer_record(input_shard->read_bytes, read_cursor,
+                                          current_read)) {
+            throw std::runtime_error(
+                "Failed to read reordered read shard at read count " +
+                std::to_string(contig_read_count));
+          }
+          if (orientation_cursor >= input_shard->orientation_bytes.size()) {
+            throw std::runtime_error(
+                "Failed to read orientation from in-memory shard at read "
+                "count " +
+                std::to_string(contig_read_count));
+          }
+          orientation = input_shard->orientation_bytes[orientation_cursor++];
+          if (!detail::read_buffer_value(input_shard->position_bytes,
+                                         position_cursor, relative_position)) {
+            throw std::runtime_error(
+                "Failed to read position from in-memory shard at read count " +
+                std::to_string(contig_read_count));
+          }
+          if (!detail::read_buffer_value(input_shard->order_bytes, order_cursor,
+                                         read_order)) {
+            throw std::runtime_error(
+                "Failed to read order from in-memory shard at read count " +
+                std::to_string(contig_read_count));
+          }
+          if (detail::read_buffer_value(input_shard->read_length_bytes,
+                                        read_length_cursor, read_length)) {
+            uint32_t total = ++total_reads_encoded;
+            if (total % 100000 == 0) {
+              if (auto *progress = ProgressBar::GlobalInstance()) {
+                progress->update(static_cast<float>(total) / eg.numreads);
+              }
+            }
+          } else {
+            throw std::runtime_error(
+                "Failed to read length from in-memory shard at read count " +
+                std::to_string(contig_read_count));
+          }
         }
       }
       // Safety check: force a contig break if the relative position is

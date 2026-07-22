@@ -26,6 +26,15 @@ struct reorder_encoder_shard {
   std::string position_bytes;
   std::string order_bytes;
   std::string read_length_bytes;
+
+  // When non-empty, these paths point to the spilled shard files on disk.
+  // The encoder streams directly from these files (disk-path only).
+  std::string flag_file;
+  std::string read_file;
+  std::string orientation_file;
+  std::string position_file;
+  std::string order_file;
+  std::string read_length_file;
 };
 
 struct reorder_encoder_artifact {
