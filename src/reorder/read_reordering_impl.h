@@ -970,9 +970,8 @@ void writetofile(std::bitset<bitset_size> *read, uint16_t *read_lengths,
 }
 
 template <size_t bitset_size>
-reorder_encoder_artifact
-reorder_main(const reorder_input_artifact &input_artifact,
-             const compression_params &cp) {
+reorder_encoder_artifact reorder_main(reorder_input_artifact input_artifact,
+                                      const compression_params &cp) {
   reorder_global<bitset_size> rg(cp.read_info.max_readlen);
   rg.paired_end = cp.encoding.paired_end;
   rg.depleted_base = cp.encoding.depleted_base;
@@ -1008,6 +1007,11 @@ reorder_main(const reorder_input_artifact &input_artifact,
   SPRING_LOG_INFO("Reading file");
   readDnaFile<bitset_size>(read.data(), read_lengths.data(), input_artifact,
                            rg);
+  // Free raw clean-read byte streams now that all reads are decoded into
+  // the bitset array — they are not used by any subsequent step.
+  std::string().swap(input_artifact.clean_read_streams[0]);
+  std::string().swap(input_artifact.clean_read_streams[1]);
+  SPRING_LOG_DEBUG("Freed raw clean-read byte streams after decode.");
 
   if (rg.numreads > 0) {
     SPRING_LOG_INFO("Constructing dictionaries");
@@ -1022,8 +1026,8 @@ reorder_main(const reorder_input_artifact &input_artifact,
   SPRING_LOG_INFO("Writing to file");
   writetofile<bitset_size>(read.data(), read_lengths.data(), rg, artifact,
                            deterministic_mode);
-  artifact.n_read_bytes = input_artifact.n_read_bytes;
-  artifact.n_read_order_bytes = input_artifact.n_read_order_bytes;
+  artifact.n_read_bytes = std::move(input_artifact.n_read_bytes);
+  artifact.n_read_order_bytes = std::move(input_artifact.n_read_order_bytes);
   SPRING_LOG_INFO("Done!");
   return artifact;
 }

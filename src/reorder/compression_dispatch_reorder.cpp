@@ -8,10 +8,9 @@
 namespace spring::dispatch_detail {
 
 template <size_t bitset_size>
-reorder_encoder_artifact
-call_reorder_main(const reorder_input_artifact &artifact,
-                  const compression_params &params) {
-  return reorder_main<bitset_size>(artifact, params);
+reorder_encoder_artifact call_reorder_main(reorder_input_artifact artifact,
+                                           const compression_params &params) {
+  return reorder_main<bitset_size>(std::move(artifact), params);
 }
 
 const std::array<reorder_template_main_fn, 16> reorder_dispatchers = {

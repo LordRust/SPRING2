@@ -734,7 +734,8 @@ void compress_standard(const string_list &input_paths,
 
       run_timed_step("Reordering ...", "Reordering", [&] {
         progress.set_stage("Reordering", 0.25F, 0.50F);
-        reorder_artifact = call_reorder(preprocess_output.reorder_inputs, cp);
+        reorder_artifact =
+            call_reorder(std::move(preprocess_output.reorder_inputs), cp);
         if (use_disk_workspace) {
           spill_reorder_encoder_artifact(reorder_artifact,
                                          reorder_artifact_dir.string());

@@ -11,7 +11,7 @@ namespace spring {
 
 struct compression_params;
 
-reorder_encoder_artifact call_reorder(const reorder_input_artifact &artifact,
+reorder_encoder_artifact call_reorder(reorder_input_artifact artifact,
                                       compression_params &cp);
 
 reordered_stream_artifact call_encoder(const reorder_encoder_artifact &artifact,

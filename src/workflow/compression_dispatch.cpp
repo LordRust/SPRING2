@@ -25,13 +25,13 @@ size_t dispatch_index(const size_t requested_bitset_size,
   return requested_bitset_size / dispatch_detail::kBitsetStep - 1;
 }
 
-reorder_encoder_artifact call_reorder(const reorder_input_artifact &artifact,
+reorder_encoder_artifact call_reorder(reorder_input_artifact artifact,
                                       compression_params &params) {
   const size_t reorder_bitset_size = rounded_bitset_size(
       2 * static_cast<size_t>(params.read_info.max_readlen));
   return dispatch_detail::reorder_dispatchers[dispatch_index(
-      reorder_bitset_size, dispatch_detail::kMaxReorderBitsetSize)](artifact,
-                                                                    params);
+      reorder_bitset_size, dispatch_detail::kMaxReorderBitsetSize)](
+      std::move(artifact), params);
 }
 
 reordered_stream_artifact call_encoder(const reorder_encoder_artifact &artifact,

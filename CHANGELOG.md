@@ -6,6 +6,7 @@
 
 ### Changed
 
+- Changed disk-path reordering to free the raw clean-read byte streams (`clean_read_streams`) immediately after `readDnaFile` decodes them into the bitset array, instead of holding them live for the entire reorder stage. `reorder_main` now takes `reorder_input_artifact` by value; after decoding, both streams are swapped with empty strings and the `n_read_bytes`/`n_read_order_bytes` fields are moved into the output artifact. For 1 B × 50 bp paired-end reads this eliminates a ~58 GB peak that previously coexisted with the bitset array throughout MPHF construction and read reordering.
 - Changed disk-path encoding to stream singleton reads directly from disk instead of loading the full raw singleton byte buffers into RAM before decoding. `load_reorder_encoder_artifact` now accepts a `stream_singletons_from_disk` flag that records file paths for `singleton_read_bytes.bin`, `singleton_order_bytes.bin`, `n_read_bytes.bin`, and `n_read_order_bytes.bin` instead of reading them into memory; `readsingletons` dispatches to `std::ifstream`-based readers when those paths are set. For datasets with many singletons (e.g. ~548 M singletons × 50 bp), this eliminates a ~27+ GB raw-bytes peak that previously coexisted with the bitset array during encoding, resolving OOM failures on constrained disk-path runs.
 
 ## V1.1.0

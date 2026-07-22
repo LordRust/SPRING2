@@ -11,7 +11,7 @@
 namespace spring::dispatch_detail {
 
 using reorder_template_main_fn = reorder_encoder_artifact (*)(
-    const reorder_input_artifact &, const compression_params &);
+    reorder_input_artifact, const compression_params &);
 using encoder_template_main_fn = reordered_stream_artifact (*)(
     const reorder_encoder_artifact &, compression_params &);
 
