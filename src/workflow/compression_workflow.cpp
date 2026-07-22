@@ -35,14 +35,6 @@ template <typename T> void release_vector(std::vector<T> &value) {
   std::vector<T>().swap(value);
 }
 
-void release_reorder_input_artifact(reorder_input_artifact &artifact) {
-  for (std::string &stream : artifact.clean_read_streams) {
-    release_string(stream);
-  }
-  release_string(artifact.n_read_bytes);
-  release_string(artifact.n_read_order_bytes);
-}
-
 void release_post_encode_side_stream_artifact(
     post_encode_side_stream_artifact &artifact) {
   for (std::string &stream : artifact.raw_id_streams) {
@@ -765,7 +757,6 @@ void compress_standard(const string_list &input_paths,
           release_reorder_encoder_artifact(reorder_artifact);
         }
       });
-      release_reorder_input_artifact(preprocess_output.reorder_inputs);
 
       run_timed_step("Encoding ...", "Encoding", [&] {
         progress.set_stage("Encoding", 0.50F, 0.85F);
