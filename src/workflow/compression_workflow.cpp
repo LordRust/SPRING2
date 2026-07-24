@@ -845,7 +845,8 @@ void compress_standard(const string_list &input_paths,
               stage_archive_members(reorder_compress_streams(
                   cp, encoder_artifact_dir.string(),
                   resolve_archive_entry_disk_path(encoder_artifact_dir.string(),
-                                                  "read_order_entries.bin")));
+                                                  "read_order_entries.bin"),
+                  available_memory_bytes));
             } else {
               ensure_reordered_streams_loaded();
               merge_archive_members(
@@ -1044,7 +1045,8 @@ void compress(const std::vector<std::string> &input_paths,
                         pairing_only_flag, no_quality_flag, no_ids_flag,
                         quality_options, compression_level, note,
                         verbosity_level, false, "", i1_path, "", assay_type,
-                        i1_path, cb_len, nullptr, storage_plan.selected_path);
+                        i1_path, cb_len, nullptr, storage_plan.selected_path,
+                        storage_plan.available_memory_bytes);
 
       const std::string grouped_assay =
           (assay_type == "auto") ? assay_from_archive_metadata_path(
@@ -1064,7 +1066,8 @@ void compress(const std::vector<std::string> &input_paths,
                             note.empty() ? std::string("read3-group")
                                          : (note + " | read3-group"),
                             verbosity_level, false, "", "", "", grouped_assay,
-                            "", cb_len, nullptr, storage_plan.selected_path);
+                            "", cb_len, nullptr, storage_plan.selected_path,
+                            storage_plan.available_memory_bytes);
         }
       }
 
@@ -1075,7 +1078,8 @@ void compress(const std::vector<std::string> &input_paths,
                           note.empty() ? std::string("index-group")
                                        : (note + " | index-group"),
                           verbosity_level, false, "", "", "", grouped_assay, "",
-                          cb_len, nullptr, storage_plan.selected_path);
+                          cb_len, nullptr, storage_plan.selected_path,
+                          storage_plan.available_memory_bytes);
       }
 
       const bundle_manifest manifest{

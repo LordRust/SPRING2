@@ -2,6 +2,14 @@
 
 # Changelog
 
+## V1.2.1
+
+### Changed
+
+- Changed disk-path stream reordering (the "Reordering and compressing streams" stage) to buffer scatter records in RAM instead of reopening a per-block scratch file for every read. `partition_alignment_stream_records` previously called `append_record_to_file` once per read, performing an `open(append)`/write/`close` cycle per record; for a ~1 B-read dataset this issued ~1 billion file-open round-trips, which stalled for days on NFS-backed work directories. Records now accumulate in in-RAM per-block buffers and are flushed to their scratch files only in large batched appends when the aggregate buffer size crosses a cap (`0.4 × memory budget`, or a 4 GiB default when no budget is supplied), collapsing file opens from ~1 per read to at most one per block per flush.
+- Added an in-RAM fast path to disk-path stream reordering: when the scatter buffers never exceed the cap they are handed directly to the block rebuild, skipping the scratch write and read-back entirely (eliminating ~80 GB of intermediate NFS traffic for a 1 B × 50 bp dataset). The block parser (`rebuild_stream_blocks`) now consumes either the in-RAM buffer or a spilled file through a shared zero-copy `span_streambuf`, and `reorder_compress_streams` selects the in-RAM or spill path based on whether the cap was crossed. `staged_stream_record_header` was packed (`#pragma pack(1)`, 24 → 18 bytes) to shrink both the in-RAM buffers and the spilled scratch payload.
+- Changed the stream-reordering memory budget to flow from the resolved `-m` cap through `reorder_compress_streams`, including all grouped-bundle members (read, read-3, and index sub-archives), so grouped assays such as sc-ATAC size their scatter buffers against the user's actual memory budget instead of the conservative default cap.
+
 ## V1.2.0
 
 ### Changed

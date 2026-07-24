@@ -36,7 +36,8 @@ reorder_compress_streams(const compression_params &cp,
 std::unordered_map<std::string, std::string>
 reorder_compress_streams(const compression_params &cp,
                          const std::string &artifact_root_dir,
-                         const std::string &read_order_entries_path);
+                         const std::string &read_order_entries_path,
+                         uint64_t memory_budget_bytes = 0);
 
 } // namespace spring
 

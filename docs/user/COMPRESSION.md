@@ -117,6 +117,13 @@ and disk budget:
     read orders, noise) is written incrementally to disk during encoding and
     merged after the encoding loop, rather than accumulating in RAM until the
     loop completes.
+  - **Stream scatter buffering**: during the "Reordering and compressing
+    streams" stage, scatter records are accumulated in per-block RAM buffers
+    and flushed to scratch files only in large batched appends when the
+    aggregate buffer size exceeds 40 % of the memory budget (default cap
+    4 GiB), rather than opening, appending, and closing a scratch file per
+    read. When the entire scatter fits under the cap, scratch files are skipped
+    entirely and the buffers are handed directly to the parallel block rebuild.
 
 In practice, passing `--memory 8` on a machine with 8 GB free lets SPRING2
 pick the right route automatically. Lower values increase the chance of

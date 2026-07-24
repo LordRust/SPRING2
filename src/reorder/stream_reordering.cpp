@@ -6,10 +6,12 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <istream>
 #include <limits>
 #include <mutex>
 #include <omp.h>
 #include <stdexcept>
+#include <streambuf>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -56,6 +58,7 @@ struct output_block_buffers {
   std::vector<char> mate_orientation_bytes;
 };
 
+#pragma pack(push, 1)
 struct staged_stream_record_header {
   uint32_t relative_slot;
   uint16_t read_length;
@@ -64,6 +67,16 @@ struct staged_stream_record_header {
   char orientation;
   uint64_t position;
 };
+#pragma pack(pop)
+
+// Fraction of the compression memory budget the scatter phase may hold as
+// in-RAM per-block buffers. Kept conservative so those buffers can coexist
+// with the parallel rebuild's working set and the accumulated compressed
+// block outputs without risking OOM.
+constexpr double kScatterBufferBudgetFraction = 0.4;
+// Fallback cap when no memory budget is supplied, so records are still batched
+// into large flushes instead of one open/close per read.
+constexpr uint64_t kDefaultScatterBufferCapBytes = 4ULL * 1024 * 1024 * 1024;
 
 struct staged_read_state {
   bool present = false;
@@ -128,31 +141,54 @@ void reset_directory(const std::string &path) {
   }
 }
 
-void append_record_to_file(const std::string &path,
-                           const staged_stream_record_header &header,
-                           const char *payload, const size_t payload_size,
-                           const uint16_t *noise_positions,
-                           const size_t noise_position_count) {
+// Appends a fully-assembled per-block scatter buffer to its scratch file with a
+// single open/write/close. Records within a block are order-independent (the
+// rebuild places each by its relative slot), so buffers may be flushed in any
+// number of batches.
+void append_buffer_to_scratch(const std::string &path,
+                              const std::string &bytes) {
   std::ofstream output(path, std::ios::binary | std::ios::app);
   if (!output.is_open()) {
     throw std::runtime_error("Failed to open stream scratch file '" + path +
                              "'.");
   }
-
-  output.write(reinterpret_cast<const char *>(&header), sizeof(header));
-  if (payload_size != 0) {
-    output.write(payload, static_cast<std::streamsize>(payload_size));
-  }
-  if (noise_position_count != 0) {
-    output.write(
-        reinterpret_cast<const char *>(noise_positions),
-        static_cast<std::streamsize>(noise_position_count * sizeof(uint16_t)));
-  }
+  output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
   if (!output) {
     throw std::runtime_error("Failed to append stream scratch file '" + path +
                              "'.");
   }
 }
+
+// Reads an entire spilled scratch block into memory, returning empty bytes when
+// the block produced no records (its file was never created).
+std::string read_scratch_block_bytes(const std::string &path) {
+  std::ifstream input(path, std::ios::binary | std::ios::ate);
+  if (!input.is_open()) {
+    return {};
+  }
+  const std::streamoff size = input.tellg();
+  if (size <= 0) {
+    return {};
+  }
+  std::string bytes(static_cast<size_t>(size), '\0');
+  input.seekg(0);
+  input.read(bytes.data(), size);
+  if (!input) {
+    throw std::runtime_error("Failed to read stream scratch block '" + path +
+                             "'.");
+  }
+  return bytes;
+}
+
+// Read-only stream buffer over an existing byte range, letting the block parser
+// consume in-RAM scatter buffers and spilled files through one code path
+// without copying.
+struct span_streambuf : std::streambuf {
+  span_streambuf(const char *base, size_t size) {
+    char *first = const_cast<char *>(base);
+    setg(first, first, first + size);
+  }
+};
 
 uint16_t read_uint16(std::ifstream &input, const char *label) {
   uint16_t value = 0;
@@ -415,7 +451,8 @@ void add_compressed_block(std::unordered_map<std::string, std::string> &members,
 void partition_alignment_stream_records(
     const compression_params &cp, const std::string &artifact_root_dir,
     const std::string &read_order_entries_path,
-    const std::string &scratch_root_dir) {
+    const std::string &scratch_root_dir, const uint64_t memory_budget_bytes,
+    std::vector<std::string> &block_buffers, bool &spilled_any) {
   reset_directory(scratch_root_dir);
 
   const uint32_t num_reads = cp.read_info.num_reads;
@@ -462,6 +499,36 @@ void partition_alignment_stream_records(
                              "streams for block rebuild.");
   }
 
+  block_buffers.assign(static_cast<size_t>(output_blocks), std::string());
+  spilled_any = false;
+
+  // Hold scatter records in RAM, capped at a conservative fraction of the
+  // memory budget. When the cap is reached, flush every non-empty buffer to its
+  // per-block scratch file in one append each (a few thousand large writes
+  // instead of one open/close per read) and keep going in spill mode.
+  const uint64_t scatter_cap_bytes =
+      memory_budget_bytes > 0
+          ? static_cast<uint64_t>(static_cast<double>(memory_budget_bytes) *
+                                  kScatterBufferBudgetFraction)
+          : kDefaultScatterBufferCapBytes;
+  uint64_t buffered_bytes = 0;
+  uint64_t flush_count = 0;
+
+  auto flush_all_buffers = [&]() {
+    for (uint64_t block_num = 0; block_num < output_blocks; ++block_num) {
+      std::string &buffer = block_buffers[static_cast<size_t>(block_num)];
+      if (buffer.empty()) {
+        continue;
+      }
+      append_buffer_to_scratch(
+          stream_scratch_block_path(scratch_root_dir, block_num), buffer);
+      buffer.clear();
+      buffer.shrink_to_fit();
+    }
+    buffered_bytes = 0;
+    ++flush_count;
+  };
+
   auto append_record = [&](const uint32_t read_order, const bool aligned,
                            const uint16_t read_length, const char orientation,
                            const uint64_t position, const std::string &payload,
@@ -487,10 +554,23 @@ void partition_alignment_stream_records(
         static_cast<uint8_t>((aligned ? 0x1 : 0x0) | (mate_read ? 0x2 : 0x0));
     header.orientation = orientation;
     header.position = position;
-    append_record_to_file(
-        stream_scratch_block_path(scratch_root_dir, block_num), header,
-        payload.data(), payload.size(), noise_positions.data(),
-        noise_positions.size());
+
+    std::string &buffer = block_buffers[static_cast<size_t>(block_num)];
+    buffer.append(reinterpret_cast<const char *>(&header), sizeof(header));
+    if (!payload.empty()) {
+      buffer.append(payload.data(), payload.size());
+    }
+    if (!noise_positions.empty()) {
+      buffer.append(reinterpret_cast<const char *>(noise_positions.data()),
+                    noise_positions.size() * sizeof(uint16_t));
+    }
+    buffered_bytes += sizeof(header) + payload.size() +
+                      noise_positions.size() * sizeof(uint16_t);
+
+    if (buffered_bytes >= scatter_cap_bytes) {
+      spilled_any = true;
+      flush_all_buffers();
+    }
   };
 
   for (uint64_t entry_index = 0; entry_index < aligned_read_count;
@@ -556,11 +636,28 @@ void partition_alignment_stream_records(
     append_record(read_order, false, read_length, '\0', 0, payload, {},
                   paired_end && read_order >= half_read_count);
   }
+
+  // If we ever crossed the cap the block data lives in scratch files: flush any
+  // buffered tail and drop the in-RAM buffers so the rebuild reads from disk.
+  // Otherwise everything stays resident and is handed to the rebuild directly.
+  if (spilled_any) {
+    flush_all_buffers();
+    block_buffers.clear();
+    block_buffers.shrink_to_fit();
+  }
+
+  SPRING_LOG_DEBUG(
+      "partition_alignment_stream_records complete: output_blocks=" +
+      std::to_string(output_blocks) +
+      ", spilled=" + std::string(spilled_any ? "true" : "false") +
+      ", flushes=" + std::to_string(flush_count) +
+      ", scatter_cap_bytes=" + std::to_string(scatter_cap_bytes));
 }
 
 std::unordered_map<std::string, std::string>
-rebuild_stream_blocks_from_scratch(const compression_params &cp,
-                                   const std::string &scratch_root_dir) {
+rebuild_stream_blocks(const compression_params &cp,
+                      const std::string &scratch_root_dir,
+                      std::vector<std::string> *in_ram_blocks) {
   const reordered_stream_paths paths = build_reordered_stream_paths();
   const uint32_t num_reads = cp.read_info.num_reads;
   const uint32_t half_read_count = num_reads / 2;
@@ -587,12 +684,21 @@ rebuild_stream_blocks_from_scratch(const compression_params &cp,
     const std::string scratch_path =
         stream_scratch_block_path(scratch_root_dir, block_index);
 
+    // The block bytes come from the in-RAM scatter buffer when it fit in the
+    // budget, otherwise from the spilled scratch file. Both share the same
+    // record layout and are parsed through span_streambuf.
+    std::string block_bytes =
+        in_ram_blocks != nullptr
+            ? std::move((*in_ram_blocks)[static_cast<size_t>(block_index)])
+            : read_scratch_block_bytes(scratch_path);
+
     output_block_buffers block_buffers;
     uint64_t previous_position = 0;
     if (!paired_end) {
       std::vector<staged_read_state> states(reads_in_block);
-      std::ifstream input(scratch_path, std::ios::binary);
-      if (input.is_open()) {
+      span_streambuf block_sb(block_bytes.data(), block_bytes.size());
+      std::istream input(&block_sb);
+      if (!block_bytes.empty()) {
         while (input.peek() != EOF) {
           staged_stream_record_header header{};
           input.read(reinterpret_cast<char *>(&header), sizeof(header));
@@ -655,8 +761,9 @@ rebuild_stream_blocks_from_scratch(const compression_params &cp,
       }
     } else {
       std::vector<staged_pair_slot_state> states(reads_in_block);
-      std::ifstream input(scratch_path, std::ios::binary);
-      if (input.is_open()) {
+      span_streambuf block_sb(block_bytes.data(), block_bytes.size());
+      std::istream input(&block_sb);
+      if (!block_bytes.empty()) {
         while (input.peek() != EOF) {
           staged_stream_record_header header{};
           input.read(reinterpret_cast<char *>(&header), sizeof(header));
@@ -1137,15 +1244,20 @@ reorder_compress_streams(const compression_params &cp,
 std::unordered_map<std::string, std::string>
 reorder_compress_streams(const compression_params &cp,
                          const std::string &artifact_root_dir,
-                         const std::string &read_order_entries_path) {
+                         const std::string &read_order_entries_path,
+                         const uint64_t memory_budget_bytes) {
   const std::string scratch_root_dir =
       (std::filesystem::path(artifact_root_dir).parent_path() /
        "stream-rebuild")
           .string();
-  partition_alignment_stream_records(cp, artifact_root_dir,
-                                     read_order_entries_path, scratch_root_dir);
+  std::vector<std::string> block_buffers;
+  bool spilled_any = false;
+  partition_alignment_stream_records(
+      cp, artifact_root_dir, read_order_entries_path, scratch_root_dir,
+      memory_budget_bytes, block_buffers, spilled_any);
   std::unordered_map<std::string, std::string> archive_members =
-      rebuild_stream_blocks_from_scratch(cp, scratch_root_dir);
+      rebuild_stream_blocks(cp, scratch_root_dir,
+                            spilled_any ? nullptr : &block_buffers);
   std::error_code cleanup_ec;
   std::filesystem::remove_all(scratch_root_dir, cleanup_ec);
   return archive_members;
