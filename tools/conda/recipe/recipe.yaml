@@ -7,10 +7,15 @@ package:
 
 source:
   url: https://github.com/thisisamirv/SPRING2/archive/refs/tags/v${{ version }}.tar.gz
-  sha256: 2582bb71eeff875ff0afdc7da86f9c13a66e527627de579ff1fd33f4ce6e10a1
+  sha256: 379e91915f4d6ed5b72e6cfa5d2b2ea41f4b4096e4259c6777bbb4f260826036
 
 build:
   number: 0
+  variant:
+    # python is a build-time codegen tool here, not an ABI dependency, so the
+    # binary is identical across pythons; without this we'd build one per python.
+    ignore_keys:
+      - python
 
 requirements:
   build:
@@ -18,10 +23,13 @@ requirements:
     - ${{ compiler('cxx') }}
     - ${{ stdlib('c') }}
     - cmake >=3.31
-    - ninja
     - nasm
+    # CMakeLists.txt does find_package(Python3 REQUIRED) to embed the reference
+    - python
     - if: unix
       then: make
+    - if: win
+      then: ninja
   host:
     - if: linux
       then: _openmp_mutex * *_gnu
