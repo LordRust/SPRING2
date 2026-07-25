@@ -110,8 +110,15 @@ void write_compression_params_body(std::ostream &out,
   write_bool(out, cp.encoding.preserve_quality);
   write_bool(out, cp.encoding.preserve_id);
   write_bool(out, cp.encoding.long_flag);
+  // Reserved (was qvz_flag): always written as false to maintain binary format
+  // stability. Archives created before QVZ removal stored qvz_flag here.
+  write_bool(out, false);
   write_bool(out, cp.quality.ill_bin_flag);
   write_bool(out, cp.quality.bin_thr_flag);
+  // Reserved (was qvz_ratio): always written as 0.0 to maintain binary format
+  // stability. Archives created before QVZ removal stored qvz_ratio here.
+  const double reserved_qvz_ratio = 0.0;
+  out.write(byte_ptr(&reserved_qvz_ratio), sizeof(double));
   out.write(byte_ptr(&cp.quality.bin_thr_thr), sizeof(unsigned int));
   out.write(byte_ptr(&cp.quality.bin_thr_high), sizeof(unsigned int));
   out.write(byte_ptr(&cp.quality.bin_thr_low), sizeof(unsigned int));
@@ -194,8 +201,15 @@ void read_compression_params_body(std::istream &in, compression_params &cp,
   cp.encoding.preserve_quality = read_bool(in);
   cp.encoding.preserve_id = read_bool(in);
   cp.encoding.long_flag = read_bool(in);
+  // Reserved (was qvz_flag): read and discard to maintain binary format
+  // alignment.
+  static_cast<void>(read_bool(in));
   cp.quality.ill_bin_flag = read_bool(in);
   cp.quality.bin_thr_flag = read_bool(in);
+  // Reserved (was qvz_ratio): read and discard to maintain binary format
+  // alignment.
+  double discarded_qvz_ratio = 0.0;
+  in.read(byte_ptr(&discarded_qvz_ratio), sizeof(double));
   in.read(byte_ptr(&cp.quality.bin_thr_thr), sizeof(unsigned int));
   in.read(byte_ptr(&cp.quality.bin_thr_high), sizeof(unsigned int));
   in.read(byte_ptr(&cp.quality.bin_thr_low), sizeof(unsigned int));
