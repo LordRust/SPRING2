@@ -683,6 +683,10 @@ void compress_standard(const string_list &input_paths,
           !preserve_order &&
           (preserve_quality || preserve_id || cp.encoding.poly_at_stripped ||
            cp.encoding.atac_adapter_stripped);
+      if (!needs_post_encode_side_streams) {
+        SPRING_LOG_DEBUG("Skipping post-encode quality/id reordering stage "
+                         "(preserve_order=true or streams stripped). ");
+      }
       if (needs_post_encode_side_streams) {
         post_encode_side_streams =
             std::move(preprocess_output.post_encode_side_streams);
@@ -704,12 +708,29 @@ void compress_standard(const string_list &input_paths,
         // sizeof(uint64_t)=8) plus bucket-count overhead (~10 bytes/key).  Use
         // 40 bytes/key overall.
         const uint64_t external_mphf_disk_needed = total_clean_reads * 40;
+        // Conservative in-memory estimate for the in-core MPHF builder path.
+        // Keep headroom for the rest of the pipeline by requiring at least
+        // ~2x this estimate before preferring in-memory mode.
+        const uint64_t in_memory_mphf_needed = total_clean_reads * 40;
+        const bool can_afford_in_memory_mphf =
+            available_memory_bytes > 0 &&
+            available_memory_bytes >= (in_memory_mphf_needed * 2);
         std::error_code space_ec;
         const auto disk_info =
             std::filesystem::space(standard_work_dir, space_ec);
         const bool disk_ok =
             !space_ec && disk_info.available >= external_mphf_disk_needed;
-        if (disk_ok) {
+        if (can_afford_in_memory_mphf) {
+          cp.encoding.use_external_mphf = false;
+          cp.encoding.mphf_tmp_dir.clear();
+          SPRING_LOG_INFO(
+              "disk_path: RAM budget sufficient for in-memory MPHF "
+              "(available_memory=" +
+              std::to_string(available_memory_bytes >> 20) +
+              " MiB, estimated_needed=" +
+              std::to_string(in_memory_mphf_needed >> 20) +
+              " MiB); using in-memory builder to avoid temp-disk latency.");
+        } else if (disk_ok) {
           // External-memory MPHF: off-load MPHF key data to disk temp files
           // so the in-memory sort/search structures never materialise
           // simultaneously.

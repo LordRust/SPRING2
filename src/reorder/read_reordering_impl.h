@@ -14,14 +14,17 @@
 #include <algorithm>
 #include <array>
 #include <bitset>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iomanip>
 #include <iostream>
 #include <list>
 #include <memory>
 #include <numeric>
 #include <omp.h>
+#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -972,6 +975,15 @@ void writetofile(std::bitset<bitset_size> *read, uint16_t *read_lengths,
 template <size_t bitset_size>
 reorder_encoder_artifact reorder_main(reorder_input_artifact input_artifact,
                                       const compression_params &cp) {
+  auto format_seconds = [](const std::chrono::steady_clock::duration &value) {
+    std::ostringstream stream;
+    stream << std::fixed << std::setprecision(3)
+           << std::chrono::duration_cast<std::chrono::milliseconds>(value)
+                      .count() /
+                  1000.0;
+    return stream.str();
+  };
+
   reorder_global<bitset_size> rg(cp.read_info.max_readlen);
   rg.paired_end = cp.encoding.paired_end;
   rg.depleted_base = cp.encoding.depleted_base;
@@ -1015,17 +1027,31 @@ reorder_encoder_artifact reorder_main(reorder_input_artifact input_artifact,
 
   if (rg.numreads > 0) {
     SPRING_LOG_INFO("Constructing dictionaries");
+    const auto dictionary_stage_start = std::chrono::steady_clock::now();
     constructdictionary<bitset_size>(
         read.data(), dict.data(), read_lengths.data(), rg.numdict, rg.numreads,
         2, rg.basedir, deterministic_mode ? 1 : rg.num_thr, rg.depleted_base,
         cp.encoding.use_external_mphf, cp.encoding.mphf_tmp_dir);
+    const auto dictionary_stage_end = std::chrono::steady_clock::now();
+    SPRING_LOG_INFO(
+        "Dictionary stage time: " +
+        format_seconds(dictionary_stage_end - dictionary_stage_start) + " s");
   }
   SPRING_LOG_INFO("Reordering reads");
+  const auto reorder_stage_start = std::chrono::steady_clock::now();
   reorder<bitset_size>(read.data(), dict.data(), read_lengths.data(), rg,
                        artifact, deterministic_mode);
+  const auto reorder_stage_end = std::chrono::steady_clock::now();
+  SPRING_LOG_INFO("Reorder pass time: " +
+                  format_seconds(reorder_stage_end - reorder_stage_start) +
+                  " s");
   SPRING_LOG_INFO("Writing to file");
+  const auto write_stage_start = std::chrono::steady_clock::now();
   writetofile<bitset_size>(read.data(), read_lengths.data(), rg, artifact,
                            deterministic_mode);
+  const auto write_stage_end = std::chrono::steady_clock::now();
+  SPRING_LOG_INFO("Reorder write time: " +
+                  format_seconds(write_stage_end - write_stage_start) + " s");
   artifact.n_read_bytes = std::move(input_artifact.n_read_bytes);
   artifact.n_read_order_bytes = std::move(input_artifact.n_read_order_bytes);
   SPRING_LOG_INFO("Done!");

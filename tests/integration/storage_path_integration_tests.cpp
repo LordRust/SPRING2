@@ -135,13 +135,13 @@ TEST_CASE("Paired sample matches for memory_path and disk_path") {
 //   memory_path           : compression fully in RAM (-m 1024); baseline.
 //
 //   disk_path_external_mphf
-//                         : disk-backed path with external-memory MPHF
-//                           builder selected (-m 0.00001 -v debug). For small
-//                           test data the key count stays below
-//                           kExternalMphfMinKeys so pthash falls back to the
-//                           internal builder, but the selection logic and all
-//                           disk-path staging code is fully exercised. The
-//                           debug log is checked for the external-MPHF banner.
+//                         : disk-backed path that exercises MPHF selection
+//                           policy (-m 0.00001 -v debug). With RAM-first
+//                           selection enabled, this can choose either the
+//                           in-memory MPHF route or the external-memory route
+//                           depending on available memory and dataset size.
+//                           The debug log is checked for either valid policy
+//                           banner.
 //
 //   disk_path_thread_capped
 //                         : disk-backed path with thread-count capping in
@@ -184,20 +184,30 @@ TEST_CASE(
     std::string compress_extra_flags;
     std::string decompress_extra_flags;
     bool sorted = false;
-    std::string expected_log_fragment; // empty means no log check
+    std::vector<std::string> expected_log_fragments; // empty means no log check
   };
 
   const std::vector<Variant> variants = {
-      {"memory_path", "-m 1024", "", false, ""},
-      {"disk_path_external_mphf", "-m 0.00001 -v debug", "", false,
-       "disk_path: using external-memory MPHF builder"},
-      {"disk_path_thread_capped", "-m 0.00001 -t 4 -v debug", "", false,
+      {"memory_path", "-m 1024", "", false, {}},
+      {"disk_path_external_mphf",
+       "-m 0.00001 -v debug",
+       "",
+       false,
+       {"disk_path: RAM budget sufficient for in-memory MPHF",
+        "disk_path: using external-memory MPHF builder"}},
+      {"disk_path_thread_capped",
+       "-m 0.00001 -t 4 -v debug",
+       "",
+       false,
        // On most machines the external-MPHF path fires instead of thread
        // capping; round-trip correctness is verified regardless.
-       ""},
-      {"disk_path_order_stripped", "-m 0.00001 -s o", "", true, ""},
-      {"disk_path_disk_streaming", "-m 0.00001 -v info", "", false,
-       "Streaming aligned shard"},
+       {}},
+      {"disk_path_order_stripped", "-m 0.00001 -s o", "", true, {}},
+      {"disk_path_disk_streaming",
+       "-m 0.00001 -v info",
+       "",
+       false,
+       {"Streaming aligned shard"}},
   };
 
   for (const auto &v : variants) {
@@ -212,9 +222,16 @@ TEST_CASE(
         archive + " " + v.compress_extra_flags + " > " + log_file + " 2>&1";
     REQUIRE(std::system(compress_cmd.c_str()) == 0);
 
-    if (!v.expected_log_fragment.empty()) {
-      CHECK(read_file_binary(log_file).find(v.expected_log_fragment) !=
-            std::string::npos);
+    if (!v.expected_log_fragments.empty()) {
+      const std::string log_contents = read_file_binary(log_file);
+      bool found_expected_fragment = false;
+      for (const std::string &expected_fragment : v.expected_log_fragments) {
+        if (log_contents.find(expected_fragment) != std::string::npos) {
+          found_expected_fragment = true;
+          break;
+        }
+      }
+      CHECK(found_expected_fragment);
     }
 
     const std::string decompress_cmd = std::string(SPRING2_EXECUTABLE) +

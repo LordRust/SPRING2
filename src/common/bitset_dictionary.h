@@ -6,10 +6,13 @@
 
 #include <algorithm>
 #include <bitset>
+#include <chrono>
 #include <cstdint>
 #include <fstream>
+#include <iomanip>
 #include <memory>
 #include <omp.h>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -490,6 +493,15 @@ void constructdictionary(std::bitset<bitset_size> *read, bbhashdict *dict,
                          const char depleted_base = 'N',
                          const bool use_external_mphf = false,
                          const std::string &mphf_tmp_dir = "") {
+  auto format_seconds = [](const std::chrono::steady_clock::duration &value) {
+    std::ostringstream stream;
+    stream << std::fixed << std::setprecision(3)
+           << std::chrono::duration_cast<std::chrono::milliseconds>(value)
+                      .count() /
+                  1000.0;
+    return stream.str();
+  };
+
   auto index_masks = std::make_unique<std::bitset<bitset_size>[]>(
       static_cast<size_t>(numdict));
   generateindexmasks<bitset_size>(index_masks.get(), dict, numdict, bpb);
@@ -530,9 +542,9 @@ void constructdictionary(std::bitset<bitset_size> *read, bbhashdict *dict,
     // The pthash external-memory builder is designed for large key sets.
     // For small sets, the internal builder is both faster and more reliable.
     constexpr uint64_t kExternalMphfMinKeys = 1'000'000;
-    const bool use_external =
-        use_external_mphf && !mphf_tmp_dir.empty() &&
-        current_dict.numkeys >= kExternalMphfMinKeys;
+    const bool use_external = use_external_mphf && !mphf_tmp_dir.empty() &&
+                              current_dict.numkeys >= kExternalMphfMinKeys;
+    const auto mphf_build_start = std::chrono::steady_clock::now();
     if (use_external) {
       config.tmp_dir = mphf_tmp_dir;
       current_dict.bphf->build_in_external_memory(dictionary_keys_data,
@@ -541,14 +553,21 @@ void constructdictionary(std::bitset<bitset_size> *read, bbhashdict *dict,
       current_dict.bphf->build_in_internal_memory(dictionary_keys_data,
                                                   current_dict.numkeys, config);
     }
+    const auto mphf_build_end = std::chrono::steady_clock::now();
     current_dict.numkeys = current_dict.bphf->table_size();
     SPRING_LOG_INFO(std::string("Done. (T=") +
                     std::to_string(current_dict.numkeys) + ")");
+    SPRING_LOG_INFO("  MPHF build time: " +
+                    format_seconds(mphf_build_end - mphf_build_start) + " s");
 
     SPRING_LOG_INFO("  Computing hash values in memory...");
+    const auto hash_pass_start = std::chrono::steady_clock::now();
     const std::vector<uint64_t> hash_values =
         detail::compute_hash_values(current_dict, compacted_keys.data(),
                                     current_dict.dict_numreads, dict_index);
+    const auto hash_pass_end = std::chrono::steady_clock::now();
+    SPRING_LOG_INFO("  Hash pass time: " +
+                    format_seconds(hash_pass_end - hash_pass_start) + " s");
 
     current_dict.startpos =
         std::make_unique<uint32_t[]>(current_dict.numkeys + 1);
