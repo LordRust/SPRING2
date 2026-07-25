@@ -2,6 +2,12 @@
 
 # Changelog
 
+## V1.3.1
+
+### Changed
+
+- Added a low-diversity fast path to the read reorder stage. When the average number of reads per dictionary key exceeds 10,000 (indicating extremely low sequence diversity, e.g. sc-ATAC I1 barcode reads with only a handful of distinct 8 bp sequences among hundreds of millions of reads), the greedy chain-matching algorithm is bypassed entirely. Instead, reads already grouped in the dictionary's `read_id` array are emitted directly in bucket order — each bucket becomes one chain (seed + aligned reads at shift 0), producing identically structured output to the normal path. For a 528 M × 8 bp barcode archive with 16 distinct sequences this reduces reorder time from several hours (O(N × MAX_SEARCH_REORDER) with heavy lock contention on 16 buckets across 10 threads) to a few seconds (O(N)), with no change to compression ratio or archive format.
+
 ## V1.3.0
 
 ### Removed

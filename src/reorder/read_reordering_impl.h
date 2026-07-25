@@ -972,6 +972,80 @@ void writetofile(std::bitset<bitset_size> *read, uint16_t *read_lengths,
   }
 }
 
+// If the average number of reads per dictionary key exceeds this threshold the
+// greedy chain algorithm degenerates (essentially every candidate matches every
+// other candidate in the same bucket).  Use a direct bucket-order fast path
+// instead: emit all reads in each bucket as a single chain in O(N) time.
+constexpr uint32_t kLowDiversityReadsPerKeyThreshold = 10000;
+
+// Fast-path reorder for archives with very few distinct sequences (e.g.
+// sc-ATAC I1 barcode reads).  Reads in the same dict[0] bucket share the same
+// k-mer key and are emitted as one chain (seed + aligned at shift 0).  Reads
+// absent from dict[0] because they are shorter than dict[0].end are collected
+// as singletons.  The output shard format is identical to reorder(), so all
+// downstream stages (writetofile, stream_reordering, quality_id_reordering)
+// consume it without any changes.
+template <size_t bitset_size>
+void reorder_fast_low_diversity(bbhashdict *dict, uint16_t *read_lengths,
+                                const reorder_global<bitset_size> &rg,
+                                reorder_encoder_artifact &artifact) {
+  SPRING_LOG_INFO(
+      "Low-diversity fast path (keys=" + std::to_string(dict[0].numkeys) +
+      ", reads=" + std::to_string(rg.numreads) + ")");
+
+  // Each read appears in exactly one bucket in dict[0] (or none if too
+  // short).  Track placement to accumulate singletons afterwards.
+  auto placed = std::make_unique<bool[]>(rg.numreads);
+  std::fill(placed.get(), placed.get() + rg.numreads, false);
+
+#pragma omp parallel num_threads(rg.num_thr)
+  {
+    const int tid = omp_get_thread_num();
+    reorder_encoder_shard &shard =
+        artifact.aligned_shards[static_cast<size_t>(tid)];
+
+    // Distribute buckets across threads; each bucket forms one contiguous
+    // chain so we use dynamic scheduling to balance unequal bucket sizes.
+#pragma omp for schedule(dynamic, 1)
+    for (uint32_t bucket_idx = 0; bucket_idx < dict[0].numkeys; ++bucket_idx) {
+      int64_t bucket_range[2];
+      dict[0].findpos(bucket_range, static_cast<uint64_t>(bucket_idx));
+      if (!detail::valid_bucket_range(dict[0], bucket_range))
+        continue;
+
+      // First read in bucket starts a new chain (flag '0'); subsequent reads
+      // align at position 0 / shift 0 (flag '1').
+      bool first_in_bucket = true;
+      for (int64_t pos = bucket_range[0]; pos < bucket_range[1]; ++pos) {
+        const uint32_t read_id = dict[0].read_id[static_cast<size_t>(pos)];
+        placed[read_id] = true;
+
+        shard.orientation_bytes.push_back('d');
+        detail::append_binary(shard.order_bytes, read_id);
+        shard.flag_bytes.push_back(first_in_bucket ? '0' : '1');
+        const int64_t p = 0;
+        detail::append_binary(shard.position_bytes, p);
+        detail::append_binary(shard.read_length_bytes, read_lengths[read_id]);
+        first_in_bucket = false;
+      }
+    }
+  } // implicit barrier: placed[] writes visible to the main thread below
+
+  // Reads absent from dict[0] (too short for its key window) become
+  // singletons so no reads are silently dropped.
+  artifact.singleton_count = 0;
+  artifact.singleton_order_bytes.clear();
+  for (uint32_t read_id = 0; read_id < rg.numreads; ++read_id) {
+    if (!placed[read_id]) {
+      detail::append_binary(artifact.singleton_order_bytes, read_id);
+      ++artifact.singleton_count;
+    }
+  }
+
+  SPRING_LOG_INFO("Reordering done, " +
+                  std::to_string(artifact.singleton_count) + " were unmatched");
+}
+
 template <size_t bitset_size>
 reorder_encoder_artifact reorder_main(reorder_input_artifact input_artifact,
                                       const compression_params &cp) {
@@ -1037,10 +1111,19 @@ reorder_encoder_artifact reorder_main(reorder_input_artifact input_artifact,
         "Dictionary stage time: " +
         format_seconds(dictionary_stage_end - dictionary_stage_start) + " s");
   }
+  const bool use_low_diversity_fast_path =
+      rg.numreads > 0 && dict[0].numkeys > 0 &&
+      rg.numreads / dict[0].numkeys > kLowDiversityReadsPerKeyThreshold;
+
   SPRING_LOG_INFO("Reordering reads");
   const auto reorder_stage_start = std::chrono::steady_clock::now();
-  reorder<bitset_size>(read.data(), dict.data(), read_lengths.data(), rg,
-                       artifact, deterministic_mode);
+  if (use_low_diversity_fast_path) {
+    reorder_fast_low_diversity<bitset_size>(dict.data(), read_lengths.data(),
+                                            rg, artifact);
+  } else {
+    reorder<bitset_size>(read.data(), dict.data(), read_lengths.data(), rg,
+                         artifact, deterministic_mode);
+  }
   const auto reorder_stage_end = std::chrono::steady_clock::now();
   SPRING_LOG_INFO("Reorder pass time: " +
                   format_seconds(reorder_stage_end - reorder_stage_start) +
