@@ -10,7 +10,6 @@
 #include "libbsc/libbsc.h"
 #include "parse_utils.h"
 #include "progress.h"
-#include "qvz/qvz.h"
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -1155,30 +1154,6 @@ void quantize_quality(std::string *quality_array, const uint32_t &num_lines,
       c = quantization_table[static_cast<uint8_t>(c)];
     }
   }
-}
-
-void quantize_quality_qvz(std::string *quality_array, const uint32_t &num_lines,
-                          uint32_t *str_len_array, double qv_ratio) {
-  qvz::qv_options_t opts;
-  opts.verbose = 0;
-  opts.stats = 0;
-  opts.clusters = 1;
-  opts.uncompressed = 0;
-  opts.ratio = qv_ratio;
-  opts.distortion = DISTORTION_MSE;
-  opts.mode = MODE_FIXED;
-  size_t max_readlen = 0;
-  for (uint32_t i = 0; i < num_lines; i++) {
-    if (str_len_array[i] > max_readlen)
-      max_readlen = str_len_array[i];
-  }
-  SPRING_LOG_DEBUG("block_id=io-utils:qvz, quantize_quality_qvz start: lines=" +
-                   std::to_string(num_lines) +
-                   ", max_readlen=" + std::to_string(max_readlen) +
-                   ", ratio=" + std::to_string(qv_ratio));
-  qvz::encode(&opts, static_cast<uint32_t>(max_readlen), num_lines,
-              quality_array, str_len_array);
-  SPRING_LOG_DEBUG("block_id=io-utils:qvz, quantize_quality_qvz done");
 }
 
 std::vector<char> bsc_compress_bytes(const std::vector<char> &input_bytes) {

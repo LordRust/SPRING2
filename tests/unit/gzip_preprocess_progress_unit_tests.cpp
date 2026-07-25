@@ -85,8 +85,6 @@ compression_params make_test_params() {
   cp.encoding.fasta_mode = false;
   cp.encoding.use_crlf = false;
 
-  cp.quality.qvz_flag = false;
-  cp.quality.qvz_ratio = 1.0;
   cp.quality.ill_bin_flag = false;
   cp.quality.bin_thr_flag = false;
   cp.quality.bin_thr_thr = 0;

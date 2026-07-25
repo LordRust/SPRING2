@@ -19,7 +19,7 @@ This guide is for developers who want to contribute to SPRING2 or maintain the b
 SPRING2 uses a modular CMake build system. Each vendor dependency in the `vendor/` directory is self-contained:
 
 - Dependencies are extracted on-the-fly during CMake configuration.
-- Each major dependency (e.g., `libbsc`, `qvz`, `cloudflare_zlib`) has its own internal `CMakeLists.txt` managing its build logic.
+- Each major dependency (e.g., `libbsc`, `cloudflare_zlib`) has its own internal `CMakeLists.txt` managing its build logic.
 - All internal libraries are built with `POSITION_INDEPENDENT_CODE ON` to ensure compatibility with enterprise Linux (PIE) requirements.
 
 ## Quality Control

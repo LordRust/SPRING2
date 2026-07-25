@@ -65,7 +65,6 @@ spring2 --preview -i <archive.sp> [--audit]
 ## Quality Mode Forms
 
 - `-q lossless`
-- `-q qvz <qv_ratio>`
 - `-q ill_bin`
 - `-q binary <thr> <high> <low>`
 

@@ -218,21 +218,6 @@ spring2 --preview -i contigs.sp
 spring2 -d -i contigs.sp -o contigs_restored.fasta
 ```
 
-## Lossy Quality Example
-
-This example keeps read sequences but compresses qualities using QVZ.
-
-```bash
-spring2 -c \
-  --R1 reads_R1.fastq \
-  --R2 reads_R2.fastq \
-  --qmod qvz 1.0 \
-  --assay dna \
-  -o reads_lossy_qvz.sp
-
-spring2 --preview -i reads_lossy_qvz.sp
-```
-
 Use lossy modes only when downstream requirements allow quality modification.
 
 ## Verification-Focused Workflow

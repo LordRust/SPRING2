@@ -125,9 +125,6 @@ std::vector<char> bsc_str_array_compress_bytes(std::string *string_array,
 void quantize_quality(std::string *quality_array, const uint32_t &num_lines,
                       char *quantization_table);
 
-void quantize_quality_qvz(std::string *quality_array, const uint32_t &num_lines,
-                          uint32_t *str_len_array, double qv_ratio);
-
 void generate_illumina_binning_table(char *illumina_binning_table);
 
 void generate_binary_binning_table(char *binary_binning_table,

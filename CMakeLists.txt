@@ -789,7 +789,6 @@ set(SPRING_CLANGD_FLAGS
     "\"-fopenmp\", \"-I${include_dir}\", \"-I${source_dir}/assays\", \"-I${source_dir}/common\", \"-I${source_dir}/decompress\", \"-I${source_dir}/encode\", \"-I${source_dir}/preprocess\", \"-I${source_dir}/reorder\", \"-I${source_dir}/workflow\", \"-I${vendor_dir}\", \"-I${vendor_dir}/zstd\", \"-I${build_vendor_dir}/cloudflare_zlib\", \"-I${build_vendor_dir}/libarchive\""
 )
 string(APPEND SPRING_CLANGD_FLAGS ", \"-I${build_vendor_dir}/pthash\"")
-string(APPEND SPRING_CLANGD_FLAGS ", \"-I${build_vendor_dir}/qvz\"")
 string(APPEND SPRING_CLANGD_FLAGS ", \"-I${build_vendor_dir}/libbsc\"")
 string(APPEND SPRING_CLANGD_FLAGS ", \"-I${build_vendor_dir}/libdeflate\"")
 string(APPEND SPRING_CLANGD_FLAGS ", \"-I${build_vendor_dir}/indexed_bzip2\"")
@@ -883,7 +882,6 @@ set(ZSTD_DIR ${build_vendor_dir}/zstd)
 set(INDEXED_BZIP2_DIR ${build_vendor_dir}/indexed_bzip2)
 set(LIBBSC_DIR ${build_vendor_dir}/libbsc)
 set(LIBDEFLATE_DIR ${build_vendor_dir}/libdeflate)
-set(QVZ_DIR ${build_vendor_dir}/qvz)
 set(LIBARCHIVE_DIR ${build_vendor_dir}/libarchive)
 set(include_dir ${CMAKE_SOURCE_DIR}/src)
 
@@ -1002,11 +1000,6 @@ if(TARGET libbsc AND SPRING_OPENMP_INCLUDE_DIRS)
         PRIVATE ${SPRING_OPENMP_INCLUDE_DIRS}
     )
 endif()
-add_vendor_subdirectory_no_install("${QVZ_DIR}" "${CMAKE_BINARY_DIR}/qvz-build")
-if(TARGET qvz AND SPRING_OPENMP_INCLUDE_DIRS)
-    target_include_directories(qvz SYSTEM PRIVATE ${SPRING_OPENMP_INCLUDE_DIRS})
-endif()
-
 check_symbol_exists(wcrtomb wchar.h HAVE_WCRTOMB)
 if(HAVE_WCRTOMB)
     set(HAVE_WCRTOMB 1 CACHE INTERNAL "Have wcrtomb" FORCE)
@@ -1155,7 +1148,6 @@ set(spring_libs
     libzstd_static
     ZLIB::ZLIB
     libbsc
-    qvz
     pthash
     rapidgzip::rapidgzip
     archive_static
@@ -1201,7 +1193,7 @@ endfunction()
 # compression_dispatch_encoder.cpp instantiates encoder_main<> for 24 bitset
 # sizes; each instantiation now includes substantial inline disk-spill logic.
 # On MSVC/ClangCL the resulting object file can exceed the default COFF section
-# limit — raise it with /bigobj.
+# limit � raise it with /bigobj.
 if(MSVC)
     set_source_files_properties(
         ${source_dir}/encode/compression_dispatch_encoder.cpp
@@ -1213,7 +1205,7 @@ endif()
 spring_enable_precompiled_headers_if_requested(spring2)
 
 # Spring headers live in src/, while vendor/ exposes bundled libraries such
-# as BBHash, libbsc, id_compression, qvz, and the vendored libdeflate sources.
+# as BBHash, libbsc, id_compression, and the vendored libdeflate sources.
 target_include_directories(spring2 PRIVATE ${spring_app_include_dirs})
 target_include_directories(spring2 SYSTEM PRIVATE ${LIBARCHIVE_DIR}/libarchive)
 spring_apply_common_target_settings(spring2)

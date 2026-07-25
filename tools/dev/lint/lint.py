@@ -44,7 +44,6 @@ LIBARCHIVE_INCLUDE_DIR = ROOT_DIR / "vendor" / "libarchive" / "lib"
 ZLIB_INCLUDE_DIR = ROOT_DIR / "vendor" / "cloudflare_zlib"
 BZIP2_INCLUDE_DIR = ROOT_DIR / "vendor" / "indexed_bzip2"
 BZIP2_ISAL_INCLUDE_DIR = ROOT_DIR / "vendor" / "indexed_bzip2" / "isa-l" / "include"
-QVZ_INCLUDE_DIR = ROOT_DIR / "vendor" / "qvz"
 PTHASH_INCLUDE_DIR = ROOT_DIR / "vendor" / "pthash"
 EXTRA_INCLUDES = (
     ROOT_DIR / "src",
@@ -63,7 +62,6 @@ EXTRA_INCLUDES = (
     ZLIB_INCLUDE_DIR,
     BZIP2_INCLUDE_DIR,
     BZIP2_ISAL_INCLUDE_DIR,
-    QVZ_INCLUDE_DIR,
     PTHASH_INCLUDE_DIR,
 )
 TIDY_CHECKS = (

@@ -119,17 +119,6 @@ TEST_CASE("Smoke lossy ill_bin preserves record count") {
   expect_line_count_match(output, asset_path("test_1.fastq"));
 }
 
-TEST_CASE("Smoke lossy qvz preserves record count") {
-  SmokeWorkspace workspace("lossy_qvz");
-  const auto archive = workspace.path("archive.sp");
-  const auto output = workspace.path("tmp.fastq");
-
-  run_spring({"-c", "-q", "qvz", "1", "--R1", asset_path("test_1.fastq"), "-o",
-              archive});
-  run_spring({"-d", "-i", archive, "-o", output});
-  expect_line_count_match(output, asset_path("test_1.fastq"));
-}
-
 TEST_CASE("Smoke lossy binary preserves record count") {
   SmokeWorkspace workspace("lossy_binary");
   const auto archive = workspace.path("archive.sp");

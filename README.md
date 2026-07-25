@@ -20,7 +20,7 @@ SPRING2 is a compressor for FASTQ and FASTA sequencing data, including paired-en
 
 - Near-optimal compression for single-end, paired-end, and grouped multi-lane sequencing datasets
 - Lossless preservation of reads, quality scores, and identifiers, with reversible assay-aware transforms where applicable
-- Optional lossy quality compression using [QVZ](https://github.com/mikelhernaez/qvz/), [Illumina 8-level binning](https://www.illumina.com/documents/products/whitepapers/whitepaper_datacompression.pdf), or binary thresholding
+- Optional lossy quality compression using [Illumina 8-level binning](https://www.illumina.com/documents/products/whitepapers/whitepaper_datacompression.pdf) or binary thresholding
 - Automatic FASTQ versus FASTA detection, plain-text versus gzipped input handling, and gzip-aware output restoration
 - Support for grouped archives with `R1`/`R2` plus optional `R3`, `I1`, and `I2` lanes
 - Automatic and explicit assay handling for `dna`, `rna`, `atac`, `bisulfite`, `sc-rna`, `sc-atac`, and `sc-bisulfite`
@@ -110,11 +110,8 @@ Allowed options:
                                   Example: --strip io to drop ids and order.
   -q [ --qmod ] arg               quality mode: possible modes are
                                     1. -q lossless (default)
-                                    2. -q qvz qv_ratio (QVZ lossy compression,
-                                      parameter qv_ratio roughly corresponds to
-                                      bits used per quality value)
-                                    3. -q ill_bin (Illumina 8-level binning)
-                                    4. -q binary thr high low (binary (2-level)
+                                    2. -q ill_bin (Illumina 8-level binning)
+                                    3. -q binary thr high low (binary (2-level)
                                       thresholding, quality binned to high if >=
                                       thr and to low if < thr)
   -n [ --note ] arg               add a custom note to the archive
@@ -181,7 +178,6 @@ For a comprehensive list of all options, quality modes, and multi-threaded examp
 
 ## Related
 
-- QVZ: <https://github.com/mikelhernaez/qvz/>
 - [Bioinformatics publication](https://academic.oup.com/bioinformatics/advance-article/doi/10.1093/bioinformatics/bty1015/5232998?guestAccessKey=266a1378-4684-4f04-bb99-6febdf9d1fb9)
 - Specialized tool for nanopore long reads: <https://github.com/qm2/NanoSpring>
 

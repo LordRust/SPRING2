@@ -385,17 +385,6 @@ void compress_block_batch(
           read_lengths[read_offset] =
               reordered_strings[block_begin + read_offset].size();
         }
-        if (cp.quality.qvz_flag) {
-          quantize_quality_qvz(reordered_strings.data() + block_begin,
-                               reads_in_block, read_lengths.data(),
-                               cp.quality.qvz_ratio);
-          SPRING_LOG_DEBUG("block_id=quality-block-" +
-                           std::to_string(global_block_idx) +
-                           ", Applied QVZ quantization: block=" +
-                           std::to_string(global_block_idx) +
-                           ", reads=" + std::to_string(reads_in_block) +
-                           ", ratio=" + std::to_string(cp.quality.qvz_ratio));
-        }
         block_outputs[block_index] =
             bsc_str_array_compress_bytes(reordered_strings.data() + block_begin,
                                          reads_in_block, read_lengths.data());

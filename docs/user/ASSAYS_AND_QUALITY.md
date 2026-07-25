@@ -76,15 +76,6 @@ spring2 -c --R1 reads.fastq -o reads.sp -q lossless
 
 This preserves qualities bit-for-bit.
 
-### QVZ
-
-```bash
-spring2 -c --R1 reads.fastq --R2 reads_2.fastq -o reads.sp -q qvz 1.0
-```
-
-`qvz <ratio>` enables lossy quality compression using QVZ. The ratio roughly
-tracks bits used per quality value.
-
 ### Illumina 8-level Binning
 
 ```bash

@@ -22,7 +22,6 @@ ZLIB_INCLUDE_DIR = ROOT_DIR / "vendor" / "cloudflare_zlib"
 BZIP2_INCLUDE_DIR = ROOT_DIR / "vendor" / "indexed_bzip2" / "src"
 PTHASH_INCLUDE_DIR = ROOT_DIR / "vendor" / "pthash" / "include"
 PTHASH_EXTERNAL_DIR = ROOT_DIR / "vendor" / "pthash" / "external"
-QVZ_INCLUDE_DIR = ROOT_DIR / "vendor" / "qvz" / "include"
 
 INCLUDE_DIRS = (
     ROOT_DIR / "src",
@@ -38,7 +37,6 @@ INCLUDE_DIRS = (
     PTHASH_EXTERNAL_DIR / "bits" / "include",
     PTHASH_EXTERNAL_DIR / "bits" / "external" / "essentials" / "include",
     PTHASH_EXTERNAL_DIR / "mm_file" / "include",
-    QVZ_INCLUDE_DIR,
 )
 
 SUPPRESSIONS = (
@@ -67,7 +65,6 @@ SUPPRESSIONS = (
     "identicalInnerCondition:*vendor/libbsc/detectors.cpp",
     "identicalInnerCondition:*vendor/libbsc/filters/detectors.cpp",
     "legacyUninitvar:*vendor/libbsc/st/st.cpp",
-    "nullPointerOutOfMemory:*vendor/qvz/*",
     "duplInheritedMember:*vendor/indexed_bzip2/*",
     (
         "identicalConditionAfterEarlyExit:*vendor/indexed_bzip2/src/rapidgzip/"
@@ -78,7 +75,6 @@ SUPPRESSIONS = (
     "arrayIndexOutOfBoundsCond:*vendor/libdeflate/*",
     "objectIndex:*vendor/libdeflate/*",
     "unknownMacro:*vendor/pthash/*",
-    "ctunullpointerOutOfMemory:*vendor/qvz/*",
     "ctuuninitvar:*vendor/libarchive/*",
     "invalidPrintfArgType_sint:*vendor/zstd/*",
     "invalidPrintfArgType_uint:*vendor/zstd/*",

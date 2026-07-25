@@ -105,8 +105,6 @@ struct compression_params {
   } encoding;
 
   struct QualityConfig {
-    bool qvz_flag = false;
-    double qvz_ratio = 0.0;
     bool ill_bin_flag = false;
     bool bin_thr_flag = false;
     unsigned int bin_thr_thr = 0;

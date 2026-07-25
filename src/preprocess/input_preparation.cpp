@@ -910,13 +910,6 @@ preprocess(const std::string &infile_1, const std::string &infile_2,
                                  thread_id * num_reads_per_block,
                              thread_read_count, quality_binning_table.data());
 
-          if (cp.encoding.preserve_quality && cp.quality.qvz_flag &&
-              cp.encoding.preserve_order)
-            quantize_quality_qvz(
-                quality_array.data() + thread_id * num_reads_per_block,
-                thread_read_count,
-                read_lengths_array.data() + thread_id * num_reads_per_block,
-                cp.quality.qvz_ratio);
           if (!cp.encoding.long_flag) {
             if (cp.encoding.preserve_order) {
               if (cp.encoding.preserve_id) {

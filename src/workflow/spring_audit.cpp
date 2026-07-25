@@ -27,7 +27,7 @@ void perform_audit_standard_artifact(
 
   const bool is_lossless = cp.encoding.preserve_order &&
                            cp.encoding.preserve_quality &&
-                           cp.encoding.preserve_id && !cp.quality.qvz_flag &&
+                           cp.encoding.preserve_id &&
                            !cp.quality.ill_bin_flag && !cp.quality.bin_thr_flag;
 
   if (is_lossless) {

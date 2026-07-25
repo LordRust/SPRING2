@@ -215,9 +215,7 @@ void preview_single(const std::string &archive_path, bool audit_only) {
             << (cp.encoding.preserve_quality ? "Yes" : "No") << "\n";
   if (cp.encoding.preserve_quality) {
     std::cout << "Quality Mode:      ";
-    if (cp.quality.qvz_flag)
-      std::cout << "QVZ (ratio: " << cp.quality.qvz_ratio << ")";
-    else if (cp.quality.ill_bin_flag)
+    if (cp.quality.ill_bin_flag)
       std::cout << "Illumina 8-level binning";
     else if (cp.quality.bin_thr_flag)
       std::cout << "Binary binning (thr: " << cp.quality.bin_thr_thr << ")";
@@ -446,9 +444,7 @@ void preview(const std::string &archive_path, bool audit_only) {
               << (cp_reads.encoding.preserve_quality ? "Yes" : "No") << "\n";
     if (cp_reads.encoding.preserve_quality) {
       std::cout << "Quality Mode:      ";
-      if (cp_reads.quality.qvz_flag)
-        std::cout << "QVZ (ratio: " << cp_reads.quality.qvz_ratio << ")";
-      else if (cp_reads.quality.ill_bin_flag)
+      if (cp_reads.quality.ill_bin_flag)
         std::cout << "Illumina 8-level binning";
       else if (cp_reads.quality.bin_thr_flag)
         std::cout << "Binary binning (thr: " << cp_reads.quality.bin_thr_thr

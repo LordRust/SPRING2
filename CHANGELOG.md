@@ -2,6 +2,12 @@
 
 # Changelog
 
+## V1.3.0
+
+### Removed
+
+- Removed QVZ lossy quality compression entirely due to license incompability. The `-q qvz` CLI option, the `quantize_quality_qvz` function, the `qvz_flag`/`qvz_ratio` fields from `QualityConfig`, and the vendored `vendor/qvz` library have all been deleted. Passing `-q qvz` now throws a runtime error directing users to `ill_bin` or `binary` instead. The binary serialization layout is preserved for backward compatibility when reading older archives that carry QVZ-mode flags, but those flags are now treated as reserved and the quantization step is no longer executed. Decompression of archives that were compressed with QVZ is unaffected because QVZ only transformed quality values during compression; the stored values are already quantized and are read back without any QVZ library involvement.
+
 ## V1.2.1
 
 ### Changed
@@ -228,7 +234,7 @@
 - Refactored the `main.cpp` entry point to use a centralized RAII `SpringContext` class for managing temporary directories and resource cleanup, significantly reducing global state and improving signal-safety.
 - Improved development documentation in `DEVELOPMENT.md` with a new section on unit testing.
 - Refactored the monolithic `util.h` and `util.cpp` into a modular, domain-specific architecture:
-  - `src/io_utils.h/cpp`: Specialized for C-SiT ID compression, QVZ quantization logic, and robust binary I/O.
+  - `src/io_utils.h/cpp`: Specialized for C-SiT ID compression and robust binary I/O.
   - `src/dna_utils.h/cpp`: Centralized DNA sequence manipulation (reverse complement, bit-packing, N-read encoding).
   - `src/parse_utils.h/cpp`: Handle ID pattern matching, FASTQ block parsing, and numeric string conversions.
   - `src/fs_utils.h/cpp`: Granular filesystem helpers and RAII file management.
@@ -290,16 +296,12 @@
 - Repackaged `indexed_bzip2` into a smaller SPRING-specific archive payload that retains only the pieces needed for the current gzip workflow.
 - Removed the final Boost dependency from the build and runtime path by replacing the remaining Boost-based gzip and mapped-file usage with local implementations.
 - Upgraded the project toolchain baseline to C++20 and CMake 4.2.
-- Refreshed the vendored dependency set used by the current tree, including `libbsc`, Cloudflare zlib, `libdeflate`, `qvz`, and the pruned `indexed_bzip2` payload.
+- Refreshed the vendored dependency set used by the current tree, including `libbsc`, Cloudflare zlib, `libdeflate`, and the pruned `indexed_bzip2` payload.
 - Replaced the unmaintained BBHash with a patched version of PTHash (making it more compatible with windows) for the hash table implementation.
 - Made vendor extraction idempotent so repeated configure runs only re-extract archives when their content hash changes.
 - Standardized formatting with the repository `.clang-format` configuration.
 - Renamed several core source files to clearer role-based names, including `bitset_dictionary`, `template_dispatch`, `paired_end_order`, `reordered_quality_id`, and `reordered_streams`.
 - Reorganized the internal implementation to reduce duplicated scaffolding across compression, decompression, preprocessing, template dispatch, and other core subsystems while preserving behavior.
-- Accelerated the **QVZ lossy compression mode** by up to 1000x through a series of algorithmic optimizations:
-  - Refactored the distortion matrix calculation from $O(N^2)$ to $O(N)$ using prefix sums.
-  - Integrated a binary search for optimal quantization states and added a short-circuit path for ratio 1.0 targets.
-  - Optimized the core probability propagation loops from $O(N^4)$ to $O(N^3)$ via invariant loop hoisting.
 
 ### Fixed
 
@@ -315,5 +317,3 @@
 - Cleaned up lint and cppcheck findings across the current codebase, including missing initialization, binary I/O casts, signed-shift portability, and exception-safety issues.
 - Tightened targeted lint-path handling and Python-file validation in the developer tooling.
 - Stabilized the Valgrind smoke workflow by focusing failures on actionable leak classes and suppressing known OpenMP and libc startup noise.
-- Fixed a memory corruption hazard in the `qvz` module by standardizing `ALPHABET_SIZE` at 128 to accommodate contemporary high-range Phred scores.
-- Fixed a scope error in the `qvz` custom distortion matrix generator.

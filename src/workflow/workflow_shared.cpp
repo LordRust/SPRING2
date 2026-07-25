@@ -158,13 +158,11 @@ bool try_read_legacy_spring_compression_params(const std::string &cp_bytes,
       read_legacy_bool_byte(cp_bytes, 3, "preserve_id") != 0;
   parsed.encoding.long_flag =
       read_legacy_bool_byte(cp_bytes, 4, "long_flag") != 0;
-  parsed.quality.qvz_flag = read_legacy_bool_byte(cp_bytes, 5, "qvz_flag") != 0;
   parsed.quality.ill_bin_flag =
       read_legacy_bool_byte(cp_bytes, 6, "ill_bin_flag") != 0;
   parsed.quality.bin_thr_flag =
       read_legacy_bool_byte(cp_bytes, 7, "bin_thr_flag") != 0;
-  parsed.quality.qvz_ratio =
-      read_legacy_trivial<double>(cp_bytes, 8, "qvz_ratio");
+  // Byte 8-15 was qvz_ratio (removed); skip.
   parsed.quality.bin_thr_thr =
       read_legacy_trivial<unsigned int>(cp_bytes, 16, "bin_thr_thr");
   parsed.quality.bin_thr_high =
@@ -687,7 +685,6 @@ compression_io_config resolve_compression_io(const string_list &input_paths,
 void configure_quality_options(compression_params &compression_params,
                                const string_list &quality_options) {
   if (quality_options.empty() || quality_options[0] == "lossless") {
-    compression_params.quality.qvz_flag = false;
     compression_params.quality.ill_bin_flag = false;
     compression_params.quality.bin_thr_flag = false;
     SPRING_LOG_DEBUG("Quality mode set to lossless.");
@@ -695,25 +692,13 @@ void configure_quality_options(compression_params &compression_params,
   }
 
   if (quality_options[0] == "qvz") {
-    if (quality_options.size() != 2)
-      throw std::runtime_error("Invalid quality options.");
-
-    compression_params.quality.qvz_ratio = parse_double_or_throw(
-        quality_options[1], "Invalid qvz ratio provided.");
-    if (compression_params.quality.qvz_ratio == 0.0)
-      throw std::runtime_error("Invalid qvz ratio provided.");
-
-    compression_params.quality.qvz_flag = true;
-    compression_params.quality.ill_bin_flag = false;
-    compression_params.quality.bin_thr_flag = false;
-    SPRING_LOG_DEBUG("Quality mode set to qvz with ratio=" +
-                     std::to_string(compression_params.quality.qvz_ratio));
-    return;
+    throw std::runtime_error(
+        "QVZ lossy compression is no longer supported. Use ill_bin or binary "
+        "quality modes instead.");
   }
 
   if (quality_options[0] == "ill_bin") {
     compression_params.quality.ill_bin_flag = true;
-    compression_params.quality.qvz_flag = false;
     compression_params.quality.bin_thr_flag = false;
     SPRING_LOG_DEBUG("Quality mode set to ill_bin.");
     return;
@@ -744,7 +729,6 @@ void configure_quality_options(compression_params &compression_params,
       throw std::runtime_error("Options do not satisfy low <= thr <= high.");
     }
 
-    compression_params.quality.qvz_flag = false;
     compression_params.quality.ill_bin_flag = false;
     compression_params.quality.bin_thr_flag = true;
     SPRING_LOG_DEBUG(

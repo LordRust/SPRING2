@@ -68,11 +68,13 @@ serialize_legacy_archive_metadata(const spring::compression_params &cp) {
   spring::write_bool(output, cp.encoding.preserve_quality);
   spring::write_bool(output, cp.encoding.preserve_id);
   spring::write_bool(output, cp.encoding.long_flag);
-  spring::write_bool(output, cp.quality.qvz_flag);
+  const bool reserved_qvz_flag = false;
+  spring::write_bool(output, reserved_qvz_flag); // reserved (was qvz_flag)
   spring::write_bool(output, cp.quality.ill_bin_flag);
   spring::write_bool(output, cp.quality.bin_thr_flag);
-  output.write(reinterpret_cast<const char *>(&cp.quality.qvz_ratio),
-               sizeof(double));
+  const double reserved_qvz_ratio = 0.0;
+  output.write(reinterpret_cast<const char *>(&reserved_qvz_ratio),
+               sizeof(double)); // reserved (was qvz_ratio)
   output.write(reinterpret_cast<const char *>(&cp.quality.bin_thr_thr),
                sizeof(unsigned int));
   output.write(reinterpret_cast<const char *>(&cp.quality.bin_thr_high),
@@ -179,8 +181,8 @@ std::string serialize_legacy_spring_raw_cp() {
   write_byte(6, 0);
   write_byte(7, 0);
 
-  const double qvz_ratio = 1.0;
-  write_trivial(8, qvz_ratio);
+  const double reserved_qvz_ratio = 1.0;
+  write_trivial(8, reserved_qvz_ratio); // reserved (was qvz_ratio)
 
   const unsigned int bin_thr_thr = 0;
   const unsigned int bin_thr_high = 0;

@@ -87,8 +87,8 @@ void decompress_archive_artifact(const decompression_archive_artifact &artifact,
   run_timed_step("Verifying integrity ...", "Integrity check", [&] {
     const bool is_lossless =
         cp.encoding.preserve_order && cp.encoding.preserve_quality &&
-        cp.encoding.preserve_id && !cp.quality.qvz_flag &&
-        !cp.quality.ill_bin_flag && !cp.quality.bin_thr_flag;
+        cp.encoding.preserve_id && !cp.quality.ill_bin_flag &&
+        !cp.quality.bin_thr_flag;
 
     if (is_lossless) {
       uint32_t seq_crc[2], qual_crc[2], id_crc[2];
@@ -210,7 +210,7 @@ void materialize_aliased_group_output_from_memory(
 
   const bool is_lossless = cp.encoding.preserve_order &&
                            cp.encoding.preserve_quality &&
-                           cp.encoding.preserve_id && !cp.quality.qvz_flag &&
+                           cp.encoding.preserve_id &&
                            !cp.quality.ill_bin_flag && !cp.quality.bin_thr_flag;
   if (is_lossless) {
     uint32_t seq_crc[2], qual_crc[2], id_crc[2];
