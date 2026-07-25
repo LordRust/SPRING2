@@ -26,11 +26,10 @@ std::unordered_map<std::string, std::string>
 reorder_compress_quality_id(const post_encode_side_stream_artifact &artifact,
                             const std::vector<uint32_t> &read_order_entries,
                             compression_params &cp);
-std::unordered_map<std::string, std::string>
-reorder_compress_quality_id(const std::string &artifact_root_dir,
-                            const std::string &read_order_entries_path,
-                            compression_params &cp,
-                            const std::string &scratch_root_dir);
+std::unordered_map<std::string, std::string> reorder_compress_quality_id(
+    const std::string &artifact_root_dir,
+    const std::string &read_order_entries_path, compression_params &cp,
+    const std::string &scratch_root_dir, uint64_t memory_budget_bytes);
 
 } // namespace spring
 

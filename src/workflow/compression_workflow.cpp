@@ -803,7 +803,8 @@ void compress_standard(const string_list &input_paths,
                             resolve_archive_entry_disk_path(
                                 encoder_artifact_dir.string(),
                                 "read_order_entries.bin"),
-                            cp, side_stream_artifact_dir.string())
+                            cp, side_stream_artifact_dir.string(),
+                            available_memory_bytes)
                       : reorder_compress_quality_id(
                             post_encode_side_streams,
                             reordered_streams_artifact.read_order_entries, cp);

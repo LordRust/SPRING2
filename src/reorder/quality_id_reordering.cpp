@@ -38,6 +38,12 @@ struct batch_record {
   uint32_t string_length;
 };
 
+// Fraction of the compression memory budget this stage may hold in RAM while
+// partitioning quality/id records into reorder batches.
+constexpr double kSideStreamBufferBudgetFraction = 0.4;
+// Fallback cap when no memory budget is supplied.
+constexpr uint64_t kDefaultSideStreamBufferCapBytes = 4ULL * 1024 * 1024 * 1024;
+
 void add_archive_member(std::unordered_map<std::string, std::string> &members,
                         const std::string &path,
                         const std::vector<char> &bytes) {
@@ -114,6 +120,20 @@ std::string scratch_batch_path(const std::string &root_dir,
       .string();
 }
 
+void append_buffer_to_scratch(const std::string &path,
+                              const std::string &bytes) {
+  std::ofstream output(path, std::ios::binary | std::ios::app);
+  if (!output.is_open()) {
+    throw std::runtime_error("Failed to open scratch batch file '" + path +
+                             "'.");
+  }
+  output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+  if (!output) {
+    throw std::runtime_error("Failed writing scratch batch file '" + path +
+                             "'.");
+  }
+}
+
 void partition_reordered_batches_from_buffer(
     const std::string &input_path, const std::string &input_bytes,
     const std::vector<uint32_t> &reordered_positions, const uint32_t batch_size,
@@ -187,8 +207,9 @@ void load_partitioned_batch_from_bytes(
 void partition_reordered_batches_from_file(
     const std::string &input_path, const std::string &source_path,
     const std::vector<uint32_t> &reordered_positions, const uint32_t batch_size,
-    const std::string &scratch_root_dir,
-    std::vector<std::string> &batch_paths) {
+    const std::string &scratch_root_dir, const uint64_t memory_budget_bytes,
+    std::vector<std::string> &batch_paths,
+    std::vector<std::string> &batch_buffers, bool &spilled_any) {
   const uint32_t num_batches = batch_count_for_reads(
       static_cast<uint32_t>(reordered_positions.size()), batch_size);
   SPRING_LOG_DEBUG("block_id=reorder-partition, Partitioning reordered stream "
@@ -198,19 +219,37 @@ void partition_reordered_batches_from_file(
                    ", batch_size=" + std::to_string(batch_size) +
                    ", num_batches=" + std::to_string(num_batches));
 
-  reset_directory(scratch_root_dir);
   batch_paths.resize(num_batches);
-  std::vector<std::ofstream> batch_outputs(num_batches);
+  batch_buffers.resize(num_batches);
   for (uint32_t batch_index = 0; batch_index < num_batches; ++batch_index) {
     batch_paths[batch_index] =
         scratch_batch_path(scratch_root_dir, input_path, batch_index);
-    batch_outputs[batch_index].open(batch_paths[batch_index],
-                                    std::ios::binary | std::ios::trunc);
-    if (!batch_outputs[batch_index].is_open()) {
-      throw std::runtime_error("Failed to open scratch batch file '" +
-                               batch_paths[batch_index] + "'.");
-    }
   }
+
+  spilled_any = false;
+  uint64_t buffered_bytes = 0;
+  const uint64_t scatter_cap_bytes =
+      memory_budget_bytes > 0
+          ? std::max<uint64_t>(1, static_cast<uint64_t>(
+                                      static_cast<double>(memory_budget_bytes) *
+                                      kSideStreamBufferBudgetFraction))
+          : kDefaultSideStreamBufferCapBytes;
+
+  const auto flush_batch_buffers = [&]() {
+    if (!spilled_any) {
+      reset_directory(scratch_root_dir);
+      spilled_any = true;
+    }
+    for (uint32_t batch_index = 0; batch_index < num_batches; ++batch_index) {
+      std::string &batch_bytes = batch_buffers[batch_index];
+      if (batch_bytes.empty()) {
+        continue;
+      }
+      append_buffer_to_scratch(batch_paths[batch_index], batch_bytes);
+      batch_bytes.clear();
+    }
+    buffered_bytes = 0;
+  };
 
   std::ifstream input(source_path, std::ios::binary);
   if (!input.is_open()) {
@@ -235,14 +274,17 @@ void partition_reordered_batches_from_file(
     batch_record record{.relative_position = reordered_position % batch_size,
                         .string_length =
                             static_cast<uint32_t>(current_string.size())};
-    batch_outputs[batch_index].write(byte_ptr(&record), sizeof(batch_record));
-    batch_outputs[batch_index].write(
-        current_string.data(),
-        static_cast<std::streamsize>(current_string.size()));
-    if (!batch_outputs[batch_index]) {
-      throw std::runtime_error("Failed writing scratch batch file '" +
-                               batch_paths[batch_index] + "'.");
+
+    std::string &batch_bytes = batch_buffers[batch_index];
+    batch_bytes.append(byte_ptr(&record), sizeof(batch_record));
+    batch_bytes.append(current_string);
+    buffered_bytes +=
+        static_cast<uint64_t>(sizeof(batch_record) + current_string.size());
+
+    if (buffered_bytes >= scatter_cap_bytes) {
+      flush_batch_buffers();
     }
+
     ++read_index;
   }
 
@@ -256,6 +298,16 @@ void partition_reordered_batches_from_file(
         "Side-stream line count does not match expected read count for " +
         input_path);
   }
+
+  // Flush any buffered tail if this stream crossed the spill threshold.
+  if (spilled_any && buffered_bytes > 0) {
+    flush_batch_buffers();
+  }
+
+  SPRING_LOG_DEBUG(
+      "block_id=reorder-partition, Partition complete: path=" + input_path +
+      ", spilled=" + std::string(spilled_any ? "true" : "false") +
+      ", scatter_cap_bytes=" + std::to_string(scatter_cap_bytes));
 }
 
 void load_partitioned_batch_from_file(
@@ -526,20 +578,25 @@ void reorder_compress_from_file(
     const std::vector<uint32_t> &reordered_positions,
     const reorder_compress_mode mode, compression_params &cp,
     std::unordered_map<std::string, std::string> &archive_members,
-    std::vector<char> *merged_id_block_bytes = nullptr) {
+    std::vector<char> *merged_id_block_bytes = nullptr,
+    const uint64_t memory_budget_bytes = 0) {
   const std::string scratch_root_dir =
       (std::filesystem::path(source_path).parent_path() /
        (input_path + ".partition"))
           .string();
   std::vector<std::string> batch_paths;
-  partition_reordered_batches_from_file(input_path, source_path,
-                                        reordered_positions, batch_size,
-                                        scratch_root_dir, batch_paths);
+  std::vector<std::string> batch_buffers;
+  bool spilled_any = false;
+  partition_reordered_batches_from_file(
+      input_path, source_path, reordered_positions, batch_size,
+      scratch_root_dir, memory_budget_bytes, batch_paths, batch_buffers,
+      spilled_any);
   SPRING_LOG_DEBUG("block_id=reorder-stream, Reorder/compress stream start "
                    "from file: path=" +
                    input_path +
                    ", total_reads=" + std::to_string(num_reads_per_file) +
-                   ", batches=" + std::to_string(batch_paths.size()));
+                   ", batches=" + std::to_string(batch_paths.size()) +
+                   ", spilled=" + std::string(spilled_any ? "true" : "false"));
 
   for (uint32_t batch_index = 0;; ++batch_index) {
     const batch_range batch =
@@ -551,8 +608,14 @@ void reorder_compress_from_file(
     const uint32_t blocks_in_batch =
         (batch.end - batch.begin + num_reads_per_block - 1) /
         num_reads_per_block;
-    load_partitioned_batch_from_file(
-        batch_paths[batch_index], batch.end - batch.begin, reordered_strings);
+    if (spilled_any) {
+      load_partitioned_batch_from_file(
+          batch_paths[batch_index], batch.end - batch.begin, reordered_strings);
+    } else {
+      load_partitioned_batch_from_bytes(batch_buffers[batch_index],
+                                        batch.end - batch.begin,
+                                        reordered_strings);
+    }
     std::vector<std::vector<char>> batch_block_outputs(blocks_in_batch);
     std::vector<std::vector<char>> batch_id_block_outputs;
     if (merged_id_block_bytes != nullptr && mode == reorder_compress_mode::id) {
@@ -578,8 +641,13 @@ void reorder_compress_from_file(
                                       block_bytes.begin(), block_bytes.end());
       }
     }
-    std::error_code remove_ec;
-    std::filesystem::remove(batch_paths[batch_index], remove_ec);
+    if (spilled_any) {
+      std::error_code remove_ec;
+      std::filesystem::remove(batch_paths[batch_index], remove_ec);
+    } else {
+      batch_buffers[batch_index].clear();
+      batch_buffers[batch_index].shrink_to_fit();
+    }
     SPRING_LOG_DEBUG("block_id=reorder-batch-" + std::to_string(batch_index) +
                      ", Reorder/compress batch done: path=" + input_path +
                      ", batch_index=" + std::to_string(batch_index) +
@@ -841,11 +909,10 @@ reorder_compress_quality_id(const post_encode_side_stream_artifact &artifact,
   return archive_members;
 }
 
-std::unordered_map<std::string, std::string>
-reorder_compress_quality_id(const std::string &artifact_root_dir,
-                            const std::string &read_order_entries_path,
-                            compression_params &cp,
-                            const std::string &scratch_root_dir) {
+std::unordered_map<std::string, std::string> reorder_compress_quality_id(
+    const std::string &artifact_root_dir,
+    const std::string &read_order_entries_path, compression_params &cp,
+    const std::string &scratch_root_dir, uint64_t memory_budget_bytes) {
   std::unordered_map<std::string, std::string> archive_members;
   const uint32_t num_reads = cp.read_info.num_reads;
   const int num_thr = cp.encoding.num_thr;
@@ -889,7 +956,7 @@ reorder_compress_quality_id(const std::string &artifact_root_dir,
               .string(),
           file_read_count, num_thr, num_reads_per_block, reordered_strings,
           batch_size, reordered_positions, reorder_compress_mode::quality, cp,
-          archive_members);
+          archive_members, nullptr, memory_budget_bytes);
     }
   }
 
@@ -908,7 +975,8 @@ reorder_compress_quality_id(const std::string &artifact_root_dir,
               .string(),
           file_read_count, num_thr, num_reads_per_block, reordered_strings,
           batch_size, reordered_positions, reorder_compress_mode::id, cp,
-          archive_members, paired_end ? nullptr : &merged_packed_id_blocks);
+          archive_members, paired_end ? nullptr : &merged_packed_id_blocks,
+          memory_budget_bytes);
 
       if (!paired_end) {
         add_archive_member(archive_members, id_paths[stream_index] + ".bsc",
