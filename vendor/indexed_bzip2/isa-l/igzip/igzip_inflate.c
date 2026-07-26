@@ -722,7 +722,6 @@ static inline void make_inflate_huff_code_header(
   uint32_t max_length;
   uint16_t first_bits;
   uint32_t code_length;
-  uint16_t long_bits;
   uint16_t min_increment;
   uint32_t code_list[DIST_LEN + 2] = {0};
 
