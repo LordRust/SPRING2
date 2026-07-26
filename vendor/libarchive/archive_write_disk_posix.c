@@ -2321,118 +2321,118 @@ static int check_symlinks_fsobj(char *path, int *a_eno,
          * platform. The fd path above is used whenever possible. */
         r = unlink(head); // codeql[cpp/toctou-race-condition]
 #endif
-          res = ARCHIVE_FAILED;
-          break;
-        }
-
-        tail[0] = c;
-
-        res = ARCHIVE_OK;
-        break;
-      } else if (flags & ARCHIVE_EXTRACT_UNLINK) {
-
-#if defined(HAVE_OPENAT) && defined(HAVE_FSTATAT) && defined(HAVE_UNLINKAT)
-        r = unlinkat(chdir_fd, head, 0);
-#elif defined(HAVE_UNLINKAT)
-        /* See comment above: prefer unlinkat(AT_FDCWD) over unlink() on
-         * platforms that have unlinkat but lack openat/fstatat. */
-        r = unlinkat(AT_FDCWD, head, 0);
-#else
-        /* Removing an intervening symlink; must be unlink(), not rmdir().
-         * No unlinkat available; the TOCTOU window is unavoidable on this
-         * platform. The fd path above is used whenever possible. */
-        r = unlink(head); // codeql[cpp/toctou-race-condition]
-#endif
-        if (r != 0) {
-          tail[0] = c;
-          fsobj_error(a_eno, a_estr, 0,
-                      "Cannot remove intervening "
-                      "symlink ",
-                      path);
-          res = ARCHIVE_FAILED;
-          break;
-        }
-        tail[0] = c;
-      } else if ((flags & ARCHIVE_EXTRACT_SECURE_SYMLINKS) == 0) {
-
-#if defined(HAVE_OPENAT) && defined(HAVE_FSTATAT) && defined(HAVE_UNLINKAT)
-        r = fstatat(chdir_fd, head, &st, 0);
-#else
-        r = la_stat(head, &st);
-#endif
-        if (r != 0) {
-          tail[0] = c;
-          if (errno == ENOENT) {
-            break;
-          } else {
-            fsobj_error(a_eno, a_estr, errno, "Could not stat ", path);
-            res = (ARCHIVE_FAILED);
-            break;
-          }
-        } else if (S_ISDIR(st.st_mode)) {
-#if defined(HAVE_OPENAT) && defined(HAVE_FSTATAT) && defined(HAVE_UNLINKAT)
-          fd = la_opendirat(chdir_fd, head);
-          if (fd < 0)
-            r = -1;
-          else {
-            r = 0;
-            close(chdir_fd);
-            chdir_fd = fd;
-          }
-#else
-          r = chdir(head);
-#endif
-          if (r != 0) {
-            tail[0] = c;
-            fsobj_error(a_eno, a_estr, errno, "Could not chdir ", path);
-            res = (ARCHIVE_FATAL);
-            break;
-          }
-
-          head = tail + 1;
-        } else {
-          tail[0] = c;
-          fsobj_error(a_eno, a_estr, 0,
-                      "Cannot extract through "
-                      "symlink ",
-                      path);
-          res = ARCHIVE_FAILED;
-          break;
-        }
-      } else {
-        tail[0] = c;
-        fsobj_error(a_eno, a_estr, 0, "Cannot extract through symlink ", path);
         res = ARCHIVE_FAILED;
         break;
       }
-    }
 
-    tail[0] = c;
-    if (tail[0] != '\0')
-      tail++;
+      tail[0] = c;
+
+      res = ARCHIVE_OK;
+      break;
+    } else if (flags & ARCHIVE_EXTRACT_UNLINK) {
+
+#if defined(HAVE_OPENAT) && defined(HAVE_FSTATAT) && defined(HAVE_UNLINKAT)
+      r = unlinkat(chdir_fd, head, 0);
+#elif defined(HAVE_UNLINKAT)
+      /* See comment above: prefer unlinkat(AT_FDCWD) over unlink() on
+       * platforms that have unlinkat but lack openat/fstatat. */
+      r = unlinkat(AT_FDCWD, head, 0);
+#else
+      /* Removing an intervening symlink; must be unlink(), not rmdir().
+       * No unlinkat available; the TOCTOU window is unavoidable on this
+       * platform. The fd path above is used whenever possible. */
+      r = unlink(head); // codeql[cpp/toctou-race-condition]
+#endif
+      if (r != 0) {
+        tail[0] = c;
+        fsobj_error(a_eno, a_estr, 0,
+                    "Cannot remove intervening "
+                    "symlink ",
+                    path);
+        res = ARCHIVE_FAILED;
+        break;
+      }
+      tail[0] = c;
+    } else if ((flags & ARCHIVE_EXTRACT_SECURE_SYMLINKS) == 0) {
+
+#if defined(HAVE_OPENAT) && defined(HAVE_FSTATAT) && defined(HAVE_UNLINKAT)
+      r = fstatat(chdir_fd, head, &st, 0);
+#else
+      r = la_stat(head, &st);
+#endif
+      if (r != 0) {
+        tail[0] = c;
+        if (errno == ENOENT) {
+          break;
+        } else {
+          fsobj_error(a_eno, a_estr, errno, "Could not stat ", path);
+          res = (ARCHIVE_FAILED);
+          break;
+        }
+      } else if (S_ISDIR(st.st_mode)) {
+#if defined(HAVE_OPENAT) && defined(HAVE_FSTATAT) && defined(HAVE_UNLINKAT)
+        fd = la_opendirat(chdir_fd, head);
+        if (fd < 0)
+          r = -1;
+        else {
+          r = 0;
+          close(chdir_fd);
+          chdir_fd = fd;
+        }
+#else
+        r = chdir(head);
+#endif
+        if (r != 0) {
+          tail[0] = c;
+          fsobj_error(a_eno, a_estr, errno, "Could not chdir ", path);
+          res = (ARCHIVE_FATAL);
+          break;
+        }
+
+        head = tail + 1;
+      } else {
+        tail[0] = c;
+        fsobj_error(a_eno, a_estr, 0,
+                    "Cannot extract through "
+                    "symlink ",
+                    path);
+        res = ARCHIVE_FAILED;
+        break;
+      }
+    } else {
+      tail[0] = c;
+      fsobj_error(a_eno, a_estr, 0, "Cannot extract through symlink ", path);
+      res = ARCHIVE_FAILED;
+      break;
+    }
   }
 
   tail[0] = c;
+  if (tail[0] != '\0')
+    tail++;
+}
+
+tail[0] = c;
 #if defined(HAVE_OPENAT) && defined(HAVE_FSTATAT) && defined(HAVE_UNLINKAT)
 
-  if (chdir_fd >= 0)
-    close(chdir_fd);
+if (chdir_fd >= 0)
+  close(chdir_fd);
 #elif HAVE_FCHDIR
 
-  if (chdir_fd >= 0) {
-    r = fchdir(chdir_fd);
-    if (r != 0) {
-      fsobj_error(a_eno, a_estr, errno, "chdir() failure", "");
-    }
-    close(chdir_fd);
-    chdir_fd = -1;
-    if (r != 0) {
-      res = (ARCHIVE_FATAL);
-    }
+if (chdir_fd >= 0) {
+  r = fchdir(chdir_fd);
+  if (r != 0) {
+    fsobj_error(a_eno, a_estr, errno, "chdir() failure", "");
   }
+  close(chdir_fd);
+  chdir_fd = -1;
+  if (r != 0) {
+    res = (ARCHIVE_FATAL);
+  }
+}
 #endif
 
-  return res;
+return res;
 #endif
 }
 
