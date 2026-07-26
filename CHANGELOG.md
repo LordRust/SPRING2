@@ -11,6 +11,7 @@
 - Widened loop and counter types and adjusted shift operands in `igzip` inflate and Huffman packing code to avoid narrow-vs-wide comparison warnings in `vendor/indexed_bzip2/isa-l/igzip/igzip_inflate.c` and `vendor/indexed_bzip2/isa-l/igzip/huff_codes.c.
 - Cast multiplication operands to larger types in zlib/igzip utility code to avoid integer-promotion hazards (vendor `cloudflare_zlib` and `indexed_bzip2` patches).
 - Reduced TOCTOU race windows in the vendored `libarchive` POSIX disk writer by attempting directory creation before unlinking and using safer unlink variants where available.
+- Replaced plain `unlink()` calls with `unlinkat()` where available in the vendored `libarchive` POSIX writer to reduce TOCTOU race windows and simplified conditional fallbacks for portability.
 
 ## V1.3.1
 

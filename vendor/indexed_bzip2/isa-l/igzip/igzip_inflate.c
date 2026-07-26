@@ -564,7 +564,7 @@ void make_inflate_huff_code_lit_len(
       long_bits = sym1_code >> ISAL_DECODE_LONG_BITS;
       min_increment = 1 << (sym1_len - ISAL_DECODE_LONG_BITS);
 
-      for (; long_bits < (1 << (max_length - ISAL_DECODE_LONG_BITS));
+      for (; long_bits < (1U << (max_length - ISAL_DECODE_LONG_BITS));
            long_bits += min_increment) {
         result->long_code_lookup[long_code_lookup_length + long_bits] =
             sym1 | (sym1_len << LARGE_LONG_CODE_LEN_OFFSET);
@@ -686,7 +686,7 @@ void make_inflate_huff_code_dist(struct inflate_huff_code_small *const result,
       code_length = huff_code_table[sym].length;
       long_bits = huff_code_table[sym].code >> ISAL_DECODE_SHORT_BITS;
       min_increment = 1 << (code_length - ISAL_DECODE_SHORT_BITS);
-      for (; long_bits < (1 << (max_length - ISAL_DECODE_SHORT_BITS));
+      for (; long_bits < (1U << (max_length - ISAL_DECODE_SHORT_BITS));
            long_bits += min_increment) {
         if (sym >= max_symbol) {
 

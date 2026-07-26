@@ -1153,7 +1153,7 @@ static void create_packed_len_table(uint32_t *packed_table,
   uint16_t gain_extra_bits = LEN_EXTRA_BITS_START;
 
   for (i = 257; i < LIT_LEN - 1; i++) {
-    for (extra_bits = 0; extra_bits < (1 << extra_bits_count); extra_bits++) {
+    for (extra_bits = 0; extra_bits < (1U << extra_bits_count); extra_bits++) {
       if (count > 254)
         break;
       packed_table[count++] =
@@ -1175,13 +1175,13 @@ static void create_packed_len_table(uint32_t *packed_table,
 static void create_packed_dist_table(uint32_t *packed_table, uint32_t length,
                                      struct huff_code *dist_hufftable) {
   uint32_t i, count = 0;
-  uint16_t extra_bits;
-  uint16_t extra_bits_count = 0;
+  uint32_t extra_bits;
+  uint32_t extra_bits_count = 0;
 
-  uint16_t gain_extra_bits = DIST_EXTRA_BITS_START;
+  uint32_t gain_extra_bits = DIST_EXTRA_BITS_START;
 
   for (i = 0; i < DIST_LEN; i++) {
-    for (extra_bits = 0; extra_bits < (1 << extra_bits_count); extra_bits++) {
+    for (extra_bits = 0; extra_bits < (1U << extra_bits_count); extra_bits++) {
       if (count >= length)
         return;
 

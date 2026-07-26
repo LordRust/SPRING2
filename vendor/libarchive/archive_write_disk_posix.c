@@ -2310,16 +2310,10 @@ static int check_symlinks_fsobj(char *path, int *a_eno,
 
 #if defined(HAVE_OPENAT) && defined(HAVE_FSTATAT) && defined(HAVE_UNLINKAT)
         r = unlinkat(chdir_fd, head, 0);
-#else
-#if defined(HAVE_UNLINKAT) && defined(AT_FDCWD)
-        r = unlinkat(AT_FDCWD, head, 0);
-#else
-#if defined(HAVE_UNLINKAT) && defined(AT_FDCWD)
+#elif defined(HAVE_UNLINKAT) && defined(AT_FDCWD)
         r = unlinkat(AT_FDCWD, head, 0);
 #else
         r = unlink(head);
-#endif
-#endif
 #endif
         if (r != 0) {
           tail[0] = c;
@@ -2336,6 +2330,8 @@ static int check_symlinks_fsobj(char *path, int *a_eno,
 
 #if defined(HAVE_OPENAT) && defined(HAVE_FSTATAT) && defined(HAVE_UNLINKAT)
         r = unlinkat(chdir_fd, head, 0);
+#elif defined(HAVE_UNLINKAT) && defined(AT_FDCWD)
+        r = unlinkat(AT_FDCWD, head, 0);
 #else
         r = unlink(head);
 #endif
@@ -2646,7 +2642,13 @@ static int create_dir(struct archive_write_disk *a, char *path) {
         return (ARCHIVE_OK);
       /* Otherwise fall through and attempt to remove the conflicting file. */
     }
+    /* Prefer unlinkat when available to operate relative to a directory
+     * descriptor and reduce the TOCTOU window. Fall back to unlink(). */
+#if defined(HAVE_UNLINKAT) && defined(AT_FDCWD)
+    if (unlinkat(AT_FDCWD, path, 0) != 0) {
+#else
     if (unlink(path) != 0) {
+#endif
       archive_set_error(&a->archive, errno,
                         "Can't create directory '%s': "
                         "Conflicting file cannot be removed",
