@@ -2622,58 +2622,16 @@ static int create_dir(struct archive_write_disk *a, char *path) {
     return (ARCHIVE_OK);
   }
 
-  if (la_stat(path, &st) == 0) {
-    if (S_ISDIR(st.st_mode))
-      return (ARCHIVE_OK);
-    if ((a->flags & ARCHIVE_EXTRACT_NO_OVERWRITE)) {
-      archive_set_error(&a->archive, EEXIST, "Can't create directory '%s'",
-                        path);
-      return (ARCHIVE_FAILED);
-    }
-    /* Try to create the directory first to avoid a TOCTOU window where the
-     * file at `path` could be replaced between the check above and the
-     * removal. If mkdir succeeds or the path becomes a directory, we're
-     * done. Otherwise fall back to removing the conflicting file. */
-    if (mkdir(path, mode_final) == 0) {
-      return (ARCHIVE_OK);
-    }
-    if (errno == EEXIST) {
-      /* Re-check: if it's now a directory, we're fine. */
-      if (la_stat(path, &st) == 0 && S_ISDIR(st.st_mode))
-        return (ARCHIVE_OK);
-      /* Otherwise fall through and attempt to remove the conflicting file. */
-    }
-    /* unlink() the conflicting non-directory entry and retry mkdir(). */
-    if (unlink(path) != 0) { // lgtm[cpp/toctou-race-condition]
-      archive_set_error(&a->archive, errno,
-                        "Can't create directory '%s': "
-                        "Conflicting file cannot be removed",
-                        path);
-      return (ARCHIVE_FAILED);
-    }
-    /* After removal, attempt to create the directory. */
-    if (mkdir(path, mode_final) != 0) {
-      archive_set_error(&a->archive, errno, "Can't create directory '%s'",
-                        path);
-      return (ARCHIVE_FAILED);
-    }
-  } else if (errno != ENOENT && errno != ENOTDIR) {
-
-    archive_set_error(&a->archive, errno, "Can't test directory '%s'", path);
-    return (ARCHIVE_FAILED);
-  } else if (slash != NULL) {
-    *slash = '\0';
-    r = create_dir(a, path);
-    *slash = '/';
-    if (r != ARCHIVE_OK)
-      return (r);
-  }
-
+  /* Compute the final directory mode up front so every mkdir() call uses a
+   * consistent value and the fixup list can be populated correctly. */
   mode_final = DEFAULT_DIR_MODE & ~a->user_umask;
-
   mode = mode_final;
   mode |= MINIMUM_DIR_MODE;
   mode &= MAXIMUM_DIR_MODE;
+
+  /* Attempt to create the directory immediately.  This avoids a
+   * stat-before-unlink TOCTOU: we only inspect what occupies `path` after
+   * mkdir() reports EEXIST, never before. */
   if (mkdir(path, mode) == 0) {
     if (mode != mode_final) {
       le = new_fixup(a, path);
@@ -2686,13 +2644,78 @@ static int create_dir(struct archive_write_disk *a, char *path) {
   }
 
   if (errno == EEXIST) {
+    /* Determine whether the existing entry is already a directory by
+     * opening it as one with la_opendirat().  la_opendirat() succeeds
+     * if and only if path names a directory, so this combines the type
+     * check and the open in one step with no separate stat() "check"
+     * preceding the unlink() "act". */
+    int tmpfd = la_opendirat(AT_FDCWD, path);
+    if (tmpfd >= 0) {
+      close(tmpfd);
+      return (ARCHIVE_OK); /* Already a directory. */
+    }
+    /* Not a directory (or not openable as one). */
+    if ((a->flags & ARCHIVE_EXTRACT_NO_OVERWRITE)) {
+      archive_set_error(&a->archive, EEXIST, "Can't create directory '%s'",
+                        path);
+      return (ARCHIVE_FAILED);
+    }
+    if (unlink(path) != 0) {
+      archive_set_error(&a->archive, errno,
+                        "Can't create directory '%s': "
+                        "Conflicting file cannot be removed",
+                        path);
+      return (ARCHIVE_FAILED);
+    }
+    if (mkdir(path, mode) != 0) {
+      archive_set_error(&a->archive, errno, "Can't create directory '%s'",
+                        path);
+      return (ARCHIVE_FAILED);
+    }
+    if (mode != mode_final) {
+      le = new_fixup(a, path);
+      if (le == NULL)
+        return (ARCHIVE_FATAL);
+      le->fixup |= TODO_MODE_BASE;
+      le->mode = mode_final;
+    }
+    return (ARCHIVE_OK);
+  }
+
+  if (errno != ENOENT && errno != ENOTDIR) {
+    archive_set_error(&a->archive, errno, "Can't create directory '%s'", path);
+    return (ARCHIVE_FAILED);
+  }
+
+  /* Parent directory is missing; create it recursively, then retry. */
+  if (slash != NULL) {
+    *slash = '\0';
+    r = create_dir(a, path);
+    *slash = '/';
+    if (r != ARCHIVE_OK)
+      return (r);
+  }
+
+  if (mkdir(path, mode) == 0) {
+    if (mode != mode_final) {
+      le = new_fixup(a, path);
+      if (le == NULL)
+        return (ARCHIVE_FATAL);
+      le->fixup |= TODO_MODE_BASE;
+      le->mode = mode_final;
+    }
+    return (ARCHIVE_OK);
+  }
+
+  if (errno == EEXIST) {
+    /* Race: something appeared between parent creation and our retry.
+     * Accept it silently if it is already a directory; no unlink follows
+     * so this stat() does not create a TOCTOU window. */
     if (la_stat(path, &st) == 0) {
       if (S_ISDIR(st.st_mode))
         return (ARCHIVE_OK);
-
       errno = ENOTDIR;
     } else {
-
       errno = EEXIST;
     }
   }

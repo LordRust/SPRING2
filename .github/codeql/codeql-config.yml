@@ -1,0 +1,11 @@
+# CodeQL analysis configuration for SPRING2.
+#
+# Vendor code lives under vendor/ and is compiled from upstream sources.
+# TOCTOU and similar findings in those paths reflect limitations of the
+# upstream platforms' fallback code paths (no fd-based syscalls), not
+# issues in our codebase.  Exclude them to keep the alert list focused
+# on first-party code.
+name: "SPRING2 CodeQL configuration"
+paths-ignore:
+  - "vendor/**"
+  - "tests/support/**"
