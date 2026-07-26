@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <iostream>
 #include <string>
+#include <unordered_map>
 
 #include "archive_record_reconstruction.h"
 #include "fs_utils.h"
@@ -96,9 +97,8 @@ void preview_single(const std::string &archive_path, bool audit_only) {
     return;
   }
 
-  // Fast path: Read metadata directly from the tar archive into memory without
-  // extraction
-  auto contents = read_all_files_from_tar_memory(archive_path);
+  // Request only cp.bin; skips all large data streams (seq, quality, etc.)
+  auto contents = read_files_from_tar_memory(archive_path, {"cp.bin"});
 
   if (!contents.contains("cp.bin")) {
     throw std::runtime_error("Could not find cp.bin in the archive.");
@@ -259,34 +259,35 @@ void preview(const std::string &archive_path, bool audit_only) {
     const bundle_manifest manifest =
         read_bundle_manifest_from_string(contents[kBundleManifestName]);
 
-    std::vector<std::string> member_names = {manifest.read_archive_name};
+    // Extract only cp.bin from each member archive via nested-tar streaming.
+    // read_files_from_nested_tars streams the outer archive from disk without
+    // buffering any member archive in RAM; each member is opened on-the-fly
+    // via a libarchive read callback fed from the outer entry stream.
+    std::unordered_map<std::string, std::vector<std::string>> nested_targets;
+    nested_targets[manifest.read_archive_name] = {"cp.bin"};
     if (manifest.has_r3 && manifest.read3_alias_source.empty()) {
-      member_names.push_back(manifest.read3_archive_name);
+      nested_targets[manifest.read3_archive_name] = {"cp.bin"};
     }
     if (manifest.has_index) {
-      member_names.push_back(manifest.index_archive_name);
+      nested_targets[manifest.index_archive_name] = {"cp.bin"};
     }
+    const auto cp_bin_map =
+        read_files_from_nested_tars(archive_path, {}, nested_targets);
 
-    const auto grouped_archives =
-        read_files_from_tar_memory(archive_path, member_names);
-    auto require_group_member =
+    auto get_cp_bin =
         [&](const std::string &member_name) -> const std::string & {
-      auto it = grouped_archives.find(member_name);
-      if (it == grouped_archives.end()) {
-        throw std::runtime_error("Grouped archive is missing member: " +
+      auto it = cp_bin_map.find(member_name + "/cp.bin");
+      if (it == cp_bin_map.end()) {
+        throw std::runtime_error("Could not find cp.bin in member archive: " +
                                  member_name);
       }
       return it->second;
     };
 
-    // Read metadata from the main reads archive
-    auto read_contents = read_all_files_from_tar_bytes(
-        require_group_member(manifest.read_archive_name));
-    if (!read_contents.contains("cp.bin")) {
-      throw std::runtime_error("Could not find cp.bin in reads archive.");
-    }
+    // Parse compression params from the main reads archive cp.bin
     decompression_archive_artifact reads_artifact;
-    reads_artifact.files = std::move(read_contents);
+    reads_artifact.files.emplace("cp.bin",
+                                 get_cp_bin(manifest.read_archive_name));
     reads_artifact.scratch_dir.clear();
     compression_params cp_reads{};
     try {
@@ -297,14 +298,13 @@ void preview(const std::string &archive_path, bool audit_only) {
     const archive_decompression_plan reads_plan =
         build_archive_decompression_plan(cp_reads);
 
-    // Read metadata from R3 archive if present
+    // Parse compression params from R3 archive cp.bin if present
     compression_params cp_r3{};
     if (manifest.has_r3 && manifest.read3_alias_source.empty()) {
-      auto r3_contents = read_all_files_from_tar_bytes(
-          require_group_member(manifest.read3_archive_name));
-      if (r3_contents.contains("cp.bin")) {
+      auto r3_it = cp_bin_map.find(manifest.read3_archive_name + "/cp.bin");
+      if (r3_it != cp_bin_map.end()) {
         decompression_archive_artifact r3_artifact;
-        r3_artifact.files = std::move(r3_contents);
+        r3_artifact.files.emplace("cp.bin", r3_it->second);
         r3_artifact.scratch_dir.clear();
         try {
           read_archive_compression_params(r3_artifact, cp_r3);
@@ -314,14 +314,13 @@ void preview(const std::string &archive_path, bool audit_only) {
       }
     }
 
-    // Read metadata from index archive if present
+    // Parse compression params from index archive cp.bin if present
     compression_params cp_index{};
     if (manifest.has_index) {
-      auto index_contents = read_all_files_from_tar_bytes(
-          require_group_member(manifest.index_archive_name));
-      if (index_contents.contains("cp.bin")) {
+      auto idx_it = cp_bin_map.find(manifest.index_archive_name + "/cp.bin");
+      if (idx_it != cp_bin_map.end()) {
         decompression_archive_artifact index_artifact;
-        index_artifact.files = std::move(index_contents);
+        index_artifact.files.emplace("cp.bin", idx_it->second);
         index_artifact.scratch_dir.clear();
         try {
           read_archive_compression_params(index_artifact, cp_index);

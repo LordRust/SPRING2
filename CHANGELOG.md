@@ -2,6 +2,12 @@
 
 # Changelog
 
+## V1.3.3
+
+### Fixed
+
+- Fixed `--preview` consuming memory proportional to archive size. `read_files_from_tar_memory` and `read_all_files_from_tar_memory` now stream directly from disk via `archive_read_open_filename` instead of buffering the whole file through an `ostringstream` (previously 2× archive size in RAM). For grouped archives, a new `read_files_from_nested_tars` helper uses a libarchive read callback to stream each member archive without buffering it in RAM, extracting only `cp.bin` (a few KB) from each member. Peak RAM for `--preview` drops from ~100 GB (two copies of the archive plus member-archive buffers) to under 1 MB regardless of archive size.
+
 ## V1.3.2
 
 ### Fixed

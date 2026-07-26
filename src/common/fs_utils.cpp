@@ -10,7 +10,6 @@
 #include <fcntl.h>
 #include <filesystem>
 #include <fstream>
-#include <sstream>
 #include <string>
 #include <sys/stat.h>
 #include <system_error>
@@ -340,6 +339,26 @@ std::string normalize_archive_entry_name(std::string entry_name) {
     entry_name.erase(0, 2);
   }
   return entry_name;
+}
+
+// State passed to the nested-archive read callback.  Wraps the outer
+// archive reader and provides a buffer so the inner reader can get data
+// from the current outer entry without buffering the whole entry in RAM.
+struct NestedTarReadState {
+  struct archive *outer;
+  std::vector<char> buf;
+  explicit NestedTarReadState(struct archive *outer_reader)
+      : outer(outer_reader), buf(65536) {}
+};
+
+la_ssize_t nested_tar_read_callback(struct archive * /*inner*/,
+                                    void *client_data, const void **buffer) {
+  auto *state = static_cast<NestedTarReadState *>(client_data);
+  la_ssize_t n =
+      archive_read_data(state->outer, state->buf.data(), state->buf.size());
+  if (n > 0)
+    *buffer = state->buf.data();
+  return n; // 0 = EOF, <0 = error
 }
 
 std::unordered_map<std::string, std::string>
@@ -752,18 +771,39 @@ read_files_from_tar_bytes(const std::string &archive_contents,
 std::unordered_map<std::string, std::string>
 read_files_from_tar_memory(const std::string &archive_path,
                            const std::vector<std::string> &target_filenames) {
-  std::ifstream archive_input(archive_path, std::ios::binary);
-  if (!archive_input.is_open()) {
-    throw std::runtime_error("Failed to open archive: " + archive_path);
+  // Stream directly from disk — no full-file buffering.
+  struct archive *archive_reader = archive_read_new();
+  std::unordered_map<std::string, std::string> results;
+
+  auto close_archive = [&]() noexcept {
+    if (archive_reader != nullptr) {
+      archive_read_close(archive_reader);
+      archive_read_free(archive_reader);
+      archive_reader = nullptr;
+    }
+  };
+
+  archive_read_support_filter_gzip(archive_reader);
+  archive_read_support_filter_xz(archive_reader);
+  archive_read_support_filter_zstd(archive_reader);
+  archive_read_support_filter_none(archive_reader);
+  archive_read_support_format_tar(archive_reader);
+  archive_read_support_format_empty(archive_reader);
+
+  try {
+    if (archive_read_open_filename(archive_reader, archive_path.c_str(),
+                                   65536) != ARCHIVE_OK) {
+      throw std::runtime_error(std::string("Failed to open archive: ") +
+                               archive_error_string(archive_reader));
+    }
+    results = read_files_from_tar_impl(archive_reader, &target_filenames);
+  } catch (...) {
+    close_archive();
+    throw;
   }
 
-  std::ostringstream contents;
-  contents << archive_input.rdbuf();
-  if (!archive_input.good() && !archive_input.eof()) {
-    throw std::runtime_error("Failed to read archive: " + archive_path);
-  }
-
-  return read_files_from_tar_bytes(contents.str(), target_filenames);
+  close_archive();
+  return results;
 }
 
 std::unordered_map<std::string, std::string>
@@ -807,18 +847,168 @@ read_all_files_from_tar_bytes(const std::string &archive_contents) {
 
 std::unordered_map<std::string, std::string>
 read_all_files_from_tar_memory(const std::string &archive_path) {
-  std::ifstream archive_input(archive_path, std::ios::binary);
-  if (!archive_input.is_open()) {
-    throw std::runtime_error("Failed to open archive: " + archive_path);
+  // Stream directly from disk — no full-file buffering.
+  struct archive *archive_reader = archive_read_new();
+  std::unordered_map<std::string, std::string> results;
+
+  auto close_archive = [&]() noexcept {
+    if (archive_reader != nullptr) {
+      archive_read_close(archive_reader);
+      archive_read_free(archive_reader);
+      archive_reader = nullptr;
+    }
+  };
+
+  archive_read_support_filter_gzip(archive_reader);
+  archive_read_support_filter_xz(archive_reader);
+  archive_read_support_filter_zstd(archive_reader);
+  archive_read_support_filter_none(archive_reader);
+  archive_read_support_format_tar(archive_reader);
+  archive_read_support_format_empty(archive_reader);
+
+  try {
+    if (archive_read_open_filename(archive_reader, archive_path.c_str(),
+                                   65536) != ARCHIVE_OK) {
+      throw std::runtime_error(std::string("Failed to open archive: ") +
+                               archive_error_string(archive_reader));
+    }
+    results = read_files_from_tar_impl(archive_reader, nullptr);
+  } catch (...) {
+    close_archive();
+    throw;
   }
 
-  std::ostringstream contents;
-  contents << archive_input.rdbuf();
-  if (!archive_input.good() && !archive_input.eof()) {
-    throw std::runtime_error("Failed to read archive: " + archive_path);
+  close_archive();
+  return results;
+}
+
+std::unordered_map<std::string, std::string> read_files_from_nested_tars(
+    const std::string &archive_path,
+    const std::vector<std::string> &outer_direct_targets,
+    const std::unordered_map<std::string, std::vector<std::string>>
+        &nested_targets) {
+  std::unordered_map<std::string, std::string> results;
+  const std::unordered_set<std::string> direct_set(outer_direct_targets.begin(),
+                                                   outer_direct_targets.end());
+  const size_t total_needed = direct_set.size() + nested_targets.size();
+
+  struct archive *outer = archive_read_new();
+  auto close_outer = [&]() noexcept {
+    if (outer != nullptr) {
+      archive_read_close(outer);
+      archive_read_free(outer);
+      outer = nullptr;
+    }
+  };
+
+  archive_read_support_filter_gzip(outer);
+  archive_read_support_filter_xz(outer);
+  archive_read_support_filter_zstd(outer);
+  archive_read_support_filter_none(outer);
+  archive_read_support_format_tar(outer);
+  archive_read_support_format_empty(outer);
+
+  try {
+    if (archive_read_open_filename(outer, archive_path.c_str(), 65536) !=
+        ARCHIVE_OK) {
+      throw std::runtime_error(std::string("Failed to open archive: ") +
+                               archive_error_string(outer));
+    }
+
+    struct archive_entry *entry = nullptr;
+    size_t found = 0;
+
+    for (;;) {
+      int r = archive_read_next_header(outer, &entry);
+      if (r == ARCHIVE_EOF)
+        break;
+      if (r != ARCHIVE_OK)
+        throw std::runtime_error(std::string("Archive header error: ") +
+                                 archive_error_string(outer));
+
+      const char *pathname = archive_entry_pathname(entry);
+      if (pathname == nullptr) {
+        archive_read_data_skip(outer);
+        continue;
+      }
+
+      std::string entry_name = normalize_archive_entry_name(pathname);
+      if (entry_name.empty()) {
+        archive_read_data_skip(outer);
+        continue;
+      }
+      validate_archive_entry_name(entry_name);
+
+      if (direct_set.count(entry_name)) {
+        std::string file_contents;
+        constexpr size_t kBufSize = 64U * 1024U;
+        std::vector<char> buf(kBufSize);
+        for (;;) {
+          la_ssize_t n = archive_read_data(outer, buf.data(), buf.size());
+          if (n == 0)
+            break;
+          if (n < 0)
+            throw std::runtime_error("Error reading archive entry '" +
+                                     entry_name + "'");
+          file_contents.append(buf.data(), static_cast<size_t>(n));
+        }
+        results.emplace(entry_name, std::move(file_contents));
+        if (++found == total_needed)
+          break;
+        continue;
+      }
+
+      auto nested_it = nested_targets.find(entry_name);
+      if (nested_it == nested_targets.end()) {
+        archive_read_data_skip(outer);
+        continue;
+      }
+
+      // Open the outer entry as a nested tar via callback — no RAM buffer
+      // for the outer entry; the inner reader pulls data 64 KB at a time.
+      struct archive *inner = archive_read_new();
+      auto close_inner = [&]() noexcept {
+        if (inner != nullptr) {
+          archive_read_close(inner);
+          archive_read_free(inner);
+          inner = nullptr;
+        }
+      };
+
+      archive_read_support_filter_none(inner);
+      archive_read_support_format_tar(inner);
+      archive_read_support_format_empty(inner);
+
+      NestedTarReadState state(outer);
+      try {
+        if (archive_read_open(inner, &state, nullptr, nested_tar_read_callback,
+                              nullptr) != ARCHIVE_OK) {
+          throw std::runtime_error(
+              std::string("Failed to open nested archive '") + entry_name +
+              "': " + archive_error_string(inner));
+        }
+        auto inner_results =
+            read_files_from_tar_impl(inner, &nested_it->second);
+        for (auto &[inner_name, inner_content] : inner_results) {
+          results.emplace(entry_name + "/" + inner_name,
+                          std::move(inner_content));
+        }
+      } catch (...) {
+        close_inner();
+        throw;
+      }
+      close_inner();
+
+      if (++found == total_needed)
+        break;
+    }
+  } catch (...) {
+    close_outer();
+    throw;
   }
 
-  return read_all_files_from_tar_bytes(contents.str());
+  close_outer();
+  return results;
 }
 
 } // namespace spring
