@@ -2,6 +2,16 @@
 
 # Changelog
 
+## V1.3.2
+
+### Fixed
+
+- Fixed a segfault in the low-diversity read reorder fast path: `artifact.aligned_shards` is now initialized before the parallel encoding phase so the fast-path (used when average reads per dictionary key is extremely high) no longer dereferences an uninitialized vector. This resolves a crash seen on very low-diversity index-only datasets (e.g. sc-ATAC I1 barcode lanes) while preserving identical output and performance benefits.
+- Fixed a potential use-after-free in the test `String` helper to ensure safe buffer swaps in `tests/support/doctest.h`.
+- Widened loop and counter types and adjusted shift operands in `igzip` inflate and Huffman packing code to avoid narrow-vs-wide comparison warnings in `vendor/indexed_bzip2/isa-l/igzip/igzip_inflate.c` and `vendor/indexed_bzip2/isa-l/igzip/huff_codes.c.
+- Cast multiplication operands to larger types in zlib/igzip utility code to avoid integer-promotion hazards (vendor `cloudflare_zlib` and `indexed_bzip2` patches).
+- Reduced TOCTOU race windows in the vendored `libarchive` POSIX disk writer by attempting directory creation before unlinking and using safer unlink variants where available.
+
 ## V1.3.1
 
 ### Changed

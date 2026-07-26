@@ -16,8 +16,7 @@ jobs:
   comparison-bench:
     name: Build, install, and compare
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository != null && github.event.workflow_run.head_repository.full_name == github.repository) }}
 
     steps:
       - name: Checkout repository
@@ -27,8 +26,13 @@ jobs:
           GIT_CONFIG_KEY_0: init.defaultBranch
           GIT_CONFIG_VALUE_0: main
         with:
-          ref: ${{ github.event_name == 'workflow_run' &&
-            github.event.workflow_run.head_sha || github.sha }}
+          # Only check out the workflow_run head SHA when the originating run
+          # came from the same repository to avoid running untrusted code with
+          # elevated (default-branch) permissions. For other cases fall back
+          # to the current commit (`github.sha`). Also disable credential
+          # persistence so the checked-out code cannot use the GITHUB_TOKEN.
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
 
       - name: Ensure vendored tools are executable
         shell: bash

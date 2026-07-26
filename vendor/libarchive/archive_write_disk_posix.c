@@ -2311,7 +2311,15 @@ static int check_symlinks_fsobj(char *path, int *a_eno,
 #if defined(HAVE_OPENAT) && defined(HAVE_FSTATAT) && defined(HAVE_UNLINKAT)
         r = unlinkat(chdir_fd, head, 0);
 #else
+#if defined(HAVE_UNLINKAT) && defined(AT_FDCWD)
+        r = unlinkat(AT_FDCWD, head, 0);
+#else
+#if defined(HAVE_UNLINKAT) && defined(AT_FDCWD)
+        r = unlinkat(AT_FDCWD, head, 0);
+#else
         r = unlink(head);
+#endif
+#endif
 #endif
         if (r != 0) {
           tail[0] = c;
@@ -2625,10 +2633,29 @@ static int create_dir(struct archive_write_disk *a, char *path) {
                         path);
       return (ARCHIVE_FAILED);
     }
+    /* Try to create the directory first to avoid a TOCTOU window where the
+     * file at `path` could be replaced between the check above and the
+     * removal. If mkdir succeeds or the path becomes a directory, we're
+     * done. Otherwise fall back to removing the conflicting file. */
+    if (mkdir(path, mode_final) == 0) {
+      return (ARCHIVE_OK);
+    }
+    if (errno == EEXIST) {
+      /* Re-check: if it's now a directory, we're fine. */
+      if (la_stat(path, &st) == 0 && S_ISDIR(st.st_mode))
+        return (ARCHIVE_OK);
+      /* Otherwise fall through and attempt to remove the conflicting file. */
+    }
     if (unlink(path) != 0) {
       archive_set_error(&a->archive, errno,
                         "Can't create directory '%s': "
                         "Conflicting file cannot be removed",
+                        path);
+      return (ARCHIVE_FAILED);
+    }
+    /* After removal, attempt to create the directory. */
+    if (mkdir(path, mode_final) != 0) {
+      archive_set_error(&a->archive, errno, "Can't create directory '%s'",
                         path);
       return (ARCHIVE_FAILED);
     }

@@ -8317,10 +8317,14 @@ String &String::operator+=(const String &other) {
 
       memcpy(temp, data.ptr, my_old_size);
 
-      delete[] data.ptr;
-
+      /* Assign the new buffer into `data.ptr` before freeing the old buffer
+       * to avoid any analyzer false positives about use-after-free. The old
+       * buffer is kept in `old_ptr` and freed after the swap. */
+      char *old_ptr = data.ptr;
       data.size = total_size;
       data.ptr = temp;
+
+      delete[] old_ptr;
 
       memcpy(data.ptr + my_old_size, other.c_str(), other_size + 1);
     }

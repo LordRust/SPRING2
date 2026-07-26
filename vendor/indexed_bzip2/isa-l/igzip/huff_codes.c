@@ -1147,8 +1147,8 @@ static void create_code_tables(uint16_t *code_table, uint8_t *code_length_table,
 static void create_packed_len_table(uint32_t *packed_table,
                                     struct huff_code *lit_len_hufftable) {
   int i, count = 0;
-  uint16_t extra_bits;
-  uint16_t extra_bits_count = 0;
+  uint32_t extra_bits;
+  uint32_t extra_bits_count = 0;
 
   uint16_t gain_extra_bits = LEN_EXTRA_BITS_START;
 
@@ -1491,23 +1491,30 @@ uint64_t create_hufftables_icf(struct BitBuf2 *bb,
 
   for (i = 0; i <= 256; i++) {
     combined_table[i] = ll_codes[i].length;
-    compressed_len += ll_codes[i].length * ll_hist[i];
-    static_compressed_len += static_ll_codes[i].length * ll_hist[i];
+    compressed_len +=
+        (unsigned long)ll_codes[i].length * (unsigned long)ll_hist[i];
+    static_compressed_len +=
+        (unsigned long)static_ll_codes[i].length * (unsigned long)ll_hist[i];
   }
 
   for (; i < max_ll_code + 1; i++) {
     combined_table[i] = ll_codes[i].length;
     compressed_len +=
-        (ll_codes[i].length + len_code_extra_bits[i - 257]) * ll_hist[i];
-    static_compressed_len +=
-        (static_ll_codes[i].length + len_code_extra_bits[i - 257]) * ll_hist[i];
+        (unsigned long)(ll_codes[i].length + len_code_extra_bits[i - 257]) *
+        (unsigned long)ll_hist[i];
+    static_compressed_len += (unsigned long)(static_ll_codes[i].length +
+                                             len_code_extra_bits[i - 257]) *
+                             (unsigned long)ll_hist[i];
   }
 
   for (i = 0; i < max_d_code + 1; i++) {
     combined_table[i + max_ll_code + 1] = d_codes[i].length;
-    compressed_len += (d_codes[i].length + dist_code_extra_bits[i]) * d_hist[i];
+    compressed_len +=
+        (unsigned long)(d_codes[i].length + dist_code_extra_bits[i]) *
+        (unsigned long)d_hist[i];
     static_compressed_len +=
-        (static_d_codes[i].length + dist_code_extra_bits[i]) * d_hist[i];
+        (unsigned long)(static_d_codes[i].length + dist_code_extra_bits[i]) *
+        (unsigned long)d_hist[i];
   }
 
   if (static_compressed_len > compressed_len) {

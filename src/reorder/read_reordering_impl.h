@@ -993,6 +993,11 @@ void reorder_fast_low_diversity(bbhashdict *dict, uint16_t *read_lengths,
       "Low-diversity fast path (keys=" + std::to_string(dict[0].numkeys) +
       ", reads=" + std::to_string(rg.numreads) + ")");
 
+  // aligned_shards must be sized before the parallel region accesses it by
+  // thread index.  reorder() normally does this, but the fast path bypasses
+  // reorder(), so we initialise it here.
+  artifact.aligned_shards.assign(static_cast<size_t>(rg.num_thr), {});
+
   // Each read appears in exactly one bucket in dict[0] (or none if too
   // short).  Track placement to accumulate singletons afterwards.
   auto placed = std::make_unique<bool[]>(rg.numreads);

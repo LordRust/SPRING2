@@ -391,8 +391,8 @@ void make_inflate_huff_code_lit_len(
   uint32_t max_length;
   uint16_t first_bits;
   uint32_t code_length;
-  uint16_t long_bits;
-  uint16_t min_increment;
+  uint32_t long_bits;
+  uint32_t min_increment;
   uint32_t code_list_len;
   uint32_t last_length, min_length;
   uint32_t copy_size;
@@ -592,8 +592,8 @@ void make_inflate_huff_code_dist(struct inflate_huff_code_small *const result,
   uint32_t max_length;
   uint16_t first_bits;
   uint32_t code_length;
-  uint16_t long_bits;
-  uint16_t min_increment;
+  uint32_t long_bits;
+  uint32_t min_increment;
   uint32_t code_list[DIST_LEN + 2] = {0};
 
   uint32_t code_list_len;
@@ -809,12 +809,15 @@ static inline void make_inflate_huff_code_header(
 
     for (j = 0; j < temp_code_length; j++) {
       code_length = huff_code_table[temp_code_list[j]].length;
-      long_bits =
-          huff_code_table[temp_code_list[j]].code >> ISAL_DECODE_SHORT_BITS;
+      /* widen long_bits to avoid comparing a narrow uint16_t against larger
+       * shift expressions which can lead to unexpected behavior */
+      uint32_t long_bits32 =
+          (uint32_t)huff_code_table[temp_code_list[j]].code >>
+          ISAL_DECODE_SHORT_BITS;
       min_increment = 1 << (code_length - ISAL_DECODE_SHORT_BITS);
-      for (; long_bits < (1 << (max_length - ISAL_DECODE_SHORT_BITS));
-           long_bits += min_increment) {
-        result->long_code_lookup[long_code_lookup_length + long_bits] =
+      for (; long_bits32 < (1U << (max_length - ISAL_DECODE_SHORT_BITS));
+           long_bits32 += min_increment) {
+        result->long_code_lookup[long_code_lookup_length + long_bits32] =
             temp_code_list[j] | (code_length << SMALL_LONG_CODE_LEN_OFFSET);
       }
       huff_code_table[temp_code_list[j]].code = 0xFFFF;

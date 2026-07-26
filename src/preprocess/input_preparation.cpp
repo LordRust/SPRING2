@@ -817,9 +817,11 @@ preprocess(const std::string &infile_1, const std::string &infile_2,
       // stripped lengths while integrity remains defined on full reads.
       if (apply_cb_strip && stream_index == 0 && reads_in_step > 0) {
         std::string cb_seq_buffer, cb_qual_buffer;
-        cb_seq_buffer.reserve(reads_in_step * cp.encoding.cb_len);
+        cb_seq_buffer.reserve(static_cast<size_t>(reads_in_step) *
+                              static_cast<size_t>(cp.encoding.cb_len));
         if (cp.encoding.preserve_quality) {
-          cb_qual_buffer.reserve(reads_in_step * cp.encoding.cb_len);
+          cb_qual_buffer.reserve(static_cast<size_t>(reads_in_step) *
+                                 static_cast<size_t>(cp.encoding.cb_len));
         }
         for (uint32_t ri = 0; ri < reads_in_step; ++ri) {
           const std::string &read_seq = read_array[ri];
