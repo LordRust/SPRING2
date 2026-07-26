@@ -2311,7 +2311,9 @@ static int check_symlinks_fsobj(char *path, int *a_eno,
 #if defined(HAVE_OPENAT) && defined(HAVE_FSTATAT) && defined(HAVE_UNLINKAT)
         r = unlinkat(chdir_fd, head, 0);
 #else
-        r = unlink(head);
+        /* No fd-based unlink available; the TOCTOU window is unavoidable on
+         * this platform. The fd path above is used whenever possible. */
+        r = unlink(head); // lgtm[cpp/toctou-race-condition]
 #endif
         if (r != 0) {
           tail[0] = c;
@@ -2329,7 +2331,10 @@ static int check_symlinks_fsobj(char *path, int *a_eno,
 #if defined(HAVE_OPENAT) && defined(HAVE_FSTATAT) && defined(HAVE_UNLINKAT)
         r = unlinkat(chdir_fd, head, 0);
 #else
-        r = rmdir(head);
+        /* Removing an intervening symlink; must be unlink(), not rmdir().
+         * No fd-based unlink available; the TOCTOU window is unavoidable on
+         * this platform. The fd path above is used whenever possible. */
+        r = unlink(head); // lgtm[cpp/toctou-race-condition]
 #endif
         if (r != 0) {
           tail[0] = c;
@@ -2639,7 +2644,7 @@ static int create_dir(struct archive_write_disk *a, char *path) {
       /* Otherwise fall through and attempt to remove the conflicting file. */
     }
     /* unlink() the conflicting non-directory entry and retry mkdir(). */
-    if (unlink(path) != 0) {
+    if (unlink(path) != 0) { // lgtm[cpp/toctou-race-condition]
       archive_set_error(&a->archive, errno,
                         "Can't create directory '%s': "
                         "Conflicting file cannot be removed",
