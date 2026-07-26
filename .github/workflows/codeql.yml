@@ -1,0 +1,55 @@
+---
+# CodeQL code-scanning workflow for SPRING2.
+#
+# Uses advanced setup so we can point at .github/codeql/codeql-config.yml,
+# which excludes vendor/ and tests/support/ from analysis.  When this
+# workflow file is present, GitHub disables the automatic default-setup
+# scanner for C/C++ on this repository.
+name: CodeQL
+
+"on":
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    # Run every Monday at 06:00 UTC so weekly scans are not tied to a push.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: Analyze C/C++
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: c-cpp
+          # Excludes vendor/ and tests/support/ from analysis.
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y cmake ninja-build zlib1g-dev libbz2-dev
+
+      - name: Build (autobuild fallback)
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:c-cpp"

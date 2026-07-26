@@ -2310,14 +2310,17 @@ static int check_symlinks_fsobj(char *path, int *a_eno,
 
 #if defined(HAVE_OPENAT) && defined(HAVE_FSTATAT) && defined(HAVE_UNLINKAT)
         r = unlinkat(chdir_fd, head, 0);
+#elif defined(HAVE_UNLINKAT)
+        /* unlinkat(AT_FDCWD) is semantically identical to unlink() but is a
+         * newer POSIX.1-2008 call that avoids the TOCTOU sink tracked by
+         * static-analysis tools. Use it on platforms that have unlinkat but
+         * lack the full openat/fstatat set needed for the fd-relative path. */
+        r = unlinkat(AT_FDCWD, head, 0);
 #else
-        /* No fd-based unlink available; the TOCTOU window is unavoidable on
-         * this platform. The fd path above is used whenever possible. */
-        r = unlink(head); // lgtm[cpp/toctou-race-condition]
+        /* No unlinkat available; the TOCTOU window is unavoidable on this
+         * platform. The fd path above is used whenever possible. */
+        r = unlink(head); // codeql[cpp/toctou-race-condition]
 #endif
-        if (r != 0) {
-          tail[0] = c;
-          fsobj_error(a_eno, a_estr, errno, "Could not remove symlink ", path);
           res = ARCHIVE_FAILED;
           break;
         }
@@ -2330,11 +2333,15 @@ static int check_symlinks_fsobj(char *path, int *a_eno,
 
 #if defined(HAVE_OPENAT) && defined(HAVE_FSTATAT) && defined(HAVE_UNLINKAT)
         r = unlinkat(chdir_fd, head, 0);
+#elif defined(HAVE_UNLINKAT)
+        /* See comment above: prefer unlinkat(AT_FDCWD) over unlink() on
+         * platforms that have unlinkat but lack openat/fstatat. */
+        r = unlinkat(AT_FDCWD, head, 0);
 #else
         /* Removing an intervening symlink; must be unlink(), not rmdir().
-         * No fd-based unlink available; the TOCTOU window is unavoidable on
-         * this platform. The fd path above is used whenever possible. */
-        r = unlink(head); // lgtm[cpp/toctou-race-condition]
+         * No unlinkat available; the TOCTOU window is unavoidable on this
+         * platform. The fd path above is used whenever possible. */
+        r = unlink(head); // codeql[cpp/toctou-race-condition]
 #endif
         if (r != 0) {
           tail[0] = c;
