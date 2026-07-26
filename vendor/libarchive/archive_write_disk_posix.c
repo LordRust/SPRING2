@@ -2329,7 +2329,7 @@ static int check_symlinks_fsobj(char *path, int *a_eno,
 #if defined(HAVE_OPENAT) && defined(HAVE_FSTATAT) && defined(HAVE_UNLINKAT)
         r = unlinkat(chdir_fd, head, 0);
 #else
-        r = unlink(head);
+        r = rmdir(head);
 #endif
         if (r != 0) {
           tail[0] = c;
