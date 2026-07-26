@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <sys/stat.h>
 #include <system_error>
@@ -771,39 +772,18 @@ read_files_from_tar_bytes(const std::string &archive_contents,
 std::unordered_map<std::string, std::string>
 read_files_from_tar_memory(const std::string &archive_path,
                            const std::vector<std::string> &target_filenames) {
-  // Stream directly from disk — no full-file buffering.
-  struct archive *archive_reader = archive_read_new();
-  std::unordered_map<std::string, std::string> results;
-
-  auto close_archive = [&]() noexcept {
-    if (archive_reader != nullptr) {
-      archive_read_close(archive_reader);
-      archive_read_free(archive_reader);
-      archive_reader = nullptr;
-    }
-  };
-
-  archive_read_support_filter_gzip(archive_reader);
-  archive_read_support_filter_xz(archive_reader);
-  archive_read_support_filter_zstd(archive_reader);
-  archive_read_support_filter_none(archive_reader);
-  archive_read_support_format_tar(archive_reader);
-  archive_read_support_format_empty(archive_reader);
-
-  try {
-    if (archive_read_open_filename(archive_reader, archive_path.c_str(),
-                                   65536) != ARCHIVE_OK) {
-      throw std::runtime_error(std::string("Failed to open archive: ") +
-                               archive_error_string(archive_reader));
-    }
-    results = read_files_from_tar_impl(archive_reader, &target_filenames);
-  } catch (...) {
-    close_archive();
-    throw;
+  std::ifstream archive_input(archive_path, std::ios::binary);
+  if (!archive_input.is_open()) {
+    throw std::runtime_error("Failed to open archive: " + archive_path);
   }
 
-  close_archive();
-  return results;
+  std::ostringstream contents;
+  contents << archive_input.rdbuf();
+  if (!archive_input.good() && !archive_input.eof()) {
+    throw std::runtime_error("Failed to read archive: " + archive_path);
+  }
+
+  return read_files_from_tar_bytes(contents.str(), target_filenames);
 }
 
 std::unordered_map<std::string, std::string>
@@ -847,39 +827,18 @@ read_all_files_from_tar_bytes(const std::string &archive_contents) {
 
 std::unordered_map<std::string, std::string>
 read_all_files_from_tar_memory(const std::string &archive_path) {
-  // Stream directly from disk — no full-file buffering.
-  struct archive *archive_reader = archive_read_new();
-  std::unordered_map<std::string, std::string> results;
-
-  auto close_archive = [&]() noexcept {
-    if (archive_reader != nullptr) {
-      archive_read_close(archive_reader);
-      archive_read_free(archive_reader);
-      archive_reader = nullptr;
-    }
-  };
-
-  archive_read_support_filter_gzip(archive_reader);
-  archive_read_support_filter_xz(archive_reader);
-  archive_read_support_filter_zstd(archive_reader);
-  archive_read_support_filter_none(archive_reader);
-  archive_read_support_format_tar(archive_reader);
-  archive_read_support_format_empty(archive_reader);
-
-  try {
-    if (archive_read_open_filename(archive_reader, archive_path.c_str(),
-                                   65536) != ARCHIVE_OK) {
-      throw std::runtime_error(std::string("Failed to open archive: ") +
-                               archive_error_string(archive_reader));
-    }
-    results = read_files_from_tar_impl(archive_reader, nullptr);
-  } catch (...) {
-    close_archive();
-    throw;
+  std::ifstream archive_input(archive_path, std::ios::binary);
+  if (!archive_input.is_open()) {
+    throw std::runtime_error("Failed to open archive: " + archive_path);
   }
 
-  close_archive();
-  return results;
+  std::ostringstream contents;
+  contents << archive_input.rdbuf();
+  if (!archive_input.good() && !archive_input.eof()) {
+    throw std::runtime_error("Failed to read archive: " + archive_path);
+  }
+
+  return read_all_files_from_tar_bytes(contents.str());
 }
 
 std::unordered_map<std::string, std::string> read_files_from_nested_tars(

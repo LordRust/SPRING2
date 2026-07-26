@@ -97,8 +97,12 @@ void preview_single(const std::string &archive_path, bool audit_only) {
     return;
   }
 
-  // Request only cp.bin; skips all large data streams (seq, quality, etc.)
-  auto contents = read_files_from_tar_memory(archive_path, {"cp.bin"});
+  // Stream cp.bin directly from disk without buffering the entire archive.
+  // read_files_from_nested_tars with empty nested_targets acts as a
+  // lightweight single-file extractor backed by archive_read_open_filename.
+  const auto cp_map = read_files_from_nested_tars(archive_path, {"cp.bin"}, {});
+  // Re-use the same map type so the rest of the function is unchanged.
+  auto contents = cp_map;
 
   if (!contents.contains("cp.bin")) {
     throw std::runtime_error("Could not find cp.bin in the archive.");
