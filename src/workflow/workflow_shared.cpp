@@ -114,9 +114,16 @@ bool is_supported_archive_decompression_version(
 
 bool looks_like_legacy_spring_archive(
     const decompression_archive_artifact &artifact) {
-  return artifact.contains("read_1.0") ||
-         artifact.contains("read_seq.bin.0.bsc") ||
-         artifact.contains("read_seq.bin.0.tail");
+  if (artifact.contains("read_1.0") ||
+      artifact.contains("read_seq.bin.0.bsc") ||
+      artifact.contains("read_seq.bin.0.tail")) {
+    return true;
+  }
+  // When only cp.bin was selectively loaded (e.g. for --preview), detect
+  // legacy archives by the fixed-size legacy cp.bin format.
+  const auto it = artifact.files.find("cp.bin");
+  return it != artifact.files.end() &&
+         it->second.size() == kLegacySpringCompressionParamsSize;
 }
 
 uint8_t read_legacy_bool_byte(const std::string &bytes, size_t offset,

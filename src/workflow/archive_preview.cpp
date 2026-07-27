@@ -97,7 +97,7 @@ void preview_single(const std::string &archive_path, bool audit_only) {
     return;
   }
 
-  auto contents = read_all_files_from_tar_memory(archive_path);
+  auto contents = read_files_from_tar_memory(archive_path, {"cp.bin"});
 
   if (!contents.contains("cp.bin")) {
     throw std::runtime_error("Could not find cp.bin in the archive.");

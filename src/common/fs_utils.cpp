@@ -10,7 +10,6 @@
 #include <fcntl.h>
 #include <filesystem>
 #include <fstream>
-#include <sstream>
 #include <string>
 #include <sys/stat.h>
 #include <system_error>
@@ -362,6 +361,17 @@ la_ssize_t nested_tar_read_callback(struct archive * /*inner*/,
   return n; // 0 = EOF, <0 = error
 }
 
+// Reads and discards all remaining data for the current archive entry.
+// Used instead of archive_read_data_skip because archive_read_data_skip is
+// implemented via lseek/seek on file-backed archives and can crash on certain
+// platforms (Windows ARM64) and with certain archive types (legacy spring v1
+// archives opened via archive_read_open_memory with large preceding entries).
+void drain_archive_entry(struct archive *a) {
+  char buf[65536];
+  while (archive_read_data(a, buf, sizeof(buf)) > 0) {
+  }
+}
+
 std::unordered_map<std::string, std::string>
 read_files_from_tar_impl(struct archive *archive_reader,
                          const std::vector<std::string> *target_filenames) {
@@ -419,9 +429,6 @@ read_files_from_tar_impl(struct archive *archive_reader,
     }
 
     results.emplace(entry_name, std::move(contents));
-    if (!read_all && results.size() == targets.size()) {
-      break;
-    }
   }
 
   return results;
@@ -887,13 +894,13 @@ std::unordered_map<std::string, std::string> read_files_from_nested_tars(
 
       const char *pathname = archive_entry_pathname(entry);
       if (pathname == nullptr) {
-        archive_read_data_skip(outer);
+        drain_archive_entry(outer);
         continue;
       }
 
       std::string entry_name = normalize_archive_entry_name(pathname);
       if (entry_name.empty()) {
-        archive_read_data_skip(outer);
+        drain_archive_entry(outer);
         continue;
       }
       validate_archive_entry_name(entry_name);
@@ -919,7 +926,7 @@ std::unordered_map<std::string, std::string> read_files_from_nested_tars(
 
       auto nested_it = nested_targets.find(entry_name);
       if (nested_it == nested_targets.end()) {
-        archive_read_data_skip(outer);
+        drain_archive_entry(outer);
         continue;
       }
 
