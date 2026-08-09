@@ -652,7 +652,17 @@ void compress_standard(const string_list &input_paths,
 
     std::unordered_map<std::string, std::string> archive_members;
     if (use_disk_workspace) {
+      const auto stage_start = clock_type::now();
+      SPRING_LOG_INFO("Staging " +
+                      std::to_string(preprocess_output.archive_members.size()) +
+                      " preprocess archive members to work directory...");
       stage_archive_members(preprocess_output.archive_members);
+      SPRING_LOG_INFO(
+          "Staging done. Time: " +
+          std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
+                             clock_type::now() - stage_start)
+                             .count()) +
+          " s");
     } else {
       archive_members = std::move(preprocess_output.archive_members);
     }

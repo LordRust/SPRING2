@@ -277,4 +277,85 @@ TEST_CASE(
   fs::remove_all(test_dir);
 }
 
+// ---------------------------------------------------------------------------
+// Reorder stage logging
+//
+// Three checks added for V1.3.4:
+//   1. The INFO logs that bracket the OMP parallel region ("Reordering reads"
+//      and "Reorder pass time:") appear in verbose output — proving the log
+//      infrastructure is not silent.
+//   2. The maxshift-cap INFO log fires for reads longer than 100 bp.
+//   3. The preprocess archive-member staging log fires on disk-path runs.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Reorder stage info logs appear in verbose compression") {
+  const std::string test_dir = "reorder_log_test_tmp";
+  const std::string input = sample_asset_path("test_1.fastq");
+  const std::string archive = test_dir + "/out.sp";
+  const std::string log = test_dir + "/out.log";
+
+  REQUIRE(fs::exists(input));
+  fs::create_directories(test_dir);
+
+  const std::string cmd = std::string(SPRING2_EXECUTABLE) + " -c --R1 " +
+                          input + " -o " + archive +
+                          " -t 1 -m 1024 -v info > " + log + " 2>&1";
+  REQUIRE(std::system(cmd.c_str()) == 0);
+
+  const std::string log_contents = read_file_binary(log);
+  // "Reordering reads" fires before the OMP region; "Reorder pass time:"
+  // fires after it.  Both must appear to prove the log path is active.
+  CHECK(log_contents.find("Reordering reads") != std::string::npos);
+  CHECK(log_contents.find("Reorder pass time:") != std::string::npos);
+  CHECK(log_contents.find("Dictionary stage time:") != std::string::npos);
+
+  fs::remove_all(test_dir);
+}
+
+TEST_CASE("Maxshift cap log fires for reads longer than 100 bp") {
+  const std::string test_dir = "maxshift_cap_log_test_tmp";
+  const std::string input = test_dir + "/long_reads.fastq";
+  const std::string archive = test_dir + "/out.sp";
+  const std::string log = test_dir + "/out.log";
+
+  fs::create_directories(test_dir);
+  // 120 bp reads: uncapped maxshift would be 60 > 50, so the cap fires.
+  create_custom_fastq(input, 200, false, false, 120);
+
+  const std::string cmd = std::string(SPRING2_EXECUTABLE) + " -c --R1 " +
+                          input + " -o " + archive +
+                          " -t 1 -m 1024 -v info > " + log + " 2>&1";
+  REQUIRE(std::system(cmd.c_str()) == 0);
+
+  const std::string log_contents = read_file_binary(log);
+  CHECK(log_contents.find("Reorder maxshift capped at 50") !=
+        std::string::npos);
+
+  fs::remove_all(test_dir);
+}
+
+TEST_CASE(
+    "Disk-path staging log appears when preprocessing members are staged") {
+  const std::string test_dir = "staging_log_test_tmp";
+  const std::string input = sample_asset_path("test_1.fastq");
+  const std::string archive = test_dir + "/out.sp";
+  const std::string log = test_dir + "/out.log";
+
+  REQUIRE(fs::exists(input));
+  fs::create_directories(test_dir);
+
+  const std::string cmd = std::string(SPRING2_EXECUTABLE) + " -c --R1 " +
+                          input + " -o " + archive +
+                          " -t 1 -m 0.00001 -v info > " + log + " 2>&1";
+  REQUIRE(std::system(cmd.c_str()) == 0);
+
+  const std::string log_contents = read_file_binary(log);
+  CHECK(log_contents.find("preprocess archive members to work directory") !=
+        std::string::npos);
+  CHECK(log_contents.find("Staging done.") != std::string::npos);
+  CHECK_FALSE(fs::exists(archive + ".work-tmp"));
+
+  fs::remove_all(test_dir);
+}
+
 } // namespace

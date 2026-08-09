@@ -509,11 +509,14 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
   auto *const remaining_read_lock_data = remaining_read_lock.data();
   auto *const unmatched_counts_data = unmatched_counts.data();
   auto *const singleton_order_buffers_data = singleton_order_buffers.data();
+  auto reorder_pass_start = std::chrono::steady_clock::now();
+  auto last_progress_log_ts = reorder_pass_start;
 #pragma omp parallel default(none) shared(                                     \
         rg, read, read_lengths, dict, remaining_reads, artifact, first_read,   \
             deterministic_mode, index_masks_data, length_masks_data,           \
             dict_locks_data, read_locks_data, remaining_read_lock_data,        \
-            unmatched_counts_data, singleton_order_buffers_data)
+            unmatched_counts_data, singleton_order_buffers_data,               \
+            reorder_pass_start, last_progress_log_ts)
   {
     bool done = false;
     int thread_id = omp_get_thread_num();
@@ -620,6 +623,18 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
             // This is a rough estimate but avoids atomic overhead in the hot
             // loop
             progress->update(1.0f - (float)remaining_read_scan / rg.numreads);
+          }
+          const auto now = std::chrono::steady_clock::now();
+          if (now - last_progress_log_ts >= std::chrono::seconds(60)) {
+            last_progress_log_ts = now;
+            const auto elapsed_s =
+                std::chrono::duration_cast<std::chrono::seconds>(
+                    now - reorder_pass_start)
+                    .count();
+            const auto approx_placed = std::min(first_read, rg.numreads);
+            SPRING_LOG_INFO("Reorder pass: " + std::to_string(approx_placed) +
+                            "/" + std::to_string(rg.numreads) + " seeds, " +
+                            std::to_string(elapsed_s) + " s elapsed");
           }
         }
         if (unmatched_reads_in_window > STOP_CRITERIA_REORDER * 1000000) {
@@ -1071,7 +1086,15 @@ reorder_encoder_artifact reorder_main(reorder_input_artifact input_artifact,
   rg.max_readlen = cp.read_info.max_readlen;
   rg.num_thr = cp.encoding.num_thr;
   rg.paired_end = cp.encoding.paired_end;
-  rg.maxshift = rg.max_readlen / 2;
+  // Cap maxshift so 150+ bp datasets don't take proportionally longer.
+  static constexpr int kMaxReorderShift = 50;
+  rg.maxshift = std::min(rg.max_readlen / 2, kMaxReorderShift);
+  if (rg.max_readlen / 2 > kMaxReorderShift) {
+    SPRING_LOG_INFO("Reorder maxshift capped at " +
+                    std::to_string(kMaxReorderShift) +
+                    " (uncapped: " + std::to_string(rg.max_readlen / 2) +
+                    " for " + std::to_string(rg.max_readlen) + " bp reads)");
+  }
   std::array<bbhashdict, NUM_DICT_REORDER> dict;
   initialize_reorder_dict_ranges(dict, rg.max_readlen);
 

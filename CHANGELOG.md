@@ -2,6 +2,14 @@
 
 # Changelog
 
+## V1.3.4
+
+### Changed
+
+- Capped the reorder `maxshift` at 50 (was `readlen / 2`) for reads longer than 100 bp. For 150 bp reads this reduces maxshift from 75 to 50, cutting per-read shift iterations by ~33%; for 200 bp reads the saving is 50%. Reads ≤ 100 bp are unaffected. A log line is emitted when the cap applies.
+- Added periodic `SPRING_LOG_INFO` progress messages inside the reorder OMP parallel loop (one message per 60 s from thread 0, reporting seeds claimed and elapsed time) so long-running cluster jobs produce visible log output instead of going silent for hours.
+- Added timing and count logging around the `stage_archive_members` call that writes preprocessing archive members to the work directory, making previously invisible staging time observable in the log.
+
 ## V1.3.3
 
 ### Fixed
