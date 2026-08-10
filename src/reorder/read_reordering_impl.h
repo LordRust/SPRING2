@@ -18,6 +18,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <list>
@@ -381,6 +383,29 @@ void readDnaFileChunk(std::bitset<bitset_size> *read, uint16_t *read_lengths,
                 input_artifact.clean_read_streams[1].data() + cursor2, nbytes);
     cursor2 += nbytes;
   }
+}
+
+// Reads exactly the number of reads specified by rg.numreads_array from FILE*
+// handles positioned at the start of the next unread bytes (no seeking needed).
+template <size_t bitset_size>
+void readDnaFileChunkFromFile(std::bitset<bitset_size> *read,
+                              uint16_t *read_lengths, std::FILE *file0,
+                              std::FILE *file1,
+                              const reorder_global<bitset_size> &rg) {
+  auto read_from = [](std::FILE *f, std::bitset<bitset_size> *reads,
+                      uint16_t *lens, uint32_t count) {
+    for (uint32_t i = 0; i < count; i++) {
+      if (std::fread(&lens[i], sizeof(uint16_t), 1, f) != 1)
+        throw std::runtime_error("Truncated spilled stream at read length.");
+      uint16_t nbytes =
+          static_cast<uint16_t>((static_cast<uint32_t>(lens[i]) + 4 - 1) / 4);
+      if (std::fread(byte_ptr(&reads[i]), nbytes, 1, f) != 1)
+        throw std::runtime_error("Truncated spilled stream at read payload.");
+    }
+  };
+  read_from(file0, read, read_lengths, rg.numreads_array[0]);
+  read_from(file1, read + rg.numreads_array[0],
+            read_lengths + rg.numreads_array[0], rg.numreads_array[1]);
 }
 
 namespace detail {
@@ -1173,7 +1198,8 @@ reorder_encoder_artifact reorder_main(reorder_input_artifact input_artifact,
     const char *env = std::getenv("SPRING2_REORDER_CHUNK_SIZE");
     if (env) {
       const long v = std::strtol(env, nullptr, 10);
-      if (v > 0) return static_cast<uint32_t>(v);
+      if (v > 0)
+        return static_cast<uint32_t>(v);
     }
     return kDefaultReorderChunkReads;
   }();
@@ -1187,6 +1213,75 @@ reorder_encoder_artifact reorder_main(reorder_input_artifact input_artifact,
                     " reads into " + std::to_string(num_chunks) +
                     " chunks of up to " + std::to_string(kReorderChunkReads) +
                     " reads to reduce working-set pressure");
+  }
+
+  // In disk_path mode the reorder artifact directory is passed as spill_dir.
+  // Spilling streams + singleton sequences per chunk prevents accumulating
+  // ~29 GB (streams) + ~7 GB/chunk (singleton_read_bytes) in RAM.
+  const std::string &spill_dir = cp.encoding.reorder_spill_dir;
+  const bool use_spill = use_chunked && !spill_dir.empty();
+
+  // Helpers for writing output files in spill mode (same layout as
+  // spill_reorder_encoder_artifact so load_reorder_encoder_artifact can read
+  // them without any additional conversion).
+  auto spill_write = [&spill_dir](const std::string &name,
+                                  const std::string &data) {
+    namespace fs = std::filesystem;
+    const fs::path p = fs::path(spill_dir) / name;
+    fs::create_directories(p.parent_path());
+    std::ofstream f(p, std::ios::binary | std::ios::trunc);
+    if (!f)
+      throw std::runtime_error("Cannot write spill file: " + p.string());
+    if (!data.empty())
+      f.write(data.data(), static_cast<std::streamsize>(data.size()));
+  };
+
+  auto spill_append = [&spill_dir](const std::string &name,
+                                   const std::string &data) {
+    if (data.empty())
+      return;
+    const std::filesystem::path p = std::filesystem::path(spill_dir) / name;
+    std::ofstream f(p, std::ios::binary | std::ios::app);
+    if (!f)
+      throw std::runtime_error("Cannot append to spill file: " + p.string());
+    f.write(data.data(), static_cast<std::streamsize>(data.size()));
+  };
+
+  // FILE* handles for reading spilled streams; non-null only in use_spill mode.
+  std::FILE *stream_file0 = nullptr;
+  std::FILE *stream_file1 = nullptr;
+
+  if (use_spill) {
+    namespace fs = std::filesystem;
+    fs::create_directories(spill_dir);
+    const std::string s0 = spill_dir + "/chunk_stream_0.bin";
+    const std::string s1 = spill_dir + "/chunk_stream_1.bin";
+    {
+      auto write_stream = [](const std::string &path, const std::string &data) {
+        std::ofstream f(path, std::ios::binary | std::ios::trunc);
+        if (!f)
+          throw std::runtime_error("Cannot spill read stream: " + path);
+        if (!data.empty())
+          f.write(data.data(), static_cast<std::streamsize>(data.size()));
+      };
+      write_stream(s0, input_artifact.clean_read_streams[0]);
+      std::string().swap(input_artifact.clean_read_streams[0]);
+      SPRING_LOG_INFO("Spilled read stream 0 (" +
+                      std::to_string(fs::file_size(s0) >> 20) +
+                      " MiB) to disk; freed from RAM");
+      write_stream(s1, input_artifact.clean_read_streams[1]);
+      std::string().swap(input_artifact.clean_read_streams[1]);
+      SPRING_LOG_INFO("Spilled read stream 1 (" +
+                      std::to_string(fs::file_size(s1) >> 20) +
+                      " MiB) to disk; freed from RAM");
+    }
+    stream_file0 = std::fopen(s0.c_str(), "rb");
+    stream_file1 = std::fopen(s1.c_str(), "rb");
+    if (!stream_file0 || !stream_file1)
+      throw std::runtime_error(
+          "Failed to open spilled stream files for reading.");
+    // Truncate so append mode starts fresh on re-runs.
+    spill_write("singleton_read_bytes.bin", "");
   }
 
   reorder_encoder_artifact artifact;
@@ -1227,7 +1322,11 @@ reorder_encoder_artifact reorder_main(reorder_input_artifact input_artifact,
     std::vector<std::bitset<bitset_size>> chunk_read(rg.numreads);
     std::vector<uint16_t> chunk_read_lengths(rg.numreads);
 
-    if (use_chunked) {
+    if (use_spill) {
+      readDnaFileChunkFromFile<bitset_size>(chunk_read.data(),
+                                            chunk_read_lengths.data(),
+                                            stream_file0, stream_file1, rg);
+    } else if (use_chunked) {
       readDnaFileChunk<bitset_size>(chunk_read.data(),
                                     chunk_read_lengths.data(), input_artifact,
                                     cursor1, cursor2, rg);
@@ -1287,7 +1386,6 @@ reorder_encoder_artifact reorder_main(reorder_input_artifact input_artifact,
                     format_seconds(write_stage_end - write_stage_start) + " s");
 
     // Merge chunk output into the combined artifact.
-    // read_bytes and sequence metadata are concatenated directly.
     // order_bytes (local chunk read IDs) are shifted by global_offset so
     // quality/id reordering can map them back to the original read stream.
     for (int tid = 0; tid < rg.num_thr; ++tid) {
@@ -1305,8 +1403,16 @@ reorder_encoder_artifact reorder_main(reorder_input_artifact input_artifact,
         detail::append_binary(dst.order_bytes, id);
       }
     }
-    artifact.singleton_read_bytes += chunk_artifact.singleton_read_bytes;
     artifact.singleton_count += chunk_artifact.singleton_count;
+    if (use_spill) {
+      // Flush singleton sequences to disk immediately (~7.4 GB per chunk for
+      // sc-ATAC datasets) to keep RAM flat across all chunks.
+      spill_append("singleton_read_bytes.bin",
+                   chunk_artifact.singleton_read_bytes);
+      std::string().swap(chunk_artifact.singleton_read_bytes);
+    } else {
+      artifact.singleton_read_bytes += chunk_artifact.singleton_read_bytes;
+    }
     for (size_t k = 0; k < chunk_artifact.singleton_order_bytes.size();
          k += sizeof(uint32_t)) {
       uint32_t id;
@@ -1320,6 +1426,53 @@ reorder_encoder_artifact reorder_main(reorder_input_artifact input_artifact,
     done1 += chunk1;
     global_offset += rg.numreads;
     ++chunk_idx;
+  }
+
+  if (use_spill) {
+    if (stream_file0) {
+      std::fclose(stream_file0);
+    }
+    if (stream_file1) {
+      std::fclose(stream_file1);
+    }
+    // Remove the temp stream files now that all chunks are read.
+    std::error_code ec;
+    std::filesystem::remove(
+        std::filesystem::path(spill_dir) / "chunk_stream_0.bin", ec);
+    std::filesystem::remove(
+        std::filesystem::path(spill_dir) / "chunk_stream_1.bin", ec);
+
+    // Write all remaining in-memory buffers to their spill files.
+    // This completes the same layout that spill_reorder_encoder_artifact
+    // would produce; the workflow can then load via
+    // load_reorder_encoder_artifact.
+    spill_write("meta/shard_count.txt", std::to_string(rg.num_thr));
+    spill_write("meta/singleton_count.txt",
+                std::to_string(artifact.singleton_count));
+
+    artifact.n_read_bytes = std::move(input_artifact.n_read_bytes);
+    artifact.n_read_order_bytes = std::move(input_artifact.n_read_order_bytes);
+    spill_write("singleton_order_bytes.bin", artifact.singleton_order_bytes);
+    spill_write("n_read_bytes.bin", artifact.n_read_bytes);
+    spill_write("n_read_order_bytes.bin", artifact.n_read_order_bytes);
+
+    for (int tid = 0; tid < rg.num_thr; ++tid) {
+      const std::string prefix = "aligned_shards/" + std::to_string(tid) + "/";
+      const auto &shard = artifact.aligned_shards[static_cast<size_t>(tid)];
+      spill_write(prefix + "read_bytes.bin", shard.read_bytes);
+      spill_write(prefix + "orientation_bytes.bin", shard.orientation_bytes);
+      spill_write(prefix + "flag_bytes.bin", shard.flag_bytes);
+      spill_write(prefix + "position_bytes.bin", shard.position_bytes);
+      spill_write(prefix + "order_bytes.bin", shard.order_bytes);
+      spill_write(prefix + "read_length_bytes.bin", shard.read_length_bytes);
+    }
+
+    // Signal to the workflow that the full artifact is already on disk.
+    artifact.singleton_read_file =
+        (std::filesystem::path(spill_dir) / "singleton_read_bytes.bin")
+            .string();
+    SPRING_LOG_INFO("Done! Reorder artifact pre-spilled to " + spill_dir);
+    return artifact;
   }
 
   if (use_chunked) {

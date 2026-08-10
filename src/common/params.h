@@ -102,6 +102,12 @@ struct compression_params {
     // directly to this directory instead of accumulating in RAM.  The
     // per-thread files are stream-merged into final files after the OMP loop.
     std::string encoder_metadata_spill_dir;
+    // disk_path memory reduction: when non-empty, reorder_main (chunked mode)
+    // spills clean_read_streams and per-chunk singleton_read_bytes directly to
+    // this directory, avoiding the ~29 GB stream + ~7 GB/chunk singleton RAM.
+    // Must point at reorder_artifact_dir; the workflow detects pre-spilled
+    // artifacts and skips the duplicate spill_reorder_encoder_artifact call.
+    std::string reorder_spill_dir;
   } encoding;
 
   struct QualityConfig {

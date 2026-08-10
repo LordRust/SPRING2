@@ -778,13 +778,25 @@ void compress_standard(const string_list &input_paths,
         }
       }
 
+      if (use_disk_workspace) {
+        // Chunked reorder will write streams and per-chunk singleton sequences
+        // directly to reorder_artifact_dir to avoid accumulating ~29 GB of
+        // stream data + ~7 GB/chunk of singleton bytes in RAM.
+        cp.encoding.reorder_spill_dir = reorder_artifact_dir.string();
+      }
+
       run_timed_step("Reordering ...", "Reordering", [&] {
         progress.set_stage("Reordering", 0.25F, 0.50F);
         reorder_artifact =
             call_reorder(std::move(preprocess_output.reorder_inputs), cp);
         if (use_disk_workspace) {
-          spill_reorder_encoder_artifact(reorder_artifact,
-                                         reorder_artifact_dir.string());
+          // reorder_main pre-spills singleton_read_bytes when use_chunked &&
+          // reorder_spill_dir is set, so spill_reorder_encoder_artifact (which
+          // calls reset_directory and would wipe those files) must be skipped.
+          if (reorder_artifact.singleton_read_file.empty()) {
+            spill_reorder_encoder_artifact(reorder_artifact,
+                                           reorder_artifact_dir.string());
+          }
           release_reorder_encoder_artifact(reorder_artifact);
         }
       });
