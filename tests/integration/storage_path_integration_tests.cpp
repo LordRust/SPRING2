@@ -330,6 +330,8 @@ TEST_CASE("Maxshift cap log fires for reads longer than 100 bp") {
   const std::string log_contents = read_file_binary(log);
   CHECK(log_contents.find("Reorder maxshift capped at 50") !=
         std::string::npos);
+  // Shift step = 2 must also fire for reads > 100 bp.
+  CHECK(log_contents.find("Reorder shift step: 2") != std::string::npos);
 
   fs::remove_all(test_dir);
 }

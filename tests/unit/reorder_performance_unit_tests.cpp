@@ -1,5 +1,6 @@
 // Unit tests for reorder performance improvements:
 //   maxshift cap - reads > 100 bp are capped at kMaxReorderShift (50).
+//   shift step   - reads > 100 bp use shift_step = 2 (halves inner iterations).
 //   progress log timing - the 60-second wall-clock interval condition.
 
 #include "../support/doctest.h"
@@ -9,13 +10,25 @@
 
 namespace {
 
-// Replicates the constant and formula from reorder_main in
+// Replicates the constants and formulas from reorder_main in
 // read_reordering_impl.h so the tests validate the arithmetic without
 // creating a build dependency on that translation unit.
 constexpr int kMaxReorderShift = 50;
+constexpr int kReorderShiftStep = 2;
 
 int compute_maxshift(int max_readlen) {
   return std::min(max_readlen / 2, kMaxReorderShift);
+}
+
+int compute_shift_step(int max_readlen) {
+  return (max_readlen > 100) ? kReorderShiftStep : 1;
+}
+
+// Returns number of shift values tried (0, step, 2*step, ...) before maxshift.
+int compute_shift_iterations(int max_readlen) {
+  const int maxshift = compute_maxshift(max_readlen);
+  const int step = compute_shift_step(max_readlen);
+  return maxshift / step + (maxshift % step != 0 ? 1 : 0);
 }
 
 } // namespace
@@ -57,6 +70,45 @@ TEST_CASE("maxshift cap reduces iteration count for long reads") {
   const int uncapped_200 = 200 / 2;             // 100
   const int capped_200 = compute_maxshift(200); // 50
   CHECK(uncapped_200 - capped_200 == 50);       // 50% reduction
+}
+
+// ---------------------------------------------------------------------------
+// shift step formula
+// ---------------------------------------------------------------------------
+
+TEST_CASE("shift step is 1 for reads at or below 100 bp") {
+  CHECK(compute_shift_step(50) == 1);
+  CHECK(compute_shift_step(80) == 1);
+  CHECK(compute_shift_step(100) == 1);
+}
+
+TEST_CASE("shift step is 2 for reads above 100 bp") {
+  CHECK(compute_shift_step(101) == 2);
+  CHECK(compute_shift_step(120) == 2);
+  CHECK(compute_shift_step(151) == 2);
+  CHECK(compute_shift_step(200) == 2);
+  CHECK(compute_shift_step(300) == 2);
+}
+
+TEST_CASE("shift step constant equals 2") { CHECK(kReorderShiftStep == 2); }
+
+TEST_CASE("shift step halves iteration count for long reads") {
+  // 151 bp: maxshift=50, step=2 → 25 iterations (shift 0,2,4,...,48).
+  CHECK(compute_shift_iterations(151) == 25);
+  // 200 bp: maxshift=50, step=2 → 25 iterations.
+  CHECK(compute_shift_iterations(200) == 25);
+  // 100 bp: maxshift=50, step=1 → 50 iterations (shift 0,1,...,49).
+  CHECK(compute_shift_iterations(100) == 50);
+  // 80 bp: maxshift=40, step=1 → 40 iterations.
+  CHECK(compute_shift_iterations(80) == 40);
+}
+
+TEST_CASE("shift step does not apply below the 100 bp threshold") {
+  // The step=2 optimization must not activate for short reads where the
+  // 1 bp alignment granularity is more important.
+  CHECK(compute_shift_step(99) == 1);
+  CHECK(compute_shift_step(100) == 1);
+  CHECK(compute_shift_step(101) == 2);
 }
 
 // ---------------------------------------------------------------------------

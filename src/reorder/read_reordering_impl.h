@@ -47,7 +47,7 @@ template <size_t bitset_size> struct reorder_global {
   uint32_t numreads;
   uint32_t numreads_array[2];
 
-  int maxshift, num_thr, max_readlen;
+  int maxshift, shift_step, num_thr, max_readlen;
   int numdict;
 
   std::string basedir;
@@ -59,8 +59,8 @@ template <size_t bitset_size> struct reorder_global {
   std::vector<std::array<std::bitset<bitset_size>, 128>> basemask;
   std::vector<std::bitset<bitset_size> *> basemask_ptrs;
   reorder_global(int max_readlen_param)
-      : numreads(0), numreads_array{0, 0}, maxshift(0), num_thr(0),
-        max_readlen(max_readlen_param), numdict(NUM_DICT_REORDER),
+      : numreads(0), numreads_array{0, 0}, maxshift(0), shift_step(1),
+        num_thr(0), max_readlen(max_readlen_param), numdict(NUM_DICT_REORDER),
         paired_end(false), depleted_base('N') {
     mask_lsb.reset();
     for (int i = 0; i < max_readlen_param * 2; i += 2)
@@ -724,7 +724,7 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
       uint32_t matched_read_id;
       if (!stop_searching &&
           (reference_position < MAX_CONTIG_GROWTH - 2 * rg.max_readlen))
-        for (int shift = 0; shift < rg.maxshift; shift++) {
+        for (int shift = 0; shift < rg.maxshift; shift += rg.shift_step) {
           found_match = detail::search_match<bitset_size>(
               reference_read, index_masks_data, dict_locks_data,
               read_locks_data, length_masks_data, read_lengths, remaining_reads,
@@ -816,8 +816,8 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
             break;
           }
 
-          reverse_reference_read <<= 2;
-          reference_read >>= 2;
+          reverse_reference_read <<= 2 * rg.shift_step;
+          reference_read >>= 2 * rg.shift_step;
         }
       if (found_match == 0) {
         unmatched_reads_in_window++;
@@ -1088,12 +1088,23 @@ reorder_encoder_artifact reorder_main(reorder_input_artifact input_artifact,
   rg.paired_end = cp.encoding.paired_end;
   // Cap maxshift so 150+ bp datasets don't take proportionally longer.
   static constexpr int kMaxReorderShift = 50;
+  // For long reads, try every other shift position — halves inner-loop
+  // iterations with minimal compression loss at high coverage.
+  static constexpr int kReorderShiftStep = 2;
   rg.maxshift = std::min(rg.max_readlen / 2, kMaxReorderShift);
+  rg.shift_step = (rg.max_readlen > 100) ? kReorderShiftStep : 1;
   if (rg.max_readlen / 2 > kMaxReorderShift) {
     SPRING_LOG_INFO("Reorder maxshift capped at " +
                     std::to_string(kMaxReorderShift) +
                     " (uncapped: " + std::to_string(rg.max_readlen / 2) +
                     " for " + std::to_string(rg.max_readlen) + " bp reads)");
+  }
+  if (rg.shift_step > 1) {
+    SPRING_LOG_INFO("Reorder shift step: " + std::to_string(rg.shift_step) +
+                    " (read length " + std::to_string(rg.max_readlen) +
+                    " bp, ~" + std::to_string(rg.maxshift / rg.shift_step + 1) +
+                    " shift iterations instead of " +
+                    std::to_string(rg.maxshift) + ")");
   }
   std::array<bbhashdict, NUM_DICT_REORDER> dict;
   initialize_reorder_dict_ranges(dict, rg.max_readlen);
