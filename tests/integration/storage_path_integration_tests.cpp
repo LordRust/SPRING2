@@ -360,4 +360,48 @@ TEST_CASE(
   fs::remove_all(test_dir);
 }
 
+TEST_CASE("Chunked reorder log fires when chunk size threshold is exceeded") {
+  const std::string test_dir = "chunked_reorder_log_test_tmp";
+  const std::string input = test_dir + "/reads.fastq";
+  const std::string archive = test_dir + "/out.sp";
+  const std::string log = test_dir + "/out.log";
+
+  fs::create_directories(test_dir);
+  // 200 reads, 75 bp — comfortably above the forced chunk size of 10.
+  create_custom_fastq(input, 200, false, false, 75);
+
+  // Force chunk size to 10 so a 200-read FASTQ triggers multi-chunk reorder.
+#if defined(_WIN32)
+  _putenv_s("SPRING2_REORDER_CHUNK_SIZE", "10");
+#else
+  setenv("SPRING2_REORDER_CHUNK_SIZE", "10", 1);
+#endif
+
+  const std::string cmd = std::string(SPRING2_EXECUTABLE) + " -c --R1 " +
+                          input + " -o " + archive +
+                          " -t 1 -m 1024 -v info > " + log + " 2>&1";
+  REQUIRE(std::system(cmd.c_str()) == 0);
+
+#if defined(_WIN32)
+  _putenv_s("SPRING2_REORDER_CHUNK_SIZE", "");
+#else
+  unsetenv("SPRING2_REORDER_CHUNK_SIZE");
+#endif
+
+  const std::string log_contents = read_file_binary(log);
+  CHECK(log_contents.find("splitting") != std::string::npos);
+  CHECK(log_contents.find("chunks of up to 10 reads") != std::string::npos);
+  CHECK(log_contents.find("Reorder chunk 1") != std::string::npos);
+
+  // Verify the archive decompresses correctly even after chunked reorder.
+  const std::string out_dir = test_dir + "/decomp";
+  fs::create_directories(out_dir);
+  const std::string decomp_cmd = std::string(SPRING2_EXECUTABLE) + " -d -i " +
+                                 archive + " -o " + out_dir + "/out.fastq > " +
+                                 log + " 2>&1";
+  CHECK(std::system(decomp_cmd.c_str()) == 0);
+
+  fs::remove_all(test_dir);
+}
+
 } // namespace

@@ -341,6 +341,48 @@ void readDnaFile(std::bitset<bitset_size> *read, uint16_t *read_lengths,
   return;
 }
 
+// Reads exactly the number of reads specified by rg.numreads_array from the
+// clean_read_streams, starting at the byte offsets given by cursor1/cursor2.
+// Both cursors are advanced past the consumed bytes on return.
+template <size_t bitset_size>
+void readDnaFileChunk(std::bitset<bitset_size> *read, uint16_t *read_lengths,
+                      const reorder_input_artifact &input_artifact,
+                      size_t &cursor1, size_t &cursor2,
+                      const reorder_global<bitset_size> &rg) {
+  for (uint32_t i = 0; i < rg.numreads_array[0]; i++) {
+    if (cursor1 + sizeof(uint16_t) >
+        input_artifact.clean_read_streams[0].size())
+      throw std::runtime_error("Truncated chunk read stream for mate 1.");
+    std::memcpy(&read_lengths[i],
+                input_artifact.clean_read_streams[0].data() + cursor1,
+                sizeof(uint16_t));
+    cursor1 += sizeof(uint16_t);
+    uint16_t nbytes = static_cast<uint16_t>(
+        (static_cast<uint32_t>(read_lengths[i]) + 4 - 1) / 4);
+    if (cursor1 + nbytes > input_artifact.clean_read_streams[0].size())
+      throw std::runtime_error("Truncated chunk read payload for mate 1.");
+    std::memcpy(byte_ptr(&read[i]),
+                input_artifact.clean_read_streams[0].data() + cursor1, nbytes);
+    cursor1 += nbytes;
+  }
+  for (uint32_t i = rg.numreads_array[0]; i < rg.numreads; i++) {
+    if (cursor2 + sizeof(uint16_t) >
+        input_artifact.clean_read_streams[1].size())
+      throw std::runtime_error("Truncated chunk read stream for mate 2.");
+    std::memcpy(&read_lengths[i],
+                input_artifact.clean_read_streams[1].data() + cursor2,
+                sizeof(uint16_t));
+    cursor2 += sizeof(uint16_t);
+    uint16_t nbytes = static_cast<uint16_t>(
+        (static_cast<uint32_t>(read_lengths[i]) + 4 - 1) / 4);
+    if (cursor2 + nbytes > input_artifact.clean_read_streams[1].size())
+      throw std::runtime_error("Truncated chunk read payload for mate 2.");
+    std::memcpy(byte_ptr(&read[i]),
+                input_artifact.clean_read_streams[1].data() + cursor2, nbytes);
+    cursor2 += nbytes;
+  }
+}
+
 namespace detail {
 template <size_t bitset_size>
 bool search_match(const std::bitset<bitset_size> &ref,
@@ -1106,9 +1148,6 @@ reorder_encoder_artifact reorder_main(reorder_input_artifact input_artifact,
                     " shift iterations instead of " +
                     std::to_string(rg.maxshift) + ")");
   }
-  std::array<bbhashdict, NUM_DICT_REORDER> dict;
-  initialize_reorder_dict_ranges(dict, rg.max_readlen);
-
   rg.numreads =
       cp.read_info.num_reads_clean[0] + cp.read_info.num_reads_clean[1];
   rg.numreads_array[0] = cp.read_info.num_reads_clean[0];
@@ -1124,56 +1163,170 @@ reorder_encoder_artifact reorder_main(reorder_input_artifact input_artifact,
 
   omp_set_num_threads(rg.num_thr);
   setglobalarrays(rg);
-  std::vector<std::bitset<bitset_size>> read;
-  std::vector<uint16_t> read_lengths;
+
+  // Chunk large read pools so the bitset<N> read array stays ~2 GB per chunk.
+  // At 40 bytes/read (bitset<320>), 50 M reads = 2 GB — well within the range
+  // where random MPHF lookups hit L3 cache rather than saturating main memory.
+  // SPRING2_REORDER_CHUNK_SIZE env var overrides the threshold (for testing).
+  static constexpr uint32_t kDefaultReorderChunkReads = 50'000'000;
+  const uint32_t kReorderChunkReads = []() -> uint32_t {
+    const char *env = std::getenv("SPRING2_REORDER_CHUNK_SIZE");
+    if (env) {
+      const long v = std::strtol(env, nullptr, 10);
+      if (v > 0) return static_cast<uint32_t>(v);
+    }
+    return kDefaultReorderChunkReads;
+  }();
+  const uint32_t total0 = rg.numreads_array[0];
+  const uint32_t total1 = rg.numreads_array[1];
+  const bool use_chunked = (rg.numreads > kReorderChunkReads);
+  if (use_chunked) {
+    const uint32_t num_chunks =
+        (rg.numreads + kReorderChunkReads - 1) / kReorderChunkReads;
+    SPRING_LOG_INFO("Large dataset: splitting " + std::to_string(rg.numreads) +
+                    " reads into " + std::to_string(num_chunks) +
+                    " chunks of up to " + std::to_string(kReorderChunkReads) +
+                    " reads to reduce working-set pressure");
+  }
+
   reorder_encoder_artifact artifact;
-  read.resize(static_cast<size_t>(rg.numreads));
-  read_lengths.resize(static_cast<size_t>(rg.numreads));
-  SPRING_LOG_INFO("Reading file");
-  readDnaFile<bitset_size>(read.data(), read_lengths.data(), input_artifact,
-                           rg);
-  // Free raw clean-read byte streams now that all reads are decoded into
-  // the bitset array — they are not used by any subsequent step.
-  std::string().swap(input_artifact.clean_read_streams[0]);
-  std::string().swap(input_artifact.clean_read_streams[1]);
-  SPRING_LOG_DEBUG("Freed raw clean-read byte streams after decode.");
+  artifact.aligned_shards.assign(rg.num_thr, {});
 
-  if (rg.numreads > 0) {
-    SPRING_LOG_INFO("Constructing dictionaries");
-    const auto dictionary_stage_start = std::chrono::steady_clock::now();
-    constructdictionary<bitset_size>(
-        read.data(), dict.data(), read_lengths.data(), rg.numdict, rg.numreads,
-        2, rg.basedir, deterministic_mode ? 1 : rg.num_thr, rg.depleted_base,
-        cp.encoding.use_external_mphf, cp.encoding.mphf_tmp_dir);
-    const auto dictionary_stage_end = std::chrono::steady_clock::now();
-    SPRING_LOG_INFO(
-        "Dictionary stage time: " +
-        format_seconds(dictionary_stage_end - dictionary_stage_start) + " s");
-  }
-  const bool use_low_diversity_fast_path =
-      rg.numreads > 0 && dict[0].numkeys > 0 &&
-      rg.numreads / dict[0].numkeys > kLowDiversityReadsPerKeyThreshold;
+  size_t cursor1 = 0, cursor2 = 0; // byte cursors into clean_read_streams
+  uint32_t done0 = 0, done1 = 0;
+  uint32_t global_offset = 0;
+  uint32_t chunk_idx = 0;
 
-  SPRING_LOG_INFO("Reordering reads");
-  const auto reorder_stage_start = std::chrono::steady_clock::now();
-  if (use_low_diversity_fast_path) {
-    reorder_fast_low_diversity<bitset_size>(dict.data(), read_lengths.data(),
-                                            rg, artifact);
-  } else {
-    reorder<bitset_size>(read.data(), dict.data(), read_lengths.data(), rg,
-                         artifact, deterministic_mode);
-  }
-  const auto reorder_stage_end = std::chrono::steady_clock::now();
-  SPRING_LOG_INFO("Reorder pass time: " +
-                  format_seconds(reorder_stage_end - reorder_stage_start) +
-                  " s");
-  SPRING_LOG_INFO("Writing to file");
-  const auto write_stage_start = std::chrono::steady_clock::now();
-  writetofile<bitset_size>(read.data(), read_lengths.data(), rg, artifact,
+  while (done0 < total0 || done1 < total1) {
+    const uint32_t rem0 = total0 - done0;
+    const uint32_t rem1 = total1 - done1;
+    const uint32_t rem = rem0 + rem1;
+    const uint32_t chunk_total =
+        use_chunked ? std::min(rem, kReorderChunkReads) : rem;
+    // Distribute chunk_total proportionally across both streams.
+    const uint32_t chunk0 =
+        (rem > 0)
+            ? std::min(rem0,
+                       static_cast<uint32_t>(
+                           static_cast<uint64_t>(chunk_total) * rem0 / rem))
+            : 0;
+    const uint32_t chunk1 = std::min(rem1, chunk_total - chunk0);
+
+    rg.numreads_array[0] = chunk0;
+    rg.numreads_array[1] = chunk1;
+    rg.numreads = chunk0 + chunk1;
+    rg.numdict =
+        (rg.numreads < DICT_SINGLE_STAGE_READ_THRESHOLD) ? 1 : NUM_DICT_REORDER;
+
+    if (use_chunked) {
+      SPRING_LOG_INFO("Reorder chunk " + std::to_string(chunk_idx + 1) + " (" +
+                      std::to_string(rg.numreads) + " reads, global offset " +
+                      std::to_string(global_offset) + ")");
+    }
+
+    std::vector<std::bitset<bitset_size>> chunk_read(rg.numreads);
+    std::vector<uint16_t> chunk_read_lengths(rg.numreads);
+
+    if (use_chunked) {
+      readDnaFileChunk<bitset_size>(chunk_read.data(),
+                                    chunk_read_lengths.data(), input_artifact,
+                                    cursor1, cursor2, rg);
+    } else {
+      SPRING_LOG_INFO("Reading file");
+      readDnaFile<bitset_size>(chunk_read.data(), chunk_read_lengths.data(),
+                               input_artifact, rg);
+      // Free streams now that all reads are decoded — not used again.
+      std::string().swap(input_artifact.clean_read_streams[0]);
+      std::string().swap(input_artifact.clean_read_streams[1]);
+      SPRING_LOG_DEBUG("Freed raw clean-read byte streams after decode.");
+    }
+
+    std::array<bbhashdict, NUM_DICT_REORDER> chunk_dict;
+    initialize_reorder_dict_ranges(chunk_dict, rg.max_readlen);
+
+    if (rg.numreads > 0) {
+      SPRING_LOG_INFO("Constructing dictionaries");
+      const auto dictionary_stage_start = std::chrono::steady_clock::now();
+      constructdictionary<bitset_size>(
+          chunk_read.data(), chunk_dict.data(), chunk_read_lengths.data(),
+          rg.numdict, rg.numreads, 2, rg.basedir,
+          deterministic_mode ? 1 : rg.num_thr, rg.depleted_base,
+          cp.encoding.use_external_mphf, cp.encoding.mphf_tmp_dir);
+      const auto dictionary_stage_end = std::chrono::steady_clock::now();
+      SPRING_LOG_INFO(
+          "Dictionary stage time: " +
+          format_seconds(dictionary_stage_end - dictionary_stage_start) + " s");
+    }
+
+    const bool use_low_diversity_fast_path =
+        rg.numreads > 0 && chunk_dict[0].numkeys > 0 &&
+        rg.numreads / chunk_dict[0].numkeys > kLowDiversityReadsPerKeyThreshold;
+
+    SPRING_LOG_INFO("Reordering reads");
+    const auto reorder_stage_start = std::chrono::steady_clock::now();
+    reorder_encoder_artifact chunk_artifact;
+    if (use_low_diversity_fast_path) {
+      reorder_fast_low_diversity<bitset_size>(
+          chunk_dict.data(), chunk_read_lengths.data(), rg, chunk_artifact);
+    } else {
+      reorder<bitset_size>(chunk_read.data(), chunk_dict.data(),
+                           chunk_read_lengths.data(), rg, chunk_artifact,
                            deterministic_mode);
-  const auto write_stage_end = std::chrono::steady_clock::now();
-  SPRING_LOG_INFO("Reorder write time: " +
-                  format_seconds(write_stage_end - write_stage_start) + " s");
+    }
+    const auto reorder_stage_end = std::chrono::steady_clock::now();
+    SPRING_LOG_INFO("Reorder pass time: " +
+                    format_seconds(reorder_stage_end - reorder_stage_start) +
+                    " s");
+
+    SPRING_LOG_INFO("Writing to file");
+    const auto write_stage_start = std::chrono::steady_clock::now();
+    writetofile<bitset_size>(chunk_read.data(), chunk_read_lengths.data(), rg,
+                             chunk_artifact, deterministic_mode);
+    const auto write_stage_end = std::chrono::steady_clock::now();
+    SPRING_LOG_INFO("Reorder write time: " +
+                    format_seconds(write_stage_end - write_stage_start) + " s");
+
+    // Merge chunk output into the combined artifact.
+    // read_bytes and sequence metadata are concatenated directly.
+    // order_bytes (local chunk read IDs) are shifted by global_offset so
+    // quality/id reordering can map them back to the original read stream.
+    for (int tid = 0; tid < rg.num_thr; ++tid) {
+      auto &src = chunk_artifact.aligned_shards[static_cast<size_t>(tid)];
+      auto &dst = artifact.aligned_shards[static_cast<size_t>(tid)];
+      dst.read_bytes += src.read_bytes;
+      dst.orientation_bytes += src.orientation_bytes;
+      dst.flag_bytes += src.flag_bytes;
+      dst.position_bytes += src.position_bytes;
+      dst.read_length_bytes += src.read_length_bytes;
+      for (size_t k = 0; k < src.order_bytes.size(); k += sizeof(uint32_t)) {
+        uint32_t id;
+        std::memcpy(&id, src.order_bytes.data() + k, sizeof(uint32_t));
+        id += global_offset;
+        detail::append_binary(dst.order_bytes, id);
+      }
+    }
+    artifact.singleton_read_bytes += chunk_artifact.singleton_read_bytes;
+    artifact.singleton_count += chunk_artifact.singleton_count;
+    for (size_t k = 0; k < chunk_artifact.singleton_order_bytes.size();
+         k += sizeof(uint32_t)) {
+      uint32_t id;
+      std::memcpy(&id, chunk_artifact.singleton_order_bytes.data() + k,
+                  sizeof(uint32_t));
+      id += global_offset;
+      detail::append_binary(artifact.singleton_order_bytes, id);
+    }
+
+    done0 += chunk0;
+    done1 += chunk1;
+    global_offset += rg.numreads;
+    ++chunk_idx;
+  }
+
+  if (use_chunked) {
+    std::string().swap(input_artifact.clean_read_streams[0]);
+    std::string().swap(input_artifact.clean_read_streams[1]);
+  }
+
   artifact.n_read_bytes = std::move(input_artifact.n_read_bytes);
   artifact.n_read_order_bytes = std::move(input_artifact.n_read_order_bytes);
   SPRING_LOG_INFO("Done!");
