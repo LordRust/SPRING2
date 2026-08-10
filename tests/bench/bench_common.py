@@ -49,7 +49,15 @@ def default_spring_binary() -> pathlib.Path:
     """Return the default path to the SPRING2 executable in the build tree."""
 
     name = "spring2.exe" if is_windows() else "spring2"
-    return BUILD_DIR / name
+    flat = BUILD_DIR / name
+    if flat.exists():
+        return flat
+    # MSVC multi-config generators place binaries in a config subdirectory.
+    for config in ("Debug", "Release", "RelWithDebInfo", "MinSizeRel"):
+        candidate = BUILD_DIR / config / name
+        if candidate.exists():
+            return candidate
+    return flat
 
 
 def default_preview_binary() -> pathlib.Path:
