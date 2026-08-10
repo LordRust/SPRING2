@@ -130,6 +130,41 @@ uint32_t write_unaligned_range(
 // ---------------------------------------------------------------------------
 namespace detail {
 
+// Streaming variant of write_unaligned_range: writes directly to open output
+// streams instead of accumulating in an in-memory buffer.  Used in disk_path
+// mode to avoid a ~100 GB peak allocation for large singleton pools.
+template <size_t bitset_size>
+uint32_t write_unaligned_range_streaming(
+    std::ofstream &readorder_out, std::ofstream &readlen_out,
+    std::ofstream &unaligned_out, const std::bitset<bitset_size> *reads,
+    const uint32_t *read_orders, const uint16_t *read_lengths,
+    const bool *remaining_reads,
+    const encoder_global_b<bitset_size> &encoder_bits,
+    const uint32_t begin_read_index, const uint32_t end_read_index,
+    uint64_t &unaligned_length) {
+  uint32_t unaligned_read_count = 0;
+  for (uint32_t read_index = begin_read_index; read_index < end_read_index;
+       read_index++) {
+    if (!remaining_reads[read_index])
+      continue;
+    unaligned_read_count++;
+    const std::string seq = bitsettostring<bitset_size>(
+        reads[read_index], read_lengths[read_index], encoder_bits);
+    readorder_out.write(
+        reinterpret_cast<const char *>(&read_orders[read_index]),
+        sizeof(uint32_t));
+    readlen_out.write(reinterpret_cast<const char *>(&read_lengths[read_index]),
+                      sizeof(uint16_t));
+    const uint32_t seq_size = static_cast<uint32_t>(seq.size());
+    unaligned_out.write(reinterpret_cast<const char *>(&seq_size),
+                        sizeof(uint32_t));
+    if (!seq.empty())
+      unaligned_out.write(seq.data(), static_cast<std::streamsize>(seq.size()));
+    unaligned_length += read_lengths[read_index];
+  }
+  return unaligned_read_count;
+}
+
 // Per-thread flush: append accumulated metadata (except sequence_bytes) to the
 // six open per-thread binary files and clear the in-memory vectors/strings.
 // Called periodically from within the OMP loop to cap per-thread RAM usage.
@@ -1096,40 +1131,27 @@ encoder_main(const reorder_encoder_artifact &reorder_artifact,
       std::filesystem::remove_all(spill + "/threads", ec);
     }
 
-    // Unaligned reads: small in-memory accumulation then append to files.
-    reordered_stream_artifact unaligned_temp;
+    // Unaligned reads: stream directly to disk to avoid a large in-memory
+    // buffer (~100 GB for datasets with many unmatched singletons).
+    auto uout = open_bin_out("unaligned_serialized.bin");
     uint64_t len_unaligned = 0;
-    const uint32_t remaining_singleton_reads = detail::write_unaligned_range(
-        unaligned_temp, read.data(), order_s.data(), read_lengths_s.data(),
-        remaining_reads, egb, 0, eg.numreads_s, len_unaligned, eg);
-    const uint32_t remaining_n_reads = detail::write_unaligned_range(
-        unaligned_temp, read.data(), order_s.data(), read_lengths_s.data(),
-        remaining_reads, egb, eg.numreads_s, eg.numreads_s + eg.numreads_N,
-        len_unaligned, eg);
-    readorder_out.write(
-        reinterpret_cast<const char *>(
-            unaligned_temp.read_order_entries.data()),
-        static_cast<std::streamsize>(unaligned_temp.read_order_entries.size() *
-                                     sizeof(uint32_t)));
-    readlen_out.write(
-        reinterpret_cast<const char *>(
-            unaligned_temp.read_length_entries.data()),
-        static_cast<std::streamsize>(unaligned_temp.read_length_entries.size() *
-                                     sizeof(uint16_t)));
+    const uint32_t remaining_singleton_reads =
+        detail::write_unaligned_range_streaming<bitset_size>(
+            readorder_out, readlen_out, uout, read.data(), order_s.data(),
+            read_lengths_s.data(), remaining_reads, egb, 0, eg.numreads_s,
+            len_unaligned);
+    const uint32_t remaining_n_reads =
+        detail::write_unaligned_range_streaming<bitset_size>(
+            readorder_out, readlen_out, uout, read.data(), order_s.data(),
+            read_lengths_s.data(), remaining_reads, egb, eg.numreads_s,
+            eg.numreads_s + eg.numreads_N, len_unaligned);
     pos_out.close();
     noise_out.close();
     noisepos_out.close();
     orient_out.close();
     readlen_out.close();
     readorder_out.close();
-
-    // Write unaligned_serialized.bin
-    {
-      auto uout = open_bin_out("unaligned_serialized.bin");
-      uout.write(unaligned_temp.unaligned_serialized.data(),
-                 static_cast<std::streamsize>(
-                     unaligned_temp.unaligned_serialized.size()));
-    }
+    uout.close();
     artifact.unaligned_char_count = len_unaligned;
     SPRING_LOG_DEBUG("block_id=enc-main, Encoder residual unaligned writes: "
                      "singleton_reads=" +
