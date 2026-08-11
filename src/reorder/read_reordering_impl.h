@@ -744,6 +744,42 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
         }
       }
 
+      // Fast-path: once no more matches can be found, drain remaining
+      // singletons with a contiguous sweep to eliminate false-sharing on
+      // remaining_reads.
+      if (stop_searching) {
+        if (previous_read_unmatched) {
+          detail::append_binary(singleton_order_output,
+                                static_cast<uint32_t>(previous_read_id));
+        }
+        const int64_t num_thr =
+            scan_stride; // scan_stride == omp_get_num_threads()
+        const int64_t reads_per_thr =
+            (static_cast<int64_t>(rg.numreads) + num_thr - 1) / num_thr;
+        const int64_t sweep_start = thread_id * reads_per_thr;
+        const int64_t sweep_end = std::min(sweep_start + reads_per_thr,
+                                           static_cast<int64_t>(rg.numreads));
+        for (int64_t read_id = sweep_start; read_id < sweep_end; read_id++) {
+          if (!remaining_reads[read_id])
+            continue; // already claimed; cheap sequential check
+          if (!omp_test_lock(
+                  read_locks_data[detail::lock_shard(read_id)].get()))
+            continue; // contested; safety net will recover
+          const bool still_remaining = remaining_reads[read_id] != 0;
+          if (still_remaining) {
+            remaining_reads[read_id] = 0;
+            unmatched_counts_data[thread_id]++;
+          }
+          omp_unset_lock(read_locks_data[detail::lock_shard(read_id)].get());
+          if (still_remaining) {
+            detail::append_binary(singleton_order_output,
+                                  static_cast<uint32_t>(read_id));
+          }
+        }
+        done = true;
+        break;
+      }
+
       if (!left_search_start) {
         for (int dictionary_index = 0; dictionary_index < rg.numdict;
              dictionary_index++) {
