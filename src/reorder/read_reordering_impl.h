@@ -704,7 +704,7 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
                             std::to_string(elapsed_s) + " s elapsed");
           }
         }
-        if (unmatched_reads_in_window > STOP_CRITERIA_REORDER * 1000000) {
+        if (unmatched_reads_in_window > STOP_CRITERIA_REORDER * 100000) {
           stop_searching = true;
         }
         unmatched_reads_in_window = 0;
