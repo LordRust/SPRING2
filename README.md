@@ -46,12 +46,12 @@ SPRING2 is built and validated on:
 
 ## Installation
 
-### Conda (conda-forge)
+### Conda (bioconda)
 
 If you are using conda environments, install SPRING2 with:
 
 ```bash
-conda install -c conda-forge spring2
+conda install -c bioconda spring2
 ```
 
 You can then verify the install:

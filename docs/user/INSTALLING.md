@@ -15,18 +15,18 @@ Available release artifacts currently include:
 - macOS `.app` bundles packaged as zip archives for `arm64` and `x86_64`
 - Windows standalone executables for `x86_64` and `ARM64`
 
-## Conda (conda-forge)
+## Conda (bioconda)
 
 If you are using conda environments, install SPRING2 with:
 
 ```bash
-conda install -c conda-forge spring2
+conda install -c bioconda spring2
 ```
 
 Optional: create a dedicated environment first.
 
 ```bash
-conda create -n spring2-env -c conda-forge spring2
+conda create -n spring2-env -c bioconda spring2
 conda activate spring2-env
 spring2 --version
 ```
