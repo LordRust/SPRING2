@@ -33,12 +33,12 @@ std::string preview_archive_version(const compression_params &cp) {
 } // namespace
 
 // Helper function to print gzip compression info for a single file
-void print_gzip_compression_info(int idx, const std::string &filename,
-                                 bool was_gzipped, uint8_t flg, uint32_t mtime,
-                                 uint8_t xfl, uint8_t os,
-                                 const std::string &name, bool is_bgzf,
-                                 uint16_t bgzf_bsiz, uint64_t uncomp_sz,
-                                 uint64_t comp_sz, uint32_t members) {
+void print_gzip_compression_info(const std::string &filename, bool was_gzipped,
+                                 uint8_t flg, uint32_t mtime, uint8_t xfl,
+                                 uint8_t os, const std::string &name,
+                                 bool is_bgzf, uint16_t bgzf_bsiz,
+                                 uint64_t uncomp_sz, uint64_t comp_sz,
+                                 uint32_t members) {
   if (!was_gzipped)
     return;
 
@@ -113,12 +113,10 @@ void preview_single(const std::string &archive_path, bool audit_only) {
   } catch (const std::exception &) {
     throw std::runtime_error("Could not parse cp.bin from the archive.");
   }
-  const archive_decompression_plan decompression_plan =
-      build_archive_decompression_plan(cp);
+  build_archive_decompression_plan(cp);
 
   std::cout << "SPRING2 Archive Metadata Preview:\n";
   std::cout << "--------------------------------\n";
-  (void)decompression_plan;
   std::cout << "Archive Version:   " << preview_archive_version(cp) << "\n";
   if (cp.read_info.legacy_spring) {
     std::cout << "Original Inputs:   Unavailable in legacy spring archives\n";
@@ -227,7 +225,7 @@ void preview_single(const std::string &archive_path, bool audit_only) {
             << "\n";
 
   print_gzip_compression_info(
-      1, cp.read_info.input_filename_1, cp.gzip.streams[0].was_gzipped,
+      cp.read_info.input_filename_1, cp.gzip.streams[0].was_gzipped,
       cp.gzip.streams[0].flg, cp.gzip.streams[0].mtime, cp.gzip.streams[0].xfl,
       cp.gzip.streams[0].os, cp.gzip.streams[0].name,
       cp.gzip.streams[0].is_bgzf, cp.gzip.streams[0].bgzf_block_size,
@@ -236,7 +234,7 @@ void preview_single(const std::string &archive_path, bool audit_only) {
 
   if (cp.encoding.paired_end) {
     print_gzip_compression_info(
-        2, cp.read_info.input_filename_2, cp.gzip.streams[1].was_gzipped,
+        cp.read_info.input_filename_2, cp.gzip.streams[1].was_gzipped,
         cp.gzip.streams[1].flg, cp.gzip.streams[1].mtime,
         cp.gzip.streams[1].xfl, cp.gzip.streams[1].os, cp.gzip.streams[1].name,
         cp.gzip.streams[1].is_bgzf, cp.gzip.streams[1].bgzf_block_size,
@@ -294,8 +292,7 @@ void preview(const std::string &archive_path, bool audit_only) {
     } catch (const std::exception &) {
       throw std::runtime_error("Could not parse cp.bin in reads archive.");
     }
-    const archive_decompression_plan reads_plan =
-        build_archive_decompression_plan(cp_reads);
+    build_archive_decompression_plan(cp_reads);
 
     // Parse compression params from R3 archive cp.bin if present
     compression_params cp_r3{};
@@ -332,7 +329,6 @@ void preview(const std::string &archive_path, bool audit_only) {
     // Display unified metadata
     std::cout << "\nSPRING2 Archive Metadata Preview:\n";
     std::cout << "--------------------------------\n";
-    (void)reads_plan;
     std::cout << "Archive Version:   " << preview_archive_version(cp_reads)
               << "\n";
     if (!cp_reads.read_info.note.empty()) {
@@ -457,7 +453,7 @@ void preview(const std::string &archive_path, bool audit_only) {
               << (cp_reads.encoding.use_crlf ? "Yes" : "No") << "\n";
 
     print_gzip_compression_info(
-        1, manifest.r1_name, cp_reads.gzip.streams[0].was_gzipped,
+        manifest.r1_name, cp_reads.gzip.streams[0].was_gzipped,
         cp_reads.gzip.streams[0].flg, cp_reads.gzip.streams[0].mtime,
         cp_reads.gzip.streams[0].xfl, cp_reads.gzip.streams[0].os,
         cp_reads.gzip.streams[0].name, cp_reads.gzip.streams[0].is_bgzf,
@@ -468,7 +464,7 @@ void preview(const std::string &archive_path, bool audit_only) {
 
     if (cp_reads.encoding.paired_end) {
       print_gzip_compression_info(
-          2, manifest.r2_name, cp_reads.gzip.streams[1].was_gzipped,
+          manifest.r2_name, cp_reads.gzip.streams[1].was_gzipped,
           cp_reads.gzip.streams[1].flg, cp_reads.gzip.streams[1].mtime,
           cp_reads.gzip.streams[1].xfl, cp_reads.gzip.streams[1].os,
           cp_reads.gzip.streams[1].name, cp_reads.gzip.streams[1].is_bgzf,
@@ -485,7 +481,7 @@ void preview(const std::string &archive_path, bool audit_only) {
                   << manifest.read3_alias_source << ", no extra payload)\n";
       } else {
         print_gzip_compression_info(
-            3, manifest.r3_name, cp_r3.gzip.streams[0].was_gzipped,
+            manifest.r3_name, cp_r3.gzip.streams[0].was_gzipped,
             cp_r3.gzip.streams[0].flg, cp_r3.gzip.streams[0].mtime,
             cp_r3.gzip.streams[0].xfl, cp_r3.gzip.streams[0].os,
             cp_r3.gzip.streams[0].name, cp_r3.gzip.streams[0].is_bgzf,
@@ -498,7 +494,7 @@ void preview(const std::string &archive_path, bool audit_only) {
 
     if (manifest.has_index) {
       print_gzip_compression_info(
-          4, manifest.i1_name, cp_index.gzip.streams[0].was_gzipped,
+          manifest.i1_name, cp_index.gzip.streams[0].was_gzipped,
           cp_index.gzip.streams[0].flg, cp_index.gzip.streams[0].mtime,
           cp_index.gzip.streams[0].xfl, cp_index.gzip.streams[0].os,
           cp_index.gzip.streams[0].name, cp_index.gzip.streams[0].is_bgzf,
@@ -509,7 +505,7 @@ void preview(const std::string &archive_path, bool audit_only) {
 
       if (manifest.has_i2 && cp_index.encoding.paired_end) {
         print_gzip_compression_info(
-            5, manifest.i2_name, cp_index.gzip.streams[1].was_gzipped,
+            manifest.i2_name, cp_index.gzip.streams[1].was_gzipped,
             cp_index.gzip.streams[1].flg, cp_index.gzip.streams[1].mtime,
             cp_index.gzip.streams[1].xfl, cp_index.gzip.streams[1].os,
             cp_index.gzip.streams[1].name, cp_index.gzip.streams[1].is_bgzf,

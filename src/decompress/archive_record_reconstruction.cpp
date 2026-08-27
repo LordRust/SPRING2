@@ -36,8 +36,6 @@
 
 namespace spring {
 
-namespace {} // namespace
-
 void write_fastq_block(std::ostream &output_stream, std::string *id_buffer,
                        std::string *read_buffer,
                        const std::string *quality_array,
@@ -118,9 +116,7 @@ void write_step_output(std::ofstream &output_stream, std::string *id_buffer,
 }
 
 void decompress_short(const decompression_archive_artifact &artifact,
-                      DecompressionSink &sink, compression_params &cp,
-                      int decoding_num_thr) {
-  (void)decoding_num_thr;
+                      DecompressionSink &sink, compression_params &cp) {
   SPRING_LOG_DEBUG(
       "decompress_short start: scratch_dir=" + artifact.scratch_dir +
       ", num_reads=" + std::to_string(cp.read_info.num_reads) +
@@ -335,10 +331,8 @@ void decompress_short(const decompression_archive_artifact &artifact,
                             artifact, compressed_block_file_path(file_unaligned,
                                                                  block_num))
                       : decompress_archive_bsc_member(
-                            artifact,
-                            compressed_block_file_path(file_unaligned,
-                                                       block_num),
-                            true);
+                            artifact, compressed_block_file_path(file_unaligned,
+                                                                 block_num));
               const std::vector<char> readlength_bytes =
                   cp.read_info.legacy_spring
                       ? decompress_legacy_archive_bsc_member(
@@ -690,9 +684,7 @@ void decompress_short(const decompression_archive_artifact &artifact,
 }
 
 void decompress_long(const decompression_archive_artifact &artifact,
-                     DecompressionSink &sink, compression_params &cp,
-                     int decoding_num_thr) {
-  (void)decoding_num_thr;
+                     DecompressionSink &sink, compression_params &cp) {
   SPRING_LOG_DEBUG(
       "decompress_long start: scratch_dir=" + artifact.scratch_dir +
       ", num_reads=" + std::to_string(cp.read_info.num_reads) +
@@ -776,10 +768,9 @@ void decompress_long(const decompression_archive_artifact &artifact,
                           compressed_block_file_path(
                               input_read_length_paths[stream_index], block_num))
                     : decompress_archive_bsc_member(
-                          artifact,
-                          compressed_block_file_path(
-                              input_read_length_paths[stream_index], block_num),
-                          true);
+                          artifact, compressed_block_file_path(
+                                        input_read_length_paths[stream_index],
+                                        block_num));
             memory_cursor read_length_cursor(read_length_bytes);
             for (uint32_t read_index = 0; read_index < thread_read_count;
                  ++read_index) {

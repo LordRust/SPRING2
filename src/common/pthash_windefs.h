@@ -23,6 +23,9 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#include <algorithm>
+#include <limits>
+
 #if !defined(_MODE_T_DECLARED) && !defined(_MODE_T_)
 typedef int mode_t;
 #define _MODE_T_DECLARED
@@ -34,7 +37,7 @@ struct rusage {
   long ru_maxrss;
 };
 
-inline int getrusage(int who, struct rusage *usage) {
+inline int getrusage([[maybe_unused]] int who, struct rusage *usage) {
   PROCESS_MEMORY_COUNTERS pmc;
   if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
     usage->ru_maxrss = (long)(pmc.WorkingSetSize / 1024);
@@ -56,8 +59,8 @@ inline int getrusage(int who, struct rusage *usage) {
 #ifndef O_CLOEXEC
 #define O_CLOEXEC 0
 #endif
-inline void *mmap(void *addr, size_t length, int prot, int flags, int fd,
-                  long long offset) {
+inline void *mmap([[maybe_unused]] void *addr, size_t length, int prot,
+                  [[maybe_unused]] int flags, int fd, long long offset) {
   HANDLE hFile = (HANDLE)_get_osfhandle(fd);
   if (hFile == INVALID_HANDLE_VALUE) {
     errno = EBADF;
@@ -99,7 +102,7 @@ inline void *mmap(void *addr, size_t length, int prot, int flags, int fd,
   return ptr;
 }
 
-inline int munmap(void *addr, size_t length) {
+inline int munmap(void *addr, [[maybe_unused]] size_t length) {
   return UnmapViewOfFile(addr) ? 0 : -1;
 }
 
@@ -124,7 +127,9 @@ inline long sysconf(int name) {
     if (GlobalMemoryStatusEx(&ms)) {
       SYSTEM_INFO si;
       GetSystemInfo(&si);
-      return ms.ullTotalPhys / si.dwPageSize;
+      const uint64_t page_count = ms.ullTotalPhys / si.dwPageSize;
+      return static_cast<long>(
+          std::min<uint64_t>(page_count, std::numeric_limits<long>::max()));
     }
   }
   return -1;
@@ -134,11 +139,17 @@ inline long sysconf(int name) {
 #define POSIX_MADV_NORMAL 0
 #define POSIX_MADV_RANDOM 0
 #define POSIX_MADV_SEQUENTIAL 0
-inline int posix_madvise(void *addr, size_t len, int advice) { return 0; }
+inline int posix_madvise([[maybe_unused]] void *addr,
+                         [[maybe_unused]] size_t len,
+                         [[maybe_unused]] int advice) {
+  return 0;
+}
 
 // Use namespaced mkdir to avoid macro clashes with STL .mkdir()
 namespace pthash_win {
-inline int mkdir(const char *path, int mode) { return _mkdir(path); }
+inline int mkdir(const char *path, [[maybe_unused]] int mode) {
+  return _mkdir(path);
+}
 } // namespace pthash_win
 
 #endif // _WIN32

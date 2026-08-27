@@ -81,8 +81,6 @@ void validate_output_targets(const std::string &archive_path,
                              const std::vector<std::string> &output_paths);
 void validate_compression_target(const std::vector<std::string> &input_paths,
                                  const std::string &archive_path);
-std::string assay_from_archive_metadata_bytes(const std::string &archive_bytes,
-                                              const std::string &archive_label);
 std::string assay_from_archive_metadata_path(const std::string &archive_path,
                                              const std::string &archive_label);
 uint64_t resolve_compression_memory_budget_bytes(double memory_cap_gb);
@@ -143,7 +141,7 @@ std::string archive_decompression_route_name(
     const archive_decompression_plan &decompression_plan);
 void execute_archive_decompression_plan(
     const decompression_archive_artifact &artifact, DecompressionSink &sink,
-    compression_params &cp, int decoding_num_thr,
+    compression_params &cp,
     const archive_decompression_plan &decompression_plan);
 std::vector<tar_archive_source> build_archive_sources(
     const std::unordered_map<std::string, std::string> &archive_members);

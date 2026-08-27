@@ -54,7 +54,6 @@ estimate_peak_intermediate_memory_bytes(const uint64_t estimated_input_bytes) {
 }
 
 uint64_t estimate_memory_path_safety_margin_bytes(
-    const uint64_t estimated_input_bytes,
     const uint64_t estimated_peak_intermediate_bytes) {
   const uint64_t peak_based_margin =
       estimated_peak_intermediate_bytes / kSafetyMarginDivisor;
@@ -276,8 +275,8 @@ std::string default_archive_name_from_input(const std::string &input_path) {
   while (changed) {
     changed = false;
     const std::string ext = p.extension().string();
-    for (const std::string &value : {".gz", ".fastq", ".fq", ".fasta", ".fa",
-                                     ".FASTQ", ".FQ", ".FASTA", ".FA"}) {
+    for (const char *value : {".gz", ".fastq", ".fq", ".fasta", ".fa", ".FASTQ",
+                              ".FQ", ".FASTA", ".FA"}) {
       if (ext == value) {
         p.replace_extension("");
         changed = true;
@@ -347,28 +346,6 @@ void validate_compression_target(const std::vector<std::string> &input_paths,
   }
 }
 
-std::string
-assay_from_archive_metadata_bytes(const std::string &archive_bytes,
-                                  const std::string &archive_label) {
-  auto contents = read_files_from_tar_bytes(archive_bytes, {"cp.bin"});
-  if (!contents.contains("cp.bin")) {
-    throw std::runtime_error("Could not find cp.bin in archive: " +
-                             archive_label);
-  }
-
-  compression_params cp{};
-  decompression_archive_artifact artifact;
-  artifact.files = std::move(contents);
-  artifact.scratch_dir.clear();
-  try {
-    read_archive_compression_params(artifact, cp);
-  } catch (const std::exception &) {
-    throw std::runtime_error("Could not parse cp.bin in archive: " +
-                             archive_label);
-  }
-  return cp.read_info.assay.empty() ? std::string("auto") : cp.read_info.assay;
-}
-
 std::string assay_from_archive_metadata_path(const std::string &archive_path,
                                              const std::string &archive_label) {
   auto contents = read_files_from_tar_memory(archive_path, {"cp.bin"});
@@ -407,7 +384,7 @@ build_compression_storage_plan(const string_list &input_paths,
   plan.estimated_peak_intermediate_bytes =
       estimate_peak_intermediate_memory_bytes(plan.estimated_input_bytes);
   plan.safety_margin_bytes = estimate_memory_path_safety_margin_bytes(
-      plan.estimated_input_bytes, plan.estimated_peak_intermediate_bytes);
+      plan.estimated_peak_intermediate_bytes);
   plan.required_peak_memory_bytes =
       saturating_add(saturating_add(plan.estimated_input_bytes,
                                     plan.estimated_peak_intermediate_bytes),
@@ -863,7 +840,7 @@ std::string archive_decompression_route_name(
 
 void execute_archive_decompression_plan(
     const decompression_archive_artifact &artifact, DecompressionSink &sink,
-    compression_params &cp, const int decoding_num_thr,
+    compression_params &cp,
     const archive_decompression_plan &decompression_plan) {
   ensure_archive_decompression_plan_supported(decompression_plan);
 
@@ -871,9 +848,9 @@ void execute_archive_decompression_plan(
       is_supported_archive_decompression_version(
           decompression_plan.archive_version)) {
     if (cp.encoding.long_flag) {
-      decompress_long(artifact, sink, cp, decoding_num_thr);
+      decompress_long(artifact, sink, cp);
     } else {
-      decompress_short(artifact, sink, cp, decoding_num_thr);
+      decompress_short(artifact, sink, cp);
     }
     return;
   }

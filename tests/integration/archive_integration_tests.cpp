@@ -16,12 +16,6 @@ using namespace integration_test_support;
 
 namespace {
 
-std::string native_path_string(const std::string &path) {
-  fs::path native_path(path);
-  native_path.make_preferred();
-  return native_path.string();
-}
-
 std::string sample_asset_path(const std::string &name) {
 #ifdef INTEGRATION_TEST_ASSET_DIR
   return (fs::path(INTEGRATION_TEST_ASSET_DIR) / name).generic_string();
@@ -57,7 +51,7 @@ void check_legacy_single_stream_fixture(const char *archive_name,
   REQUIRE(fs::exists(archive_path));
   REQUIRE(fs::exists(reference_path));
 
-  CHECK_NOTHROW(decompress({archive_path}, {output_path}, 1, 6));
+  CHECK_NOTHROW(decompress({archive_path}, {output_path}));
 
   const std::string restored = read_file_binary(output_path);
   const std::string reference = read_file_binary(reference_path);
@@ -290,7 +284,7 @@ TEST_CASE("Decompression restores legacy Spring short-read archives") {
   REQUIRE(fs::exists(reference_r1));
   REQUIRE(fs::exists(reference_r2));
 
-  CHECK_NOTHROW(decompress({paired_archive}, {output_r1, output_r2}, 1, 6));
+  CHECK_NOTHROW(decompress({paired_archive}, {output_r1, output_r2}));
 
   check_bytes_equal(read_file_binary(output_r1),
                     read_gzip_file_binary(reference_r1), "R1 round-trip");

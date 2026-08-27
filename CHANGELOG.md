@@ -2,6 +2,29 @@
 
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Changed CI to trigger only on `pull_request` (plus `merge_group` and manual `workflow_dispatch`) instead of also on every `push`, eliminating duplicate runs on the same commit.
+- Changed `comparison.yml` to run only via manual `workflow_dispatch` instead of automatically after every CI run.
+- Fixed the `macOS x64 Clang` CI leg to use `os: macos-15-intel` instead of `macos-latest` (which is Apple Silicon), so it actually tests x64.
+- Added `-Wall -Wextra -Werror` (GCC/Clang) and `/W4 /WX` (MSVC/ClangCL) to first-party build targets, and `-warnings-as-errors=*` to the `clang-tidy` invocation. Neither had previously caused CI to fail on warnings.
+- Marked pthash's own include directory `SYSTEM` in `vendor/pthash/CMakeLists.txt` so its warnings aren't attributed to first-party code under the new `-Werror`/`/WX` enforcement.
+- Hardened benchmark dataset downloads (atomic temp-file rename, `https://` instead of `ftp://`) to avoid truncated-download and blocked-FTP failures on CI runners.
+- Suppressed a known GCC false positive (`-Warray-bounds` misfiring on `std::vector<std::string>` reallocation at `-O1`) in the `sanitizers` job.
+
+### Fixed
+
+- Fixed dozens of pre-existing warnings surfaced by the new `-Werror`/`/WX` enforcement across GCC, Clang, MSVC, and ClangCL (Linux/macOS/Windows, including ARM64): narrowing conversions, uninitialized-variable false positives, variable shadowing, unused parameters, and a few small dead-code removals. Where a parameter was genuinely unused, it was removed (along with all call sites) rather than suppressed with `[[maybe_unused]]`/`(void)`-casts; a handful of parameters that mimic POSIX/Windows API contracts or are consumed only inside `#pragma omp` clauses were intentionally left in place.
+- Removed several fully dead functions with no remaining callers (`spill_reordered_stream_artifact`, `compress_id_block`/`decompress_id_block` file-path wrappers, an unused test helper).
+- Simplified the public `decompress()` API and several internal decompression helpers by dropping the `num_thr` and `compression_level` parameters that were threaded through many layers but never actually used for anything.
+- Fixed a crash (segfault/abort) instead of a clean error when decompressing a corrupted or truncated archive. `decompress_archive_bsc_member`'s `allow_raw_fallback` option silently substituted the raw (still-corrupted) compressed bytes whenever BSC decompression failed, instead of propagating the error; those bytes were then misinterpreted as valid decoded data (e.g. read lengths), leading to memory corruption downstream. The two call sites that used this fallback (short-read unaligned reads, long-read lengths) always store genuinely BSC-compressed data, so the fallback was never legitimate; it has been removed entirely, and decompression failures now surface as a normal caught error.
+- Fixed a heap over-read in `reference_sequence_store` (used to reconstruct short-read reference sequences during decompression): a chunk's declared length, taken from archive metadata, was never checked against the chunk's actually-decoded byte count, and `read()` never bounds-checked `chunk_index` against the chunk list. A corrupted or truncated archive could therefore cause an out-of-bounds heap read instead of a clean error. Both are now validated and throw on mismatch.
+- Fixed a SIGSEGV (instead of a clean caught error) when decoding a deliberately corrupted archive on macOS x64. A debug build confirmed the crash was inside `libunwind.dylib`'s compact-unwind "frameless" stepper while walking the stack to propagate a thrown `std::runtime_error` — not in any SPRING2 code. Root cause: `-fomit-frame-pointer` was applied unconditionally, and Apple's compact-unwind info is unreliable for frame-pointer-less code in some stack shapes. `-fomit-frame-pointer` is no longer applied on Apple platforms.
+- Organized `CMakeLists.txt` into clearly labeled sections (project metadata, toolchain detection, build options, compiler flags, OpenMP, vendor directories, targets, installation, tests) with no functional changes.
+- Removed dead code with no remaining callers across `src/common`: the `bgzf_ostream` class (`bgzf.h`/`.cpp`, superseded by `bgzf_compress_buffer`), `OmpLockGuard` and `MmapView` (`raii.h`), `safe_bsc_decompress`/`safe_bsc_str_array_decompress`/`write_var_int64`/`read_var_int64` and their now-orphaned `zigzag_encode64`/`zigzag_decode64` helpers (`io_utils.cpp`), `safe_remove_file` (`fs_utils.cpp`), the four bit-serialization helpers `write_dna_in_bits`/`read_dna_from_bits`/`write_dnaN_in_bits`/`read_dnaN_from_bits` (`dna_utils.cpp`), and an unused `#include <atomic>` (`progress.h`). Also removed `detect_max_read_length`/`detect_max_read_length_in_file` (`input_preparation.cpp`, superseded by `detect_input_properties`), the dead `write_key_chunks`/`keys_bin_path`/`hash_bin_path` helpers and inert `bbhashdict::freeze()`/`is_frozen()` (`bitset_dictionary.h`), the unused `basedir`/`outfile_*` members of `encoder_global` and `reorder_global<N>::basedir` (both were vestiges of a removed disk-based encoding path), and a leftover empty anonymous namespace in `archive_record_reconstruction.cpp`.
+
 ## V1.3.4
 
 ### Changed

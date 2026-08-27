@@ -92,7 +92,7 @@ uint32_t write_unaligned_range(
     const bool *remaining_reads,
     const encoder_global_b<bitset_size> &encoder_bits,
     const uint32_t begin_read_index, const uint32_t end_read_index,
-    uint64_t &unaligned_length, const encoder_global &eg) {
+    uint64_t &unaligned_length) {
   uint32_t aligned_read_count = 0;
   for (uint32_t read_index = begin_read_index; read_index < end_read_index;
        read_index++) {
@@ -391,8 +391,8 @@ void encode(std::bitset<bitset_size> *reads, bbhashdict *dictionaries,
     char read_flag = '0', orientation = 'd';
     std::list<contig_reads> current_contig;
     int64_t relative_position = 0;
-    uint16_t read_length;
-    uint32_t read_order, contig_read_count = 0;
+    uint16_t read_length = 0;
+    uint32_t read_order = 0, contig_read_count = 0;
     std::array<std::list<uint32_t>, NUM_DICT_ENCODER> deleted_rids;
     uint64_t thread_contig_flush_count = 0;
     uint64_t thread_forced_break_count = 0;
@@ -522,13 +522,14 @@ void encode(std::bitset<bitset_size> *reads, bbhashdict *dictionaries,
             forward_bitset.reset();
             reverse_bitset.reset();
             stringtobitset(reference_contig.substr(0, eg.max_readlen),
-                           eg.max_readlen, forward_bitset,
+                           static_cast<uint16_t>(eg.max_readlen),
+                           forward_bitset,
                            const_cast<std::bitset<bitset_size> **>(
                                egb.basemask_ptrs.data()));
             stringtobitset(
                 reverse_complement(reference_contig.substr(0, eg.max_readlen),
                                    eg.max_readlen),
-                eg.max_readlen, reverse_bitset,
+                static_cast<uint16_t>(eg.max_readlen), reverse_bitset,
                 const_cast<std::bitset<bitset_size> **>(
                     egb.basemask_ptrs.data()));
             for (long window_start = 0;
@@ -590,15 +591,17 @@ void encode(std::bitset<bitset_size> *reads, bbhashdict *dictionaries,
                           dictionaries[dictionary_index].read_id[bucket_index];
                       int hamming;
                       if (!orientation_index)
-                        hamming = ((forward_bitset ^ reads[read_id]) &
-                                   length_masks[0][eg.max_readlen -
-                                                   read_lengths[read_id]])
-                                      .count();
+                        hamming = static_cast<int>(
+                            ((forward_bitset ^ reads[read_id]) &
+                             length_masks[0][eg.max_readlen -
+                                             read_lengths[read_id]])
+                                .count());
                       else
-                        hamming = ((reverse_bitset ^ reads[read_id]) &
-                                   length_masks[0][eg.max_readlen -
-                                                   read_lengths[read_id]])
-                                      .count();
+                        hamming = static_cast<int>(
+                            ((reverse_bitset ^ reads[read_id]) &
+                             length_masks[0][eg.max_readlen -
+                                             read_lengths[read_id]])
+                                .count());
                       if (hamming <= thresh_s) {
                         if (!omp_test_lock(
                                 read_locks[detail::lock_shard(read_id)].get()))
@@ -976,13 +979,6 @@ encoder_main(const reorder_encoder_artifact &reorder_artifact,
   encoder_global_b<bitset_size> egb(cp.read_info.max_readlen);
   encoder_global eg;
 
-  eg.basedir = "in-memory";
-  eg.outfile_seq = eg.basedir + "/read_seq.bin";
-  eg.outfile_pos = eg.basedir + "/read_pos.bin";
-  eg.outfile_noise = eg.basedir + "/read_noise.txt";
-  eg.outfile_noisepos = eg.basedir + "/read_noisepos.bin";
-  eg.outfile_unaligned = eg.basedir + "/read_unaligned.txt";
-
   eg.max_readlen = cp.read_info.max_readlen;
   eg.num_thr = cp.encoding.num_thr;
   eg.metadata_spill_dir = cp.encoding.encoder_metadata_spill_dir;
@@ -1025,7 +1021,7 @@ encoder_main(const reorder_encoder_artifact &reorder_artifact,
                     std::to_string(singleton_pool_size) + " singletons...");
     constructdictionary<bitset_size>(
         read.data(), dict.data(), read_lengths_s.data(), eg.numdict_s,
-        singleton_pool_size, 3, eg.basedir, eg.num_thr, /*depleted_base=*/'N',
+        singleton_pool_size, 3, /*depleted_base=*/'N',
         cp.encoding.use_external_mphf, cp.encoding.mphf_tmp_dir);
   }
   SPRING_LOG_INFO("Starting main encoding loop...");
@@ -1231,11 +1227,11 @@ encoder_main(const reorder_encoder_artifact &reorder_artifact,
 
     const uint32_t remaining_singleton_reads = detail::write_unaligned_range(
         artifact, read.data(), order_s.data(), read_lengths_s.data(),
-        remaining_reads, egb, 0, eg.numreads_s, len_unaligned, eg);
+        remaining_reads, egb, 0, eg.numreads_s, len_unaligned);
     const uint32_t remaining_n_reads = detail::write_unaligned_range(
         artifact, read.data(), order_s.data(), read_lengths_s.data(),
         remaining_reads, egb, eg.numreads_s, eg.numreads_s + eg.numreads_N,
-        len_unaligned, eg);
+        len_unaligned);
     artifact.unaligned_char_count = len_unaligned;
     SPRING_LOG_DEBUG("block_id=enc-main, Encoder residual unaligned writes: "
                      "singleton_reads=" +

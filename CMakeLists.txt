@@ -3,6 +3,10 @@
 
 cmake_minimum_required(VERSION 3.31)
 
+# =============================================================================
+# Project metadata, policies, and versioning
+# =============================================================================
+
 # CMAKE_POLICY_DEFAULT_CMP0091 must be set before project() so that every
 # subsequent cmake_minimum_required() call inside vendor subdirectories also
 # inherits NEW behavior for CMP0091.  When a vendor subdirectory calls
@@ -104,6 +108,10 @@ if(WIN32)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS)
 endif()
 
+# =============================================================================
+# MSVC runtime library (CRT) selection and compiler cache
+# =============================================================================
+
 if(MSVC)
     # CMAKE_MSVC_RUNTIME_LIBRARY is also passed as a -D cache argument from
     # bld.bat (conda) and analogous build scripts. The CACHE+FORCE here
@@ -194,6 +202,10 @@ endif()
 
 # The project supports GNU-like and MSVC-compatible C++20 toolchains.
 
+# =============================================================================
+# Build type
+# =============================================================================
+
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     message(NOTICE "Setting build type to 'Release' as none was specified.")
     set(CMAKE_BUILD_TYPE
@@ -208,11 +220,29 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     )
 endif()
 
+# =============================================================================
+# Platform-specific vendor build options
+# =============================================================================
+
 option(LIBRAPIDARCHIVE_WITH_ISAL "Build rapidgzip with Intel ISA-L support" ON)
 if(APPLE)
     # ISA-L support is generally omitted on macOS to ensure build success across architectures.
     set(LIBRAPIDARCHIVE_WITH_ISAL OFF CACHE BOOL "" FORCE)
+    # Several vendored libs (e.g. libdeflate) unconditionally compile both their
+    # arm/ and x86/ CPU-feature-detection sources and rely on #ifdef guards to
+    # make the non-matching one an empty translation unit. Apple's ranlib warns
+    # "has no symbols" for those empty .o files; this is harmless, so silence it.
+    set(CMAKE_C_ARCHIVE_FINISH
+        "<CMAKE_RANLIB> -no_warning_for_no_symbols <TARGET>"
+    )
+    set(CMAKE_CXX_ARCHIVE_FINISH
+        "<CMAKE_RANLIB> -no_warning_for_no_symbols <TARGET>"
+    )
 endif()
+
+# =============================================================================
+# Global C++ standard and project-wide settings
+# =============================================================================
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 20)
@@ -223,6 +253,10 @@ include(CheckLinkerFlag)
 include(CheckIPOSupported)
 include(CheckSymbolExists)
 include(GNUInstallDirs)
+
+# =============================================================================
+# Utility functions
+# =============================================================================
 
 function(replace_in_file_if_needed file_path old_text new_text)
     if(NOT EXISTS "${file_path}")
@@ -265,6 +299,10 @@ function(run_command_checked working_directory description)
     endif()
 endfunction()
 
+# =============================================================================
+# Compiler frontend and toolchain detection
+# =============================================================================
+
 set(SPRING_MSVC_FRONTEND FALSE)
 if(
     MSVC
@@ -296,6 +334,10 @@ else()
         "Compiler currently not supported by CMake build: ${CMAKE_CXX_COMPILER_ID}"
     )
 endif()
+
+# =============================================================================
+# Linker selection
+# =============================================================================
 
 option(
     SPRING_ENABLE_FAST_LINKER
@@ -340,6 +382,10 @@ if(SPRING_ENABLE_FAST_LINKER)
     endif()
 endif()
 
+# =============================================================================
+# Interprocedural optimization (LTO)
+# =============================================================================
+
 option(SPRING_ENABLE_IPO "Enable Interprocedural Optimization if supported" ON)
 
 if(
@@ -353,6 +399,10 @@ if(
         set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
     endif()
 endif()
+
+# =============================================================================
+# Optimization and compiler flags
+# =============================================================================
 
 # Native tuning is the default; portability mode restricts x86-family code
 # generation to SSE4.1-compatible instructions.
@@ -403,7 +453,12 @@ elseif(spring_optimize_for_native)
         )
     endif()
 endif()
-if(SPRING_COMPILER_SUPPORTS_GNU_STYLE_FLAGS)
+if(SPRING_COMPILER_SUPPORTS_GNU_STYLE_FLAGS AND NOT APPLE)
+    # Omitting the frame pointer is skipped on Apple platforms: Apple's
+    # compact-unwind "frameless" stepper has been observed to crash inside
+    # libunwind.dylib while walking the stack for a thrown C++ exception on
+    # frame-pointer-less code, turning a caught std::runtime_error into a
+    # SIGSEGV instead of a clean error message.
     set(FLAGS "${FLAGS} -fomit-frame-pointer")
 endif()
 if(SPRING_COMPILER_SUPPORTS_GNU_STYLE_FLAGS)
@@ -418,6 +473,10 @@ endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${FLAGS}")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${FLAGS}")
+
+# =============================================================================
+# OpenMP configuration
+# =============================================================================
 
 # OpenMP is required across Spring and several bundled compression components.
 if(
@@ -619,11 +678,19 @@ else()
     set(OpenMP_DEFINITIONS "")
 endif()
 
+# =============================================================================
+# Path variables
+# =============================================================================
+
 set(source_dir ${CMAKE_SOURCE_DIR}/src)
 set(vendor_dir ${CMAKE_SOURCE_DIR}/vendor)
 set(build_vendor_dir ${vendor_dir})
 set(include_dir ${CMAKE_SOURCE_DIR}/src)
 set(tools_host_dir ${CMAKE_SOURCE_DIR}/tools/host)
+
+# =============================================================================
+# Host tools: Ninja
+# =============================================================================
 
 if(CMAKE_GENERATOR MATCHES "^Ninja")
     set(SPRING_VENDORED_NINJA_EXECUTABLE "")
@@ -682,6 +749,10 @@ if(CMAKE_GENERATOR MATCHES "^Ninja")
         message(NOTICE "Using vendored Ninja: ${CMAKE_MAKE_PROGRAM}")
     endif()
 endif()
+
+# =============================================================================
+# Host tools: NASM
+# =============================================================================
 
 set(SPRING_HAVE_NASM
     OFF
@@ -783,6 +854,10 @@ else()
     endif()
 endif()
 
+# =============================================================================
+# Editor integration (clangd)
+# =============================================================================
+
 # Emit a matching clangd configuration so editor diagnostics see the same
 # compiler include path and OpenMP flags as the CMake build.
 set(SPRING_CLANGD_FLAGS
@@ -837,8 +912,9 @@ else()
     )
 endif()
 
-# message(NOTICE "** CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
-# message(NOTICE "** CMAKE_C_FLAGS: ${CMAKE_C_FLAGS}")
+# =============================================================================
+# Runtime linking options
+# =============================================================================
 
 # Option to statically link common GCC runtimes so the executable can run
 # on Windows `cmd.exe` without shipping DLLs next to the binary.
@@ -852,6 +928,10 @@ option(
     ${_spring_static_runtimes_default}
 )
 unset(_spring_static_runtimes_default)
+
+# =============================================================================
+# Vendor subdirectory helper
+# =============================================================================
 
 macro(add_vendor_subdirectory_no_install source_dir binary_dir)
     set(_spring_prev_suppress_vendor_install
@@ -876,6 +956,10 @@ macro(add_vendor_subdirectory_no_install source_dir binary_dir)
     )
 endmacro()
 
+# =============================================================================
+# Vendor directories
+# =============================================================================
+
 set(PTHASH_DIR "${build_vendor_dir}/pthash")
 set(CLOUDFLARE_ZLIB_DIR ${build_vendor_dir}/cloudflare_zlib)
 set(ZSTD_DIR ${build_vendor_dir}/zstd)
@@ -884,6 +968,10 @@ set(LIBBSC_DIR ${build_vendor_dir}/libbsc)
 set(LIBDEFLATE_DIR ${build_vendor_dir}/libdeflate)
 set(LIBARCHIVE_DIR ${build_vendor_dir}/libarchive)
 set(include_dir ${CMAKE_SOURCE_DIR}/src)
+
+# =============================================================================
+# Toolchain miscompilation workarounds
+# =============================================================================
 
 # Workaround for ClangCL x64 miscompilation on Windows.
 # ClangCL with /O2 miscompiles various code paths for complex real-world inputs
@@ -984,6 +1072,10 @@ endif()
 
 add_vendor_subdirectory_no_install("${PTHASH_DIR}" "${CMAKE_BINARY_DIR}/pthash-build")
 
+# =============================================================================
+# Vendor subdirectories
+# =============================================================================
+
 # Zstd build configuration
 set(ZSTD_BUILD_DICTBUILDER OFF CACHE BOOL "" FORCE)
 set(ZSTD_MULTITHREAD_SUPPORT OFF CACHE BOOL "" FORCE)
@@ -1024,6 +1116,10 @@ add_vendor_subdirectory_no_install("${INDEXED_BZIP2_DIR}" "${CMAKE_BINARY_DIR}/i
 # Standard archive support via vendored libarchive.
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 add_vendor_subdirectory_no_install("${LIBARCHIVE_DIR}" "${CMAKE_BINARY_DIR}/libarchive-build" EXCLUDE_FROM_ALL)
+
+# =============================================================================
+# Reference data generation and source lists
+# =============================================================================
 
 # Reference embedding and shared source lists.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
@@ -1105,6 +1201,10 @@ set(spring_test_include_dirs
     ${spring_src_include_dirs}
 )
 
+# =============================================================================
+# Target helper functions
+# =============================================================================
+
 # Convenience targets for repository development checks.
 function(add_dev_script_target target_name script_path)
     if(EXISTS "${CMAKE_SOURCE_DIR}/${script_path}")
@@ -1128,6 +1228,10 @@ if(WIN32)
         )
     endif()
 endif()
+
+# =============================================================================
+# Main application target
+# =============================================================================
 
 add_executable(
     spring2
@@ -1168,6 +1272,16 @@ function(spring_apply_common_target_settings target_name)
         target_compile_definitions(${target_name} PRIVATE LIBARCHIVE_STATIC)
     endif()
 
+    # Fail the build on any warning in this target's compilation units.
+    # Warnings from third-party headers are only suppressed when those headers
+    # are provided via SYSTEM include directories (e.g. vendored targets);
+    # any non-SYSTEM third-party header included here is still diagnosed.
+    if(MSVC)
+        target_compile_options(${target_name} PRIVATE /W4 /WX)
+    else()
+        target_compile_options(${target_name} PRIVATE -Wall -Wextra -Werror)
+    endif()
+
     if(SPRING_OPENMP_INCLUDE_DIRS)
         target_include_directories(
             ${target_name}
@@ -1193,7 +1307,7 @@ endfunction()
 # compression_dispatch_encoder.cpp instantiates encoder_main<> for 24 bitset
 # sizes; each instantiation now includes substantial inline disk-spill logic.
 # On MSVC/ClangCL the resulting object file can exceed the default COFF section
-# limit � raise it with /bigobj.
+# limit - raise it with /bigobj.
 if(MSVC)
     set_source_files_properties(
         ${source_dir}/encode/compression_dispatch_encoder.cpp
@@ -1233,6 +1347,11 @@ endif()
 if(WIN32 AND MSVC)
     target_link_options(spring2 PRIVATE /STACK:8388608)
 endif()
+
+# =============================================================================
+# Windows runtime DLL bundling
+# =============================================================================
+
 if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # Base GCC runtime set. OpenMP runtime is additionally resolved below from
     # compiler/OpenMP metadata to support toolchain variations.
@@ -1349,6 +1468,10 @@ if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     endif()
 endif()
 
+# =============================================================================
+# Installation
+# =============================================================================
+
 # Installation logic for a clean release footprint
 if(APPLE)
     set(SPRING_INSTALL_RPATH "@loader_path/../lib")
@@ -1441,6 +1564,10 @@ if(WIN32 AND NOT SPRING_STATIC_RUNTIMES)
         endif()
     endforeach()
 endif()
+
+# =============================================================================
+# Tests
+# =============================================================================
 
 # Tests.
 enable_testing()

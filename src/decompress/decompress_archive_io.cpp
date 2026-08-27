@@ -117,7 +117,7 @@ decode_legacy_packed_sequence_chunk_bytes(const std::vector<char> &packed_bytes,
 std::vector<std::string> decompress_legacy_unpack_seq_chunks(
     const decompression_archive_artifact &artifact,
     const std::string &packed_seq_base_path, const int encoding_thread_count,
-    const int decoding_thread_count) {
+    [[maybe_unused]] const int decoding_thread_count) {
   std::vector<std::string> decoded_chunks(
       static_cast<size_t>(encoding_thread_count));
   std::exception_ptr omp_exception;
@@ -178,21 +178,13 @@ archive_member_bytes(const decompression_archive_artifact &artifact,
 
 std::vector<char>
 decompress_archive_bsc_member(const decompression_archive_artifact &artifact,
-                              const std::string &member_name,
-                              const bool allow_raw_fallback) {
+                              const std::string &member_name) {
   std::vector<char> compressed_bytes =
       archive_member_bytes(artifact, member_name);
   if (compressed_bytes.empty()) {
     return {};
   }
-  try {
-    return bsc_decompress_bytes(compressed_bytes);
-  } catch (const std::exception &) {
-    if (!allow_raw_fallback) {
-      throw;
-    }
-    return compressed_bytes;
-  }
+  return bsc_decompress_bytes(compressed_bytes);
 }
 
 std::vector<char> decompress_legacy_archive_bsc_member(
@@ -240,8 +232,8 @@ void decompress_legacy_archive_id_member(
     const decompression_archive_artifact &artifact,
     const std::string &member_name, std::string *id_array,
     const uint32_t num_ids) {
-  decompress_legacy_id_block_bytes(artifact.require(member_name), member_name,
-                                   id_array, num_ids);
+  decompress_legacy_id_block_bytes(artifact.require(member_name), id_array,
+                                   num_ids);
 }
 
 std::vector<std::string> slice_monolithic_id_blocks(
@@ -318,14 +310,28 @@ reference_sequence_store::reference_sequence_store(
   for (int encoding_thread_id = 0; encoding_thread_id < encoding_thread_count;
        encoding_thread_id++) {
     reference_chunk chunk;
-    chunk.size =
-        cp.read_info.legacy_spring
-            ? decoded_chunks[static_cast<size_t>(encoding_thread_id)].size()
-            : cp.read_info.file_len_seq_thr[encoding_thread_id];
+    if (cp.read_info.legacy_spring) {
+      if (static_cast<size_t>(encoding_thread_id) >= decoded_chunks.size()) {
+        throw std::runtime_error(
+            "Corrupt archive: missing decoded sequence chunk " +
+            std::to_string(encoding_thread_id));
+      }
+      chunk.size =
+          decoded_chunks[static_cast<size_t>(encoding_thread_id)].size();
+    } else {
+      chunk.size = cp.read_info.file_len_seq_thr[encoding_thread_id];
+    }
     chunk.start_offset = next_start_offset;
     next_start_offset += chunk.size;
     if (static_cast<size_t>(encoding_thread_id) < decoded_chunks.size()) {
       chunk.owned_data = std::move(decoded_chunks[encoding_thread_id]);
+    }
+    if (chunk.size != chunk.owned_data.size()) {
+      throw std::runtime_error(
+          "Corrupt archive: sequence chunk " +
+          std::to_string(encoding_thread_id) + " length metadata (" +
+          std::to_string(chunk.size) + ") does not match decoded size (" +
+          std::to_string(chunk.owned_data.size()) + ")");
     }
     start_offsets_.push_back(chunk.start_offset);
     chunks_.push_back(std::move(chunk));
@@ -343,6 +349,10 @@ std::string reference_sequence_store::read(const uint64_t start_offset,
   uint64_t current_offset = start_offset;
   size_t chunk_index = find_chunk_index(current_offset);
   while (remaining > 0) {
+    if (chunk_index >= chunks_.size()) {
+      throw std::runtime_error("Corrupt archive: reference read runs past the "
+                               "end of the sequence store");
+    }
     const reference_chunk &chunk = chunks_[chunk_index];
     const uint64_t offset_in_chunk = current_offset - chunk.start_offset;
     const uint64_t copy_size =
@@ -397,9 +407,10 @@ std::string compressed_block_file_path(const std::string &base_path,
 uint32_t compute_thread_read_count(const uint32_t step_read_count,
                                    const uint32_t num_reads_per_block,
                                    const uint64_t thread_id) {
-  return std::min((uint64_t)step_read_count,
-                  (thread_id + 1) * (uint64_t)num_reads_per_block) -
-         thread_id * (uint64_t)num_reads_per_block;
+  return static_cast<uint32_t>(
+      std::min((uint64_t)step_read_count,
+               (thread_id + 1) * (uint64_t)num_reads_per_block) -
+      thread_id * (uint64_t)num_reads_per_block);
 }
 
 std::string decode_packed_sequence_chunk_bytes(

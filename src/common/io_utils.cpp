@@ -3,11 +3,10 @@
 
 #include "io_utils.h"
 #include "bgzf.h"
-#include "core_utils.h"
 #include "integrity_utils.h"
-#include "libbsc/bsc.h"
 #include "libbsc/filters.h"
 #include "libbsc/libbsc.h"
+#include "params.h"
 #include "parse_utils.h"
 #include "progress.h"
 #include <algorithm>
@@ -161,15 +160,6 @@ void append_fastq_records_range(std::string &output_buffer,
         quality_or_null == nullptr ? nullptr : &quality_or_null[read_index],
         use_crlf, fasta_mode, quality_header_has_id);
   }
-}
-
-uint64_t zigzag_encode64(const int64_t value) {
-  const uint64_t sign_mask = (value < 0) ? UINT64_MAX : 0U;
-  return (static_cast<uint64_t>(value) << 1) ^ sign_mask;
-}
-
-int64_t zigzag_decode64(const uint64_t value) {
-  return static_cast<int64_t>(value >> 1) ^ -static_cast<int64_t>(value & 1U);
 }
 
 #pragma pack(push, 1)
@@ -612,9 +602,7 @@ void write_bgzf_fastq_block(std::ofstream &output_stream, std::string *id_array,
 
 std::vector<char> compress_id_block_bytes(std::string *id_array,
                                           const uint32_t &num_ids,
-                                          const int &compression_level,
                                           bool pack_only) {
-  (void)compression_level;
   if (num_ids == 0)
     return {};
 
@@ -864,87 +852,6 @@ std::vector<char> bsc_str_array_compress_bytes(std::string *string_array,
   }
 
   return output_bytes;
-}
-
-void compress_id_block(const char *output_path, std::string *id_array,
-                       const uint32_t &num_ids, const int &compression_level,
-                       bool pack_only) {
-  SPRING_LOG_DEBUG(
-      "block_id=io-utils:id-compress, compress_id_block start: output=" +
-      std::string(output_path) + ", num_ids=" + std::to_string(num_ids) +
-      ", pack_only=" + std::string(pack_only ? "true" : "false"));
-
-  try {
-    const std::vector<char> output_bytes = compress_id_block_bytes(
-        id_array, num_ids, compression_level, pack_only);
-    std::ofstream out(output_path, std::ios::binary | std::ios::trunc);
-    if (!out) {
-      SPRING_LOG_DEBUG("block_id=io-utils:id-compress, compress_id_block open "
-                       "failure: path=" +
-                       std::string(output_path) +
-                       ", expected_bytes=1, actual_bytes=0, index=0");
-      throw std::runtime_error(
-          pack_only ? "Failed to open raw ID output file."
-                    : "Failed to open compressed ID output file.");
-    }
-    if (!output_bytes.empty()) {
-      out.write(output_bytes.data(),
-                static_cast<std::streamsize>(output_bytes.size()));
-    }
-    out.close();
-    SPRING_LOG_DEBUG(
-        "block_id=io-utils:id-compress, compress_id_block done: output=" +
-        std::string(output_path) +
-        ", bytes=" + std::to_string(output_bytes.size()) +
-        ", pack_only=" + std::string(pack_only ? "true" : "false"));
-  } catch (const std::exception &e) {
-    SPRING_LOG_DEBUG("block_id=io-utils:id-compress, compress_id_block "
-                     "failure: output_path=" +
-                     std::string(output_path));
-    throw std::runtime_error(std::string(pack_only
-                                             ? "Raw ID write failed: "
-                                             : "BSC compression failed: ") +
-                             e.what());
-  }
-}
-
-void decompress_id_block(const char *input_path, std::string *id_array,
-                         const uint32_t &num_ids, bool pack_only) {
-  if (num_ids == 0)
-    return;
-
-  SPRING_LOG_DEBUG(
-      "block_id=io-utils:id-decompress, decompress_id_block start: input=" +
-      std::string(input_path) + ", num_ids=" + std::to_string(num_ids) +
-      ", pack_only=" + std::string(pack_only ? "true" : "false"));
-
-  std::ifstream input(input_path, std::ios::binary | std::ios::ate);
-  if (!input) {
-    SPRING_LOG_DEBUG("block_id=io-utils:id-decompress, decompress_id_block "
-                     "open failure: path=" +
-                     std::string(input_path) +
-                     ", expected_bytes=1, actual_bytes=0, index=0");
-    throw std::runtime_error(pack_only
-                                 ? "Failed to open raw ID input file."
-                                 : "Failed to open compressed ID input file.");
-  }
-  const size_t input_size = static_cast<size_t>(input.tellg());
-  input.seekg(0, std::ios::beg);
-  std::string input_bytes(input_size, '\0');
-  if (input_size > 0 && !input.read(input_bytes.data(), input_size)) {
-    SPRING_LOG_DEBUG("block_id=io-utils:id-decompress, decompress_id_block "
-                     "read failure: path=" +
-                     std::string(input_path) +
-                     ", expected_bytes=" + std::to_string(input_size) +
-                     ", actual_bytes=" + std::to_string(input.gcount()) +
-                     ", index=0");
-    throw std::runtime_error(pack_only
-                                 ? "Failed to read raw ID input file."
-                                 : "Failed to read compressed ID input file.");
-  }
-
-  decompress_id_block_bytes(input_bytes, input_path, id_array, num_ids,
-                            pack_only);
 }
 
 void decompress_id_block_bytes(std::string_view input_bytes,
@@ -1333,84 +1240,6 @@ std::vector<char> bsc_decompress_bytes(const std::vector<char> &input_bytes) {
   return output_bytes;
 }
 
-void safe_bsc_decompress(const std::string &input_path,
-                         const std::string &output_path) {
-  std::ifstream input(input_path, std::ios::binary | std::ios::ate);
-  if (!input.is_open()) {
-    SPRING_LOG_DEBUG("block_id=io-utils:bsc-file, safe_bsc_decompress input "
-                     "open failure: path=" +
-                     input_path +
-                     ", expected_bytes=1, actual_bytes=0, index=0");
-    throw std::runtime_error("Can't open compressed file for validation: " +
-                             input_path);
-  }
-
-  const std::streampos file_size = input.tellg();
-  SPRING_LOG_DEBUG(
-      "block_id=io-utils:bsc-file, safe_bsc_decompress start: input=" +
-      input_path + ", output=" + output_path +
-      ", compressed_bytes=" + std::to_string(file_size));
-  if (file_size == 0) {
-    std::ofstream output(output_path, std::ios::binary);
-    if (!output.is_open()) {
-      SPRING_LOG_DEBUG("block_id=io-utils:bsc-file, safe_bsc_decompress output "
-                       "open failure: path=" +
-                       output_path +
-                       ", expected_bytes=1, actual_bytes=0, index=0");
-      throw std::runtime_error("Can't open output file for empty BSC stream: " +
-                               output_path);
-    }
-    return;
-  }
-
-  if (file_size < 4) {
-    SPRING_LOG_DEBUG("block_id=io-utils:bsc-file, safe_bsc_decompress size "
-                     "check failure: path=" +
-                     input_path + ", expected_bytes=4, actual_bytes=" +
-                     std::to_string(file_size) + ", index=0");
-    throw std::runtime_error("Compressed file is too small to be valid: " +
-                             input_path);
-  }
-  input.close();
-
-  try {
-    bsc::BSC_decompress(input_path.c_str(), output_path.c_str());
-  } catch (const std::exception &e) {
-    SPRING_LOG_DEBUG("block_id=io-utils:bsc-file, safe_bsc_decompress backend "
-                     "failure: path=" +
-                     input_path + ", expected_bytes=" +
-                     std::to_string(file_size) + ", actual_bytes=0, index=0");
-    throw std::runtime_error("BSC decompression failed for " + input_path +
-                             ": " + e.what());
-  }
-  SPRING_LOG_DEBUG(
-      "block_id=io-utils:bsc-file, safe_bsc_decompress done: path=" +
-      input_path + ", output=" + output_path);
-}
-
-void safe_bsc_str_array_decompress(const std::string &input_path,
-                                   std::string *string_array,
-                                   uint32_t num_strings,
-                                   uint32_t *string_lengths) {
-  SPRING_LOG_DEBUG("block_id=io-utils:bsc-array, safe_bsc_str_array_decompress "
-                   "start: input=" +
-                   input_path + ", num_strings=" + std::to_string(num_strings));
-  try {
-    bsc::BSC_str_array_decompress(input_path.c_str(), string_array, num_strings,
-                                  string_lengths);
-  } catch (const std::exception &e) {
-    SPRING_LOG_DEBUG("block_id=io-utils:bsc-array, "
-                     "safe_bsc_str_array_decompress backend failure: path=" +
-                     input_path + ", expected_bytes=" +
-                     std::to_string(num_strings) + ", actual_bytes=0, index=0");
-    throw std::runtime_error("BSC string array decompression failed for " +
-                             input_path + ": " + e.what());
-  }
-  SPRING_LOG_DEBUG("block_id=io-utils:bsc-array, safe_bsc_str_array_decompress "
-                   "done: input=" +
-                   input_path);
-}
-
 void safe_bsc_str_array_decompress_bytes(std::string_view input_bytes,
                                          std::string_view input_label,
                                          std::string *string_array,
@@ -1578,9 +1407,9 @@ void generate_binary_binning_table(char *binary_binning_table,
                                    const unsigned int low) {
   unsigned int split = 33 + thr;
   for (unsigned int i = 0; i < split; i++)
-    binary_binning_table[i] = 33 + low;
+    binary_binning_table[i] = static_cast<char>(33 + low);
   for (unsigned int i = split; i <= 127; i++)
-    binary_binning_table[i] = 33 + high;
+    binary_binning_table[i] = static_cast<char>(33 + high);
 }
 
 void extract_gzip_detailed_info(const std::string &path, bool &is_gzipped,
@@ -1662,30 +1491,6 @@ void extract_gzip_detailed_info(const std::string &path, bool &is_gzipped,
     uncompressed_size = count_gzip_uncompressed_bytes(path);
     break;
   }
-}
-
-void write_var_int64(const int64_t value, std::ofstream &output_stream) {
-  uint64_t encoded_value = zigzag_encode64(value);
-  uint8_t byte;
-  while (encoded_value > 127) {
-    byte = (uint8_t)(encoded_value & 0x7f) | 0x80;
-    output_stream.write(byte_ptr(&byte), sizeof(uint8_t));
-    encoded_value >>= 7;
-  }
-  byte = (uint8_t)(encoded_value & 0x7f);
-  output_stream.write(byte_ptr(&byte), sizeof(uint8_t));
-}
-
-int64_t read_var_int64(std::ifstream &input_stream) {
-  uint64_t encoded_value = 0;
-  uint8_t byte;
-  uint8_t shift = 0;
-  do {
-    input_stream.read(byte_ptr(&byte), sizeof(uint8_t));
-    encoded_value |= ((uint64_t)(byte & 0x7f) << shift);
-    shift += 7;
-  } while (byte & 0x80);
-  return zigzag_decode64(encoded_value);
 }
 
 } // namespace spring

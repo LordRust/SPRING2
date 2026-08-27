@@ -52,8 +52,6 @@ template <size_t bitset_size> struct reorder_global {
   int maxshift, shift_step, num_thr, max_readlen;
   int numdict;
 
-  std::string basedir;
-
   bool paired_end;
   std::bitset<bitset_size> mask64;
   std::bitset<bitset_size> mask_lsb;
@@ -608,7 +606,7 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
     std::bitset<bitset_size> reference_read, reverse_reference_read,
         masked_read_bits;
 
-    int64_t seed_read_id;
+    int64_t seed_read_id = 0;
 
     std::array<std::list<std::pair<uint32_t, uint64_t>>, NUM_DICT_REORDER>
         pending_bin_deletions;
@@ -631,12 +629,12 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
     bool previous_read_unmatched = false;
     bool left_search_start = false;
     bool left_search = false;
-    int64_t current_read_id;
-    int64_t previous_read_id;
+    int64_t current_read_id = 0;
+    int64_t previous_read_id = 0;
     int64_t scan_slot;
     uint64_t lookup_key;
     int reference_length;
-    int64_t reference_position;
+    int64_t reference_position = 0;
     int64_t current_read_position;
 
     // Claim an initial seed read from a shared cursor. Keep trying until we
@@ -1029,8 +1027,7 @@ void reorder(std::bitset<bitset_size> *read, bbhashdict *dict,
 template <size_t bitset_size>
 void writetofile(std::bitset<bitset_size> *read, uint16_t *read_lengths,
                  reorder_global<bitset_size> &rg,
-                 reorder_encoder_artifact &artifact,
-                 const bool deterministic_mode) {
+                 reorder_encoder_artifact &artifact) {
   std::vector<std::string> write_errors(static_cast<size_t>(rg.num_thr));
   artifact.singleton_read_bytes.clear();
 
@@ -1184,7 +1181,6 @@ reorder_encoder_artifact reorder_main(reorder_input_artifact input_artifact,
   reorder_global<bitset_size> rg(cp.read_info.max_readlen);
   rg.paired_end = cp.encoding.paired_end;
   rg.depleted_base = cp.encoding.depleted_base;
-  rg.basedir = "in-memory";
 
   rg.max_readlen = cp.read_info.max_readlen;
   rg.num_thr = cp.encoding.num_thr;
@@ -1384,8 +1380,7 @@ reorder_encoder_artifact reorder_main(reorder_input_artifact input_artifact,
       const auto dictionary_stage_start = std::chrono::steady_clock::now();
       constructdictionary<bitset_size>(
           chunk_read.data(), chunk_dict.data(), chunk_read_lengths.data(),
-          rg.numdict, rg.numreads, 2, rg.basedir,
-          deterministic_mode ? 1 : rg.num_thr, rg.depleted_base,
+          rg.numdict, rg.numreads, 2, rg.depleted_base,
           cp.encoding.use_external_mphf, cp.encoding.mphf_tmp_dir);
       const auto dictionary_stage_end = std::chrono::steady_clock::now();
       SPRING_LOG_INFO(
@@ -1416,7 +1411,7 @@ reorder_encoder_artifact reorder_main(reorder_input_artifact input_artifact,
     SPRING_LOG_INFO("Writing to file");
     const auto write_stage_start = std::chrono::steady_clock::now();
     writetofile<bitset_size>(chunk_read.data(), chunk_read_lengths.data(), rg,
-                             chunk_artifact, deterministic_mode);
+                             chunk_artifact);
     const auto write_stage_end = std::chrono::steady_clock::now();
     SPRING_LOG_INFO("Reorder write time: " +
                     format_seconds(write_stage_end - write_stage_start) + " s");

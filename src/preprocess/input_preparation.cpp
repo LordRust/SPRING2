@@ -60,7 +60,7 @@ uint32_t block_count(const uint64_t num_reads,
                      const uint32_t num_reads_per_block) {
   if (num_reads == 0)
     return 0;
-  return 1 + (num_reads - 1) / num_reads_per_block;
+  return static_cast<uint32_t>(1 + (num_reads - 1) / num_reads_per_block);
 }
 
 void open_input_stream(std::ifstream &file_stream, std::istream *&input_stream,
@@ -121,9 +121,9 @@ preprocess_paths build_preprocess_paths(const std::string &input_path_1,
 uint32_t reads_for_thread_step(const uint32_t reads_in_step,
                                const uint32_t num_reads_per_block,
                                const uint64_t thread_id) {
-  return std::min((uint64_t)reads_in_step,
-                  (thread_id + 1) * num_reads_per_block) -
-         thread_id * num_reads_per_block;
+  return static_cast<uint32_t>(
+      std::min((uint64_t)reads_in_step, (thread_id + 1) * num_reads_per_block) -
+      thread_id * num_reads_per_block);
 }
 
 void open_preprocess_streams(
@@ -231,8 +231,7 @@ void detect_paired_id_pattern(
 
 void merge_paired_n_reads(std::array<std::string, 2> &n_read_streams,
                           std::array<std::vector<uint32_t>, 2> &n_read_orders,
-                          const std::array<uint64_t, 2> &num_reads,
-                          const std::array<uint64_t, 2> &num_reads_clean) {
+                          const std::array<uint64_t, 2> &num_reads) {
   n_read_streams[0].append(n_read_streams[1]);
   n_read_streams[1].clear();
 
@@ -397,63 +396,6 @@ input_detection_summary detect_input_properties(const std::string &infile_1,
     detect_input_properties_in_file(infile_2, fasta_input, summary, 1);
   }
   return summary;
-}
-
-uint32_t detect_max_read_length_in_file(const std::string &path,
-                                        bool fasta_input, bool &use_crlf,
-                                        bool &contains_non_acgtn_symbols) {
-  std::ifstream input(path, std::ios::binary);
-  if (!input.is_open())
-    throw std::runtime_error("Can't open file for pre-scan: " + path);
-
-  uint32_t max_len = 0;
-  std::string line;
-  if (fasta_input) {
-    uint32_t current_len = 0;
-    while (std::getline(input, line)) {
-      if (!line.empty() && line.back() == '\r')
-        use_crlf = true;
-      if (line.empty())
-        continue;
-      if (line[0] == '>') {
-        max_len = std::max(max_len, current_len);
-        current_len = 0;
-      } else {
-        if (!contains_non_acgtn_symbols && has_non_acgtn_symbol(line)) {
-          contains_non_acgtn_symbols = true;
-        }
-        current_len += line.length();
-      }
-    }
-    max_len = std::max(max_len, current_len);
-  } else {
-    // FASTQ: Seq is 2nd line of every 4.
-    while (std::getline(input, line)) { // 1: Header
-      if (!line.empty() && line.back() == '\r')
-        use_crlf = true;
-      if (std::getline(input, line)) { // 2: Sequence
-        if (!contains_non_acgtn_symbols && has_non_acgtn_symbol(line)) {
-          contains_non_acgtn_symbols = true;
-        }
-        max_len = std::max(max_len, (uint32_t)line.length());
-      }
-      std::getline(input, line); // 3: +
-      std::getline(input, line); // 4: Quality
-    }
-  }
-  return max_len;
-}
-
-uint32_t detect_max_read_length(const std::string &infile_1,
-                                const std::string &infile_2,
-                                const bool paired_end, const bool fasta_input,
-                                std::array<bool, 2> &use_crlf_by_stream,
-                                bool &contains_non_acgtn_symbols) {
-  const input_detection_summary summary =
-      detect_input_properties(infile_1, infile_2, paired_end, fasta_input);
-  use_crlf_by_stream = summary.use_crlf_by_stream;
-  contains_non_acgtn_symbols = summary.contains_non_acgtn_symbols;
-  return summary.max_read_length;
 }
 
 preprocess_artifact
@@ -665,8 +607,8 @@ preprocess(const std::string &infile_1, const std::string &infile_2,
       uint32_t reads_in_step = read_fastq_block(
           input_streams[stream_index], id_array, read_array.data(),
           quality_array.empty() ? nullptr : quality_array.data(),
-          num_reads_per_step, fasta_input, read_lengths_array.data(),
-          contains_n_output,
+          static_cast<uint32_t>(num_reads_per_step), fasta_input,
+          read_lengths_array.data(), contains_n_output,
           sequence_crc_output, // Compute CRC on original data before stripping
           quality_crc_output, id_crc_output, cp.encoding.preserve_quality,
           &block_saw_crlf);
@@ -889,7 +831,8 @@ preprocess(const std::string &infile_1, const std::string &infile_2,
         const uint32_t thread_read_count = reads_for_thread_step(
             reads_in_step, num_reads_per_block, thread_id);
         if (!thread_done) {
-          for (uint32_t read_index = thread_id * num_reads_per_block;
+          for (uint32_t read_index =
+                   static_cast<uint32_t>(thread_id * num_reads_per_block);
                read_index < thread_id * num_reads_per_block + thread_read_count;
                read_index++) {
             const uint32_t read_length = read_lengths_array[read_index];
@@ -919,12 +862,13 @@ preprocess(const std::string &infile_1, const std::string &infile_2,
                     thread_archive_members[static_cast<size_t>(thread_id)],
                     std::filesystem::path(
                         block_file_path(paths.id_output_paths[stream_index],
-                                        num_blocks_done + thread_id))
+                                        num_blocks_done +
+                                            static_cast<uint32_t>(thread_id)))
                         .filename()
                         .string(),
-                    compress_id_block_bytes(
-                        id_array + thread_id * num_reads_per_block,
-                        thread_read_count, cp.encoding.compression_level));
+                    compress_id_block_bytes(id_array +
+                                                thread_id * num_reads_per_block,
+                                            thread_read_count));
               }
               if (cp.encoding.preserve_quality) {
                 add_archive_member(
@@ -932,7 +876,7 @@ preprocess(const std::string &infile_1, const std::string &infile_2,
                     std::filesystem::path(
                         block_file_path(
                             paths.quality_output_paths[stream_index],
-                            num_blocks_done + thread_id))
+                            num_blocks_done + static_cast<uint32_t>(thread_id)))
                         .filename()
                         .string(),
                     bsc_str_array_compress_bytes(
@@ -961,9 +905,9 @@ preprocess(const std::string &infile_1, const std::string &infile_2,
                           paths.id_output_paths[stream_index], block_num))
                       .filename()
                       .string(),
-                  compress_id_block_bytes(
-                      id_array + thread_id * num_reads_per_block,
-                      thread_read_count, cp.encoding.compression_level));
+                  compress_id_block_bytes(id_array +
+                                              thread_id * num_reads_per_block,
+                                          thread_read_count));
             }
             if (cp.encoding.preserve_quality) {
               add_archive_member(
@@ -1040,8 +984,8 @@ preprocess(const std::string &infile_1, const std::string &infile_2,
                                       read_array[read_index]);
               thread_buffer.clean_read_count++;
             } else {
-              thread_buffer.n_read_positions.push_back(num_reads[stream_index] +
-                                                       read_index);
+              thread_buffer.n_read_positions.push_back(
+                  static_cast<uint32_t>(num_reads[stream_index] + read_index));
               append_encoded_dna_n_bits(thread_buffer.n_read_bytes,
                                         read_array[read_index]);
             }
@@ -1259,8 +1203,7 @@ preprocess(const std::string &infile_1, const std::string &infile_2,
   if (!cp.encoding.long_flag && cp.encoding.paired_end) {
     // Shift mate-2 N-read positions by file-1 length before merging the
     // streams.
-    merge_paired_n_reads(n_read_streams, n_read_orders, num_reads,
-                         num_reads_clean);
+    merge_paired_n_reads(n_read_streams, n_read_orders, num_reads);
   }
 
   output_artifact.reorder_inputs.n_read_bytes = std::move(n_read_streams[0]);
@@ -1283,9 +1226,9 @@ preprocess(const std::string &infile_1, const std::string &infile_2,
   cp.encoding.use_crlf =
       cp.encoding.use_crlf_by_stream[0] ||
       (cp.encoding.paired_end && cp.encoding.use_crlf_by_stream[1]);
-  cp.read_info.num_reads = num_reads[0] + num_reads[1];
-  cp.read_info.num_reads_clean[0] = num_reads_clean[0];
-  cp.read_info.num_reads_clean[1] = num_reads_clean[1];
+  cp.read_info.num_reads = static_cast<uint32_t>(num_reads[0] + num_reads[1]);
+  cp.read_info.num_reads_clean[0] = static_cast<uint32_t>(num_reads_clean[0]);
+  cp.read_info.num_reads_clean[1] = static_cast<uint32_t>(num_reads_clean[1]);
   cp.read_info.max_readlen = max_readlen;
 
   if (expected_summary != nullptr && !cp.encoding.long_flag &&

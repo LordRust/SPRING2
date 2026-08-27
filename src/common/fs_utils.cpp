@@ -612,18 +612,6 @@ void write_archive_member_file(const std::string &root_dir,
   }
 }
 
-bool safe_remove_file(const std::string &path) noexcept {
-  if (path.empty())
-    return true;
-  std::error_code ec;
-  std::filesystem::remove(path, ec);
-  if (ec) {
-    Logger::log_warning("Failed to remove file: " + path + ": " + ec.message());
-    return false;
-  }
-  return true;
-}
-
 void create_tar_archive_from_sources(
     const std::string &archive_path,
     const std::vector<tar_archive_source> &sources) {
@@ -714,9 +702,10 @@ void extract_tar_archive(const std::string &archive_path,
           if (r < ARCHIVE_OK)
             throw std::runtime_error("Error reading archive data: " +
                                      std::string(archive_error_string(a)));
-          r = archive_write_data_block(ext, buff, size, offset);
+          const la_ssize_t write_result =
+              archive_write_data_block(ext, buff, size, offset);
           extracted_data_bytes += static_cast<uint64_t>(size);
-          if (r < ARCHIVE_OK)
+          if (write_result < ARCHIVE_OK)
             throw std::runtime_error("Error writing disk data: " +
                                      std::string(archive_error_string(ext)));
         }

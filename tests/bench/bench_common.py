@@ -119,13 +119,25 @@ def ensure_spring_binary(
 
 
 def download_file(url: str, destination: pathlib.Path) -> None:
-    """Download a file once and reuse it on later benchmark runs."""
+    """Download a file once and reuse it on later benchmark runs.
+
+    Downloads to a temporary path first and only renames into place on
+    success, so a failed or truncated transfer (e.g. an interrupted FTP
+    connection) is never mistaken for a valid cached file on a later run.
+    """
 
     if destination.exists():
         return
     ensure_directory(destination.parent)
-    with urllib.request.urlopen(url) as response, destination.open("wb") as output:
-        shutil.copyfileobj(response, output)
+    tmp_destination = destination.with_suffix(destination.suffix + ".part")
+    try:
+        with urllib.request.urlopen(url) as response, tmp_destination.open(
+            "wb"
+        ) as output:
+            shutil.copyfileobj(response, output)
+        tmp_destination.replace(destination)
+    finally:
+        tmp_destination.unlink(missing_ok=True)
 
 
 def _get_windows_peak_rss_kb(pid: int) -> int | None:
