@@ -9,6 +9,8 @@ inspecting SPRING2 archives.
   platform-specific install notes.
 - [Building Overview](BUILDING.md): prerequisites, build strategy, and links to
   platform-specific build commands.
+- [Apptainer on HPC](APPTAINER.md): reproducible SIF builds, storage binds, and
+  SLURM execution examples.
 - [Usage Overview](USAGE.md): quick-start examples and a map of the runtime
   guides.
 

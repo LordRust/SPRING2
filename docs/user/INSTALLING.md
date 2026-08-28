@@ -3,6 +3,9 @@
 This page covers installing SPRING2 from prebuilt release artifacts. If you
 want to compile from source instead, see [Building SPRING2](BUILDING.md).
 
+For HPC systems, especially hosts with older system libraries, see
+[Running SPRING2 with Apptainer](APPTAINER.md).
+
 ## Download Releases
 
 Download platform artifacts from the GitHub releases page:

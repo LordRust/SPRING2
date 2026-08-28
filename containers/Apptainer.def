@@ -1,0 +1,142 @@
+Bootstrap: docker
+From: almalinux:8.10-20260602
+Stage: build
+
+%files
+    {{ SOURCE_ARCHIVE }} /spring2-source.tar.gz
+
+%post
+    set -eu
+
+    dnf install -y --setopt=install_weak_deps=False \
+        epel-release \
+        dnf-plugins-core
+    dnf config-manager --set-enabled powertools || \
+        dnf config-manager --set-enabled crb
+    dnf install -y --setopt=install_weak_deps=False \
+        gcc-toolset-12-gcc-c++ \
+        libomp-devel \
+        python39 \
+        python39-pip
+    dnf clean all
+
+    python3.9 -m venv /opt/cmake
+    /opt/cmake/bin/python -m pip install --no-cache-dir --upgrade pip
+    /opt/cmake/bin/python -m pip install --no-cache-dir "cmake==4.2.0"
+
+    mkdir -p /src
+    tar -xzf /spring2-source.tar.gz -C /src
+    rm -f /spring2-source.tar.gz
+    chmod +x \
+        /src/SPRING2/tools/host/ninja/linux/ninja \
+        /src/SPRING2/tools/host/nasm/linux/nasm
+
+    . /opt/rh/gcc-toolset-12/enable
+    export PATH="/opt/cmake/bin:${PATH}"
+
+    cmake -S /src/SPRING2 -B /build -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_MAKE_PROGRAM=/src/SPRING2/tools/host/ninja/linux/ninja \
+        -DSPRING_ENABLE_COMPILER_CACHE=OFF \
+        -DLIBRAPIDARCHIVE_WITH_ISAL=OFF \
+        -Dspring_optimize_for_native=OFF \
+        -Dspring_optimize_for_portability=ON
+    cmake --build /build --parallel {{ BUILD_JOBS }}
+    ctest --test-dir /build --parallel {{ BUILD_JOBS }} --output-on-failure
+    cmake --install /build --prefix /opt/spring
+
+    mkdir -p /opt/spring/lib /opt/spring/share/licenses/spring2
+    for library in libstdc++.so.6 libgcc_s.so.1 libgomp.so.1; do
+        library_path="$(g++ -print-file-name="${library}")"
+        if [ "${library_path}" = "${library}" ] || [ ! -e "${library_path}" ]; then
+            echo "Unable to resolve required runtime library: ${library}" >&2
+            exit 1
+        fi
+        cp -L "${library_path}" "/opt/spring/lib/${library}"
+    done
+
+    cp /src/SPRING2/LICENSE \
+        /opt/spring/share/licenses/spring2/LICENSE
+    cp /src/SPRING2/REDISTRIBUTION_PERMISSION.md \
+        /opt/spring/share/licenses/spring2/REDISTRIBUTION_PERMISSION.md
+    printf '%s\n' '{{ SPRING_REVISION }}' \
+        > /opt/spring/share/spring2-source-revision
+    printf '%s\n' '{{ SPRING_DESCRIBE }}' \
+        > /opt/spring/share/spring2-container-version
+
+
+Bootstrap: docker
+From: almalinux:8.10-minimal-20260602
+Stage: final
+
+%files from build
+    /opt/spring /opt/spring
+
+%environment
+    export PATH="/opt/spring/bin:${PATH}"
+    export LC_ALL=C
+
+%labels
+    org.opencontainers.image.title SPRING2
+    org.opencontainers.image.description "SPRING2 FASTQ/FASTA compressor for Apptainer"
+    org.opencontainers.image.source https://github.com/thisisamirv/SPRING2
+    org.opencontainers.image.version {{ SPRING_DESCRIBE }}
+    org.opencontainers.image.revision {{ SPRING_REVISION }}
+    org.opencontainers.image.architecture x86_64
+    org.opencontainers.image.licenses LicenseRef-SPRING-Research-Use
+
+%runscript
+    exec /opt/spring/bin/spring2 "$@"
+
+%help
+    SPRING2 {{ SPRING_DESCRIBE }} for x86_64 HPC systems.
+
+    Run SPRING2 directly:
+      apptainer run spring2-{{ SPRING_DESCRIBE }}-x86_64.sif --version
+
+    Bind input/output storage explicitly when required by the cluster:
+      apptainer run --cleanenv --bind /data:/data \
+        spring2-{{ SPRING_DESCRIBE }}-x86_64.sif \
+        -c --R1 /data/reads.fastq.gz -o /data/reads.sp
+
+%test
+    set -eu
+
+    /opt/spring/bin/spring2 --version
+
+    ldd_output="$(ldd /opt/spring/bin/spring2)"
+    printf '%s\n' "${ldd_output}"
+    case "${ldd_output}" in
+        *"not found"*)
+            echo "The SPRING2 executable has unresolved runtime libraries." >&2
+            exit 1
+            ;;
+    esac
+
+    test_dir="$(mktemp -d /tmp/spring2-container-test.XXXXXX)"
+    trap 'rm -rf "${test_dir}"' EXIT
+    cat > "${test_dir}/input.fastq" <<'EOF'
+@read1
+ACGTACGTACGTACGTACGT
++
+IIIIIIIIIIIIIIIIIIII
+@read2
+TGCATGCATGCATGCATGCA
++
+IIIIIIIIIIIIIIIIIIII
+@read3
+AAAACCCCGGGGTTTTACGT
++
+IIIIIIIIIIIIIIIIIIII
+@read4
+TTTTGGGGCCCCAAAATGCA
++
+IIIIIIIIIIIIIIIIIIII
+EOF
+
+    /opt/spring/bin/spring2 -c --R1 "${test_dir}/input.fastq" \
+        -o "${test_dir}/archive.sp" -t 1
+    /opt/spring/bin/spring2 -d -i "${test_dir}/archive.sp" \
+        -o "${test_dir}/output.fastq" -t 1
+    test "$(cat "${test_dir}/input.fastq")" = \
+        "$(cat "${test_dir}/output.fastq")"
